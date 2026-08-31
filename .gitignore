@@ -1,0 +1,16 @@
+# Entornos virtuales y compilaciones
+venv/
+__pycache__/
+*.pyc
+
+# Modelos de IA locales (¡Pesados!)
+models/*.gguf
+models/*.bin
+
+# Bases de datos y memoria dinámica
+chroma_db/
+exposicion_memory.json
+
+# Variables de entorno y configuraciones locales
+.env
+.vscode/
