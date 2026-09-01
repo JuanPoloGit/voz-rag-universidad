@@ -58,7 +58,7 @@ class LocalRAGEngine:
             except Exception as e:
                 print(f"⚠️ Error procesando el archivo {file}: {e}")
 
-    def search_local_docs(self, query: str, n_results=16):
+    def search_local_docs(self, query: str, n_results=30):
         """Busca en los documentos locales en Markdown de AudacIA y la Universidad."""
         try:
             results = self.collection.query(
