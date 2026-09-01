@@ -5,3 +5,6 @@ llama-index
 llama-index-vector-stores-chroma
 llama-index-embeddings-huggingface
 sentence-transformers
+wikipedia-api
+langchain-text-splitters
+wikipedia

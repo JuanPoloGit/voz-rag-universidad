@@ -1,0 +1,6 @@
+venv/
+__pycache__/
+models/
+chroma_db/
+exposicion_memory.json
+*.md
