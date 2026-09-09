@@ -26,14 +26,12 @@ class ConversationalMemory:
         
         self.exact_history.append(new_msg)
 
-        # Si el historial exacto supera el límite (max_exact_turns * 2), 
-        # el par más antiguo pasa a enriquecer el contexto general.
+        # Si el historial exacto supera el límite, el par más antiguo enriquece el contexto general.
         limit = self.max_exact_turns * 2
         if len(self.exact_history) > limit:
-            old_pair = self.exact_history[:2]  # Sacamos la pareja más vieja (User + Assistant)
+            old_pair = self.exact_history[:2]  # Pareja más vieja (User + Assistant)
             self.exact_history = self.exact_history[2:]
             
-            # Comprimimos la vieja pareja en el resumen del contexto general
             for m in old_pair:
                 speaker = "El usuario" if m["role"] == "user" else "El asistente"
                 self.general_context += f"\n- {speaker} conversó sobre: {m['content'][:120]}..."
@@ -41,14 +39,12 @@ class ConversationalMemory:
         self.save_memory()
 
     def get_formatted_history(self):
-        """Prepara el payload combinando el System Prompt, el Contexto General y los 5 turnos exactos."""
+        """Prepara el payload combinando el System Prompt, el Contexto General y los turnos exactos."""
         messages = []
         
-        # 1. System Prompt principal
         if self.system_prompt:
             messages.append({"role": "system", "content": self.system_prompt})
             
-        # 2. Contexto general permanente (Evita confusión ante cambios abruptos de tema)
         directive_context = (
             f"[CONTEXTO GLOBAL Y RESUMEN HISTÓRICO DE LA SESIÓN]\n"
             f"{self.general_context}\n"
@@ -57,14 +53,13 @@ class ConversationalMemory:
         )
         messages.append({"role": "system", "content": directive_context})
         
-        # 3. Turnos exactos recientes (Alta fidelidad)
         for m in self.exact_history:
             messages.append({"role": m["role"], "content": m["content"]})
             
         return messages
 
     def save_memory(self):
-        """Persiste la estructura híbrida en disco."""
+        """Persiste la estructura híbrida en disco de manera segura."""
         data = {
             "last_updated": datetime.now().isoformat(),
             "system_prompt": self.system_prompt,
@@ -72,13 +67,15 @@ class ConversationalMemory:
             "exact_history": self.exact_history
         }
         try:
-            with open(self.storage_path, "w", encoding="utf-8") as f:
+            temp_path = self.storage_path + ".tmp"
+            with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
+            os.replace(temp_path, self.storage_path)
         except Exception as e:
             print(f"⚠️ Error al guardar la memoria: {e}")
 
     def load_memory(self):
-        """Carga la memoria previa desde el JSON si existe."""
+        """Carga la memoria previa desde el JSON si existe y es válida."""
         if os.path.exists(self.storage_path):
             try:
                 with open(self.storage_path, "r", encoding="utf-8") as f:
@@ -88,12 +85,15 @@ class ConversationalMemory:
                     self.exact_history = data.get("exact_history", [])
                     print(f"[i] Memoria híbrida cargada: Contexto general + {len(self.exact_history)} mensajes exactos.")
             except Exception as e:
-                print(f"⚠️ No se pudo cargar la memoria previa: {e}")
+                print(f"⚠️ No se pudo cargar la memoria previa (archivo corrupto o vacío): {e}")
 
     def clear_memory(self):
         """Reinicia la memoria por completo."""
         self.exact_history = []
         self.general_context = "La conversación acaba de comenzar y aún no hay temas previos detallados."
         if os.path.exists(self.storage_path):
-            os.remove(self.storage_path)
+            try:
+                os.remove(self.storage_path)
+            except Exception as e:
+                print(f"⚠️ Error al eliminar el archivo de memoria: {e}")
         print("[i] Memoria restablecida por completo.")

@@ -35,9 +35,12 @@ class LocalRAGEngine:
         for file in doc_files:
             file_path = os.path.join(self.doc_folder, file)
             try:
-                with open(file_path, "r", encoding="utf-8") as f:
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                     full_text = f.read()
                 
+                if not full_text.strip():
+                    continue
+
                 chunks = text_splitter.split_text(full_text)
                 ids = [f"{file}_chunk_{i}" for i in range(len(chunks))]
                 metadatas = [{"source": file} for _ in chunks]
@@ -54,8 +57,8 @@ class LocalRAGEngine:
             except Exception as e:
                 print(f"⚠️ Error procesando el archivo {file}: {e}")
 
-    def search_audacia_docs(self, query: str, n_results=30):
-        """Busca exclusivamente en la colección de AudacIA."""
+    def search_audacia_docs(self, query: str, n_results=10):
+        """Busca exclusivamente en la colección de AudacIA optimizando la cantidad de resultados."""
         try:
             results = self.col_audacia.query(query_texts=[query], n_results=n_results)
             documents = results.get("documents", [[]])[0]
@@ -64,7 +67,7 @@ class LocalRAGEngine:
             print(f"⚠️ Error en búsqueda de AudacIA: {e}")
             return None
 
-    def search_universidad_docs(self, query: str, n_results=30):
+    def search_universidad_docs(self, query: str, n_results=10):
         """Busca exclusivamente en la colección general de la Universidad Simón Bolívar."""
         try:
             results = self.col_universidad.query(query_texts=[query], n_results=n_results)
