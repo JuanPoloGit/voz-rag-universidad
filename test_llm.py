@@ -15,6 +15,7 @@ def mostrar_menu_comandos():
     print("  [4] 🧠 Auditar Memoria Episódica (Ver qué recuerda Hacu de ti)")
     print("  [5] 🎭 Cambiar Perfil de Audiencia (Técnico / Infantil / Artístico)")
     print("  [6] 🗑️ Restablecer toda la memoria (Corto y Largo Plazo)")
+    print("  [7] 🔄 Actualizar Base Documental (Deep Crawling institucional)")
     print("="*50)
     print("O simplemente escribe tu pregunta normalmente para hablar con Hacu.\n")
 
@@ -129,6 +130,21 @@ def iniciar_hacu():
             db.reset_all_memory(extractor.active_user)
             estado_trivia_activo = False
             print(f"🗑️ [Comando #6 Executed] ¡Memoria restablecida para '{extractor.active_user}'!")
+            continue
+
+        elif pregunta_usuario == "7":
+            print("\n🔄 [Comando #7 Executed] Iniciando rastreo profundo de la web institucional...")
+            try:
+                import asyncio
+                from institutional_scraper import ejecutar_scraping_profundo
+                asyncio.run(ejecutar_scraping_profundo())
+                
+                print("♻️ Recargando índice vectorial en ChromaDB...")
+                rag = LocalRAGEngine(doc_folder="./documents", db_path="./chroma_db")
+                context_builder.rag = rag
+                print("✅ ¡Base de conocimientos actualizada y sincronizada con éxito!\n")
+            except Exception as e:
+                print(f"❌ Error al actualizar los documentos institucionales: {str(e)}")
             continue
 
         # Detección automática de cambio de usuario por voz/texto (ej. "Me llamo Carlos")
