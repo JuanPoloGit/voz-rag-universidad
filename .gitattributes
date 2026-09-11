@@ -1,0 +1,12 @@
+# Normaliza los finales de linea: LF en el repositorio, lo que el sistema use en
+# el working copy. Sin esto, un checkout en Windows escribe CRLF y el mismo
+# arbol clonado en Linux (o construido en el contenedor) difiere del original.
+* text=auto eol=lf
+
+# Binarios: nunca convertir.
+*.gguf binary
+*.bin binary
+*.db binary
+*.sqlite3 binary
+*.png binary
+*.jpg binary
