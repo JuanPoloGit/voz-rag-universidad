@@ -3,13 +3,17 @@ venv/
 __pycache__/
 *.pyc
 
-# Modelos de IA locales (¡Pesados!)
+# Modelos de IA locales (pesados)
 models/*.gguf
 models/*.bin
 
-# Bases de datos y memoria dinámica
+# Indice vectorial y memoria dinamica (datos de visitantes: no versionar)
 chroma_db/
-exposicion_memory.json
+hacu_memory.db
+hacu_memory.db-wal
+hacu_memory.db-shm
+logs/
+pruebas/informes/
 
 # Variables de entorno y configuraciones locales
 .env

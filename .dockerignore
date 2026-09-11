@@ -2,5 +2,8 @@ venv/
 __pycache__/
 models/
 chroma_db/
-exposicion_memory.json
+logs/
+hacu_memory.db*
+.git/
 *.md
+!documents/*.md

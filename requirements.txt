@@ -1,10 +1,11 @@
-fastapi
-uvicorn
-chromadb
-llama-index
-llama-index-vector-stores-chroma
-llama-index-embeddings-huggingface
-sentence-transformers
-wikipedia-api
-langchain-text-splitters
-wikipedia
+# Dependencias reales del runtime de HACU.
+# llama-cpp-python se instala aparte con soporte CUDA (ver Dockerfile / entorno local):
+#   CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python
+llama-cpp-python>=0.3.0
+chromadb>=0.5.0
+langchain-text-splitters>=0.3.0
+
+# Embeddings multilingues del RAG. NO es opcional: con el embedding por defecto de
+# Chroma (entrenado en ingles) la recuperacion sobre el corpus en espanol baja de
+# 18/20 a 9/20 consultas. Medido con `python -m pruebas.recuperacion`.
+sentence-transformers>=3.0.0
