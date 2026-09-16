@@ -1,0 +1,19 @@
+# Capa de voz. Opcional: HACU arranca y funciona por escrito sin nada de esto.
+#   pip install -r requirements-voz.txt
+
+# Captura y reproduccion (PortAudio). En Linux hace falta ademas el paquete del
+# sistema: sudo apt install portaudio19-dev
+sounddevice>=0.4.6
+
+# Reconocimiento. CTranslate2 permite int8 en GPU: el modelo `small` ocupa ~0.5 GB
+# de VRAM y convive con el Llama de 8B dentro de los 12 GB de la portatil.
+faster-whisper>=1.0.0
+
+# Sintesis. Sin esto HACU habla igual, con la voz del sistema operativo (SAPI5 en
+# Windows), que es fea pero no hay que descargar nada.
+# La voz se baja aparte: python -m hacu.voz --descargar
+piper-tts>=1.2.0
+
+# Solo en Windows: da acceso a SAPI5 como respaldo del sintetizador.
+pywin32>=306; sys_platform == "win32"
+soundfile>=0.12.1   # solo para `python -m hacu.voz --transcribir`: leer un WAV del disco

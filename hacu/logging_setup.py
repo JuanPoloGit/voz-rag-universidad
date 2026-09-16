@@ -13,7 +13,7 @@ from pathlib import Path
 _FORMATO = "%(asctime)s | %(levelname)-8s | %(name)-18s | %(message)s"
 
 
-def configurar_logging(log_file: Path, debug_console: bool = False) -> logging.Logger:
+def configurar_logging(log_file: Path, debug_console: bool = False) -> logging.Logger:  # noqa: ARG001
     """Inicializa el logger raiz de HACU y devuelve el logger de la aplicacion."""
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -27,8 +27,13 @@ def configurar_logging(log_file: Path, debug_console: bool = False) -> logging.L
     archivo.setFormatter(logging.Formatter(_FORMATO))
     logger.addHandler(archivo)
 
+    # La consola se queda SIEMPRE en WARNING, tambien con --debug. El hilo de
+    # memoria escribe mientras HACU esta emitiendo tokens, y sus lineas se
+    # intercalaban en mitad de una frase o sobre el prompt del visitante. El
+    # diagnostico util en pantalla lo imprime la consola de operador, que sabe
+    # cuando puede hacerlo; el resto va integro al archivo.
     consola = logging.StreamHandler()
-    consola.setLevel(logging.DEBUG if debug_console else logging.WARNING)
+    consola.setLevel(logging.WARNING)
     consola.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
     logger.addHandler(consola)
 

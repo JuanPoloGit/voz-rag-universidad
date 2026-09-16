@@ -6,6 +6,10 @@ __pycache__/
 # Modelos de IA locales (pesados)
 models/*.gguf
 models/*.bin
+# Voces de Piper (~110 MB cada una): se bajan con `python -m hacu.voz --descargar`
+models/voz/
+# Cache de los modelos de reconocimiento que descarga faster-whisper
+.cache/huggingface/
 
 # Indice vectorial y memoria dinamica (datos de visitantes: no versionar)
 chroma_db/
@@ -14,6 +18,9 @@ hacu_memory.db-wal
 hacu_memory.db-shm
 logs/
 pruebas/informes/
+
+# Carpeta que crea la app de escritorio de Claude al entregar archivos
+Claude outputs/
 
 # Variables de entorno y configuraciones locales
 .env

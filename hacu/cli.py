@@ -15,6 +15,7 @@ from .config import AppConfig
 from .memory import HacuMemoryDB
 from .routing import Intencion
 from .session import HacuSession
+from .voz import ServicioDeVoz
 
 _SEPARADOR = "=" * 58
 
@@ -35,11 +36,13 @@ class HacuConsole:
         logger: logging.Logger,
         sesion: HacuSession,
         db: HacuMemoryDB,
+        voz: "ServicioDeVoz | None" = None,
     ) -> None:
         self._cfg = config
         self._log = logger.getChild("consola")
         self._sesion = sesion
         self._db = db
+        self._voz = voz
         self._activo = True
 
         self._comandos: dict[str, Callable[[], None]] = {
@@ -51,9 +54,18 @@ class HacuConsole:
             "6": self._cmd_reset_perfil,
             "7": self._cmd_purga_global,
             "8": self._cmd_gestionar_perfil,
+            "9": self._cmd_hablar,
+            "v": self._cmd_hablar,
             "0": self.mostrar_panel,
             "?": self.mostrar_panel,
             "menu": self.mostrar_panel,
+            # Alias por palabra. En la terminal integrada de VS Code, Ctrl+C se
+            # interpreta como copiar cuando hay texto seleccionado, asi que el
+            # operador se queda sin la via habitual de salir.
+            "salir": self._cmd_salir,
+            "exit": self._cmd_salir,
+            "quit": self._cmd_salir,
+            "q": self._cmd_salir,
         }
 
     # ------------------------------------------------------------------ panel
@@ -62,7 +74,7 @@ class HacuConsole:
         print("\n" + _SEPARADOR)
         print(" 🎛️  PANEL DE CONTROL DE HACU")
         print(_SEPARADOR)
-        print("  [1] 🚪 Apagar / Salir del sistema")
+        print("  [1] 🚪 Apagar / Salir del sistema  (o escribe 'salir')")
         print("  [2] 🧹 Limpiar chat inmediato (conserva memoria a largo plazo)")
         print("  [3] 🎮 Activar / Desactivar Modo Trivia")
         print("  [4] 🧠 Auditar memoria episodica del perfil activo")
@@ -70,6 +82,7 @@ class HacuConsole:
         print("  [6] 🗑️  Restablecer la memoria del perfil activo")
         print("  [7] ☢️  Purgar TODA la base de datos (todos los perfiles)")
         print("  [8] 👤 Gestionar perfil activo (fijar, listar, anonimizar)")
+        print("  [9] 🎤 Hablar por microfono (o escribe 'v')")
         print("  [0] Volver a mostrar este panel")
         print(_SEPARADOR)
         retencion = self._cfg.memory.retencion_horas
@@ -116,15 +129,64 @@ class HacuConsole:
                 self._log.error("Fallo atendiendo el turno", exc_info=True)
                 print("\n[!] Ocurrio un problema tecnico. El detalle quedo en el log.")
 
+    def _esperar_a_que_calle(self) -> None:
+        """No devuelve el prompt hasta que HACU termina de hablar.
+
+        El texto acaba de aparecer entero y la voz va por detras: sin esta espera
+        el operador ve el prompt, escribe lo siguiente y se pisa a si mismo.
+        Ctrl+C corta la frase, que es el mismo gesto que hace el visitante al
+        volver a pulsar el boton en la ventana.
+        """
+        if self._voz is None or not self._voz.hablando:
+            return
+        print("🔊 hablando... (Ctrl+C corta la voz)", end="", flush=True)
+        try:
+            self._voz.esperar_a_que_calle(timeout=180)
+            print("\r" + " " * 42 + "\r", end="", flush=True)
+        except KeyboardInterrupt:
+            # Solo se traga ESTE Ctrl+C, el que corta la frase. El siguiente cae
+            # en el `input` del bucle principal y cierra el sistema: si no, quien
+            # pulsa Ctrl+C para salir se queda encerrado cortando frases.
+            self._voz.silenciar()
+            print("\r[!] Voz cortada. Pulsa Ctrl+C otra vez o escribe 'salir' para apagar."
+                  + " " * 6)
+
+    def _cmd_hablar(self) -> None:
+        """Pulsar-para-hablar en consola: Enter abre el microfono, Enter lo cierra."""
+        if self._voz is None or not self._voz.disponible:
+            print("[!] No hay microfono disponible. Arranca con --voz (y revisa "
+                  "`python -m hacu.voz`).")
+            return
+        input("🎤 Enter para EMPEZAR a grabar...")
+        self._voz.iniciar_escucha()
+        input("🔴 Grabando. Enter para TERMINAR...")
+        print("   transcribiendo...")
+        texto = self._voz.detener_escucha()
+        if not texto.strip():
+            print("[!] No se entendio nada.")
+            return
+        print(f"Visitante (por voz): {texto}")
+        self._responder(texto)
+
     def _responder(self, texto: str) -> None:
         intencion, segundos_router = self._sesion.clasificar(texto)
         self._encabezado_turno(intencion, segundos_router)
 
+        # El locutor va troceando la respuesta en frases y hablando la primera
+        # mientras el modelo escribe la segunda.
+        locutor = self._voz.locutor() if self._voz and self._voz.puede_hablar else None
+
+        def emitir(fragmento: str) -> None:
+            print(fragmento, end="", flush=True)
+            if locutor is not None:
+                locutor.alimentar(fragmento)
+
         print("\n--- HACU ---")
-        resultado = self._sesion.turno(
-            texto, on_token=lambda t: print(t, end="", flush=True), intencion=intencion
-        )
+        resultado = self._sesion.turno(texto, on_token=emitir, intencion=intencion)
         print("\n" + "-" * 35)
+        if locutor is not None:
+            locutor.cerrar()
+            self._esperar_a_que_calle()
 
         if resultado.migrado and self._cfg.debug_console:
             print(f"[i] 👤 Perfil migrado: {resultado.usuario_anterior} -> {resultado.usuario}")

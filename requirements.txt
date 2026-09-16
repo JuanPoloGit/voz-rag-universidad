@@ -9,3 +9,7 @@ langchain-text-splitters>=0.3.0
 # Chroma (entrenado en ingles) la recuperacion sobre el corpus en espanol baja de
 # 18/20 a 9/20 consultas. Medido con `python -m pruebas.recuperacion`.
 sentence-transformers>=3.0.0
+
+# La voz (microfono, reconocimiento y sintesis) y la ventana grafica van en
+# requirements-voz.txt y requirements-ui.txt. Son opcionales a proposito: el
+# nucleo de HACU tiene que poder arrancar en una maquina sin tarjeta de sonido.

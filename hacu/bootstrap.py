@@ -115,7 +115,8 @@ def construir(
 
     sesion = HacuSession(
         llm=llm, db=db, router=FastRouter(), identity=identity, extractor=extractor,
-        context_builder=ContextBuilder(db, rag, config.rag, config.memory), logger=logger,
+        context_builder=ContextBuilder(db, rag, config.rag, config.memory, config.default_user),
+        logger=logger,
     )
 
     avisar("Precalentando el modelo...")

@@ -18,7 +18,7 @@ from .extractor import BackgroundMemoryExtractor
 from .identity import IdentityResolver
 from .llm import LlmService
 from .memory import HacuMemoryDB
-from .routing import FastRouter, Intencion
+from .routing import FastRouter, Intencion, es_seguimiento, pide_desarrollo
 
 
 @dataclass(frozen=True)
@@ -34,6 +34,10 @@ class ResultadoTurno:
     tokens: int
     segundos: float
     coletilla_descartada: bool = False
+    adulaciones_quitadas: int = 0
+    fugas_limpiadas: int = 0
+    extenso: bool = False
+    truncada: bool = False
 
     @property
     def tokens_por_segundo(self) -> float:
@@ -61,6 +65,8 @@ class HacuSession:
         self._context = context_builder
         self._log = logger.getChild("sesion")
         self.estado = EstadoSesion()
+        # Ultimo dominio reconocido; sostiene las preguntas de seguimiento.
+        self._dominio_previo: Intencion | None = None
 
     @property
     def usuario_activo(self) -> str:
@@ -71,9 +77,21 @@ class HacuSession:
         return self._identity
 
     def clasificar(self, texto: str) -> tuple[Intencion, float]:
-        """Enruta el texto y devuelve (intencion, segundos empleados)."""
+        """Enruta el texto y devuelve (intencion, segundos empleados).
+
+        Cuando el router no reconoce dominio pero el mensaje se apoya en lo ya
+        dicho, se hereda el dominio del ultimo turno que si lo tuvo. Es mas fiable
+        que dejarselo a la distancia semantica, que no sabe de que se venia
+        hablando.
+        """
         inicio = time.perf_counter()
-        intencion = Intencion.UNIVERSIDAD if self.estado.trivia else self._router.clasificar(texto)
+        if self.estado.trivia:
+            return Intencion.UNIVERSIDAD, time.perf_counter() - inicio
+
+        intencion = self._router.clasificar(texto)
+        if intencion is Intencion.GENERAL and self._dominio_previo and es_seguimiento(texto):
+            intencion = self._dominio_previo
+            self._log.debug("Seguimiento: se hereda el dominio %s", intencion.value)
         return intencion, time.perf_counter() - inicio
 
     def turno(
@@ -92,6 +110,9 @@ class HacuSession:
         if intencion is None:
             intencion, _ = self.clasificar(texto)
 
+        if intencion is not Intencion.GENERAL:
+            self._dominio_previo = intencion
+
         usuario = self._identity.usuario_activo
         mensajes = self._context.build_messages(texto, intencion, usuario, self.estado)
 
@@ -107,15 +128,31 @@ class HacuSession:
             if on_token is not None:
                 on_token(texto)
 
-        for fragmento in self._llm.stream_chat(mensajes):
+        # Una peticion de desarrollo ("explicame cada proyecto") necesita mas techo
+        # que una pregunta de tarima. Y hay que saber POR QUE termino la
+        # generacion: si fue por tope, lo retenido es media frase y no se emite.
+        extenso = pide_desarrollo(texto)
+        motivo: list[str | None] = [None]
+
+        for fragmento in self._llm.stream_chat(mensajes, extenso=extenso,
+                                               al_terminar=motivo.append):
             tokens += 1
             emitir(retenedor.alimentar(fragmento))
-        emitir(retenedor.cerrar())
+        emitir(retenedor.cerrar(incompleta=motivo[-1] == "length"))
         segundos = time.perf_counter() - inicio
 
         respuesta = "".join(emitido).strip()
         if retenedor.descartada:
             self._log.debug("Coletilla de cierre descartada (regla 12)")
+        if retenedor.adulaciones_quitadas:
+            self._log.debug("Frases de adulacion filtradas: %d", retenedor.adulaciones_quitadas)
+        if retenedor.fugas_limpiadas:
+            self._log.debug("Fugas del andamiaje limpiadas: %d", retenedor.fugas_limpiadas)
+        if retenedor.truncada:
+            self._log.warning(
+                "Respuesta cortada por tope de tokens (extenso=%s); se descarto la frase "
+                "incompleta. Si se repite, subir chat_max_tokens_extenso.", extenso
+            )
         self._db.add_message(usuario, "user", texto)
         self._db.add_message(usuario, "assistant", respuesta)
         self._extractor.encolar(usuario, texto)
@@ -130,4 +167,8 @@ class HacuSession:
             tokens=tokens,
             segundos=segundos,
             coletilla_descartada=retenedor.descartada,
+            adulaciones_quitadas=retenedor.adulaciones_quitadas,
+            fugas_limpiadas=retenedor.fugas_limpiadas,
+            extenso=extenso,
+            truncada=retenedor.truncada,
         )

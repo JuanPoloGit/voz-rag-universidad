@@ -15,7 +15,7 @@ import re
 import subprocess
 import threading
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from typing import Any
 
 from .config import PROJECT_ROOT, ModelConfig
@@ -104,20 +104,38 @@ class LlmService:
 
     # ------------------------------------------------------------- inferencia
 
-    def stream_chat(self, mensajes: Sequence[Mensaje]) -> Iterator[str]:
-        """Genera la respuesta de escena token a token manteniendo el lock durante todo el stream."""
+    def stream_chat(
+        self,
+        mensajes: Sequence[Mensaje],
+        extenso: bool = False,
+        al_terminar: Callable[[str | None], None] | None = None,
+    ) -> Iterator[str]:
+        """Genera la respuesta de escena token a token manteniendo el lock durante todo el stream.
+
+        `extenso` sube el tope solo en las preguntas que piden desarrollo, sin
+        relajarlo para todas: con el tope corto, "explicame cada proyecto" se
+        cortaba a mitad de la cuarta frase. `al_terminar` recibe el motivo de finalizacion
+        que devuelve llama.cpp ("stop" o "length"): es la unica forma fiable de
+        saber que la respuesta se corto a mitad de palabra y no por voluntad del
+        modelo.
+        """
+        motivo: str | None = None
         with self._lock:
             stream = self._modelo.create_chat_completion(
                 messages=list(mensajes),
-                max_tokens=self._cfg.chat_max_tokens,
+                max_tokens=(self._cfg.chat_max_tokens_extenso if extenso
+                            else self._cfg.chat_max_tokens),
                 temperature=self._cfg.chat_temperature,
                 stream=True,
             )
             for chunk in stream:
-                delta = chunk["choices"][0].get("delta", {})
-                contenido = delta.get("content")
+                eleccion = chunk["choices"][0]
+                motivo = eleccion.get("finish_reason") or motivo
+                contenido = eleccion.get("delta", {}).get("content")
                 if contenido:
                     yield contenido
+        if al_terminar is not None:
+            al_terminar(motivo)
 
     def completar_json(self, prompt: str, max_tokens: int) -> dict[str, Any] | None:
         """Ejecuta una tarea de utilidad exigiendo un objeto JSON como salida.

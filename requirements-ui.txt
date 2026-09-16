@@ -1,0 +1,3 @@
+# Interfaz grafica de exhibicion. Opcional: sin esto queda la consola.
+#   pip install -r requirements-ui.txt
+PySide6>=6.6.0
