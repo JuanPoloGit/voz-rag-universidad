@@ -1,27 +1,47 @@
-# Entornos virtuales y compilaciones
+# ---------------------------------------------------------------- entornos
 venv/
+.venv/
+env/
 __pycache__/
 *.pyc
+*.egg-info/
 
-# Modelos de IA locales (pesados)
+# ------------------------------------------------- modelos y caches pesados
+# El .gguf son ~4,9 GB y las voces de Piper ~110 MB cada una: no van al
+# repositorio ni con Git LFS. Se descargan (ver docs/instalacion.md).
 models/*.gguf
 models/*.bin
-# Voces de Piper (~110 MB cada una): se bajan con `python -m hacu.voz --descargar`
 models/voz/
-# Cache de los modelos de reconocimiento que descarga faster-whisper
 .cache/huggingface/
 
-# Indice vectorial y memoria dinamica (datos de visitantes: no versionar)
+# ------------------------------------------- datos generados en ejecucion
+# Indice vectorial: se reconstruye solo desde documents/ en cada arranque.
 chroma_db/
+# Memoria de visitantes. NO versionar: son datos personales (Ley 1581/2012).
 hacu_memory.db
 hacu_memory.db-wal
 hacu_memory.db-shm
 logs/
+# Informes de las baterias y los guiones: miden una version concreta del
+# corpus, asi que envejecen mal y no sirven como referencia despues.
 pruebas/informes/
+# Grabaciones de diagnostico de `python -m hacu.voz --guardar`
+*.wav
+
+# Intermedios del manual. El PDF final SI se versiona: es el entregable que lee
+# quien no va a clonar el repositorio. Se regenera con build/README.md.
+build/manual.md
+build/vista/
+
+# ------------------------------------------------------- basura de tooling
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
 
 # Carpeta que crea la app de escritorio de Claude al entregar archivos
 Claude outputs/
 
-# Variables de entorno y configuraciones locales
+# ------------------------------------------------------ entorno y editores
 .env
 .vscode/
+.idea/

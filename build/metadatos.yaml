@@ -1,0 +1,27 @@
+---
+title: "HACU"
+subtitle: "Asistente expositor de AudacIA — documentación técnica y guía de replicación"
+author: "AudacIA · Centro de Excelencia en IA y Robótica · Universidad Simón Bolívar"
+lang: es-CO
+documentclass: report
+classoption:
+  - oneside
+  - 11pt
+geometry:
+  - top=2.4cm
+  - bottom=2.4cm
+  - left=2.6cm
+  - right=2.6cm
+mainfont: "TeX Gyre Pagella"
+sansfont: "TeX Gyre Heros"
+monofont: "DejaVu Sans Mono"
+monofontoptions:
+  - Scale=0.82
+fontsize: 11pt
+linestretch: 1.08
+colorlinks: true
+toc: true
+toc-depth: 2
+numbersections: true
+secnumdepth: 0
+---

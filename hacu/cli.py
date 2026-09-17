@@ -106,6 +106,7 @@ class HacuConsole:
 
     def ejecutar(self) -> None:
         self.mostrar_panel()
+        self.saludar()
         while self._activo:
             try:
                 entrada = input("\nVisitante / Operador: ").strip()
@@ -128,6 +129,22 @@ class HacuConsole:
             except Exception:
                 self._log.error("Fallo atendiendo el turno", exc_info=True)
                 print("\n[!] Ocurrio un problema tecnico. El detalle quedo en el log.")
+
+    def saludar(self) -> None:
+        """Lo primero que dice HACU, antes de que nadie le pregunte nada.
+
+        Se escribe y se habla igual que una respuesta normal —y queda igual de
+        registrada—, pero no la genera el modelo: es la frase fija de apertura.
+        """
+        texto = self._sesion.saludar(self._cfg.saludo_inicial)
+        if not texto:
+            return
+        print("\n--- HACU ---")
+        print(texto)
+        print("-" * 35)
+        if self._voz is not None and self._voz.puede_hablar:
+            self._voz.decir(texto)
+            self._esperar_a_que_calle()
 
     def _esperar_a_que_calle(self) -> None:
         """No devuelve el prompt hasta que HACU termina de hablar.
@@ -161,12 +178,22 @@ class HacuConsole:
         self._voz.iniciar_escucha()
         input("🔴 Grabando. Enter para TERMINAR...")
         print("   transcribiendo...")
-        texto = self._voz.detener_escucha()
-        if not texto.strip():
+        escucha = self._voz.detener_escucha()
+        if not escucha:
             print("[!] No se entendio nada.")
             return
-        print(f"Visitante (por voz): {texto}")
-        self._responder(texto)
+        if escucha.cambio_de_hablante:
+            self._cambio_de_visitante(escucha.similitud)
+        print(f"Visitante (por voz): {escucha.texto}")
+        self._responder(escucha.texto)
+
+    def _cambio_de_visitante(self, similitud: float | None) -> None:
+        """Otra persona se acerco: se cierra el perfil anterior y se empieza limpio."""
+        anterior = self._sesion.usuario_activo
+        self._sesion.identidad.reiniciar()
+        self._voz.olvidar_hablante() if self._voz else None
+        detalle = f" (similitud {similitud:.2f})" if similitud is not None else ""
+        print(f"[i] 👥 Suena otra persona{detalle}. Perfil anterior ({anterior}) cerrado.")
 
     def _responder(self, texto: str) -> None:
         intencion, segundos_router = self._sesion.clasificar(texto)

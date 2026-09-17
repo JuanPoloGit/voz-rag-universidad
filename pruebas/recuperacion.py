@@ -23,6 +23,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from hacu.config import PROJECT_ROOT, RagConfig
+from hacu.context import recuperar_de_audacia
 from hacu.rag import LocalRAGEngine
 from hacu.routing import Intencion, normalizar
 
@@ -53,32 +54,68 @@ AUD = Intencion.AUDACIA
 UNI = Intencion.UNIVERSIDAD
 
 CONSULTAS: tuple[ConsultaMedida, ...] = (
-    # --- AudacIA -----------------------------------------------------------
-    ConsultaMedida("¿Qué es AudacIA exactamente?", AUD, ("Centro de Investigación",)),
-    ConsultaMedida("¿Qué hace el tanque?", AUD, ("Soil Sensor",)),
-    ConsultaMedida("¿Cuánto costó construir el tanque?", AUD, ("Soil Sensor",)),
-    ConsultaMedida("Cuéntame sobre el proyecto Orion", AUD, ("Cinturón inteligente",)),
+    # --- Proyectos de AudacIA: la ficha concreta ---------------------------
+    ConsultaMedida("Cuéntame todo sobre Mary", AUD, ("Goldberg",)),
+    ConsultaMedida("¿Cómo funciona Patrii?", AUD, ("glaucoma",)),
+    ConsultaMedida("¿Qué hace VART?", AUD, ("prematuros",)),
+    ConsultaMedida("¿Qué es Neupeek?", AUD, ("neumonía",)),
+    ConsultaMedida("Háblame del ROV submarino", AUD, ("turbidez",)),
+    ConsultaMedida("¿Qué es Guajira Travel?", AUD, ("Guajira",)),
+    ConsultaMedida("¿Para qué sirve Dilce?", AUD, ("eléctric",)),
+    ConsultaMedida("¿Qué es Vallenato Master?", AUD, ("rítmica",)),
+    ConsultaMedida("¿Qué hace el proyecto Tanque?", AUD, ("Soil Sensor",)),
+    ConsultaMedida("Cuéntame sobre el proyecto Orion", AUD, ("proximidad",)),
     ConsultaMedida("¿Qué es Holosand?", AUD, ("Kinect",)),
-    ConsultaMedida("¿Tienen algo para agricultura?", AUD, ("Soil Sensor",)),
-    ConsultaMedida("¿Trabajan con trenes o vías férreas?", AUD, ("Rieles",)),
-    ConsultaMedida("¿Hay algo interactivo para niños?", AUD, ("Kinect",)),
-    ConsultaMedida("¿Qué hacen para prevenir accidentes de tránsito?", AUD, ("Fatiga",)),
-    ConsultaMedida(
-        "¿Cuáles son todos los proyectos de AudacIA?", AUD,
-        ("Tanque", "Programables", "Rieles", "Holosand", "Fatiga", "Orion"), todos=True,
-    ),
+    ConsultaMedida("¿Tienen algo para agricultura?", AUD, ("cultivo",)),
+    ConsultaMedida("¿Trabajan con trenes o vías férreas?", AUD, ("rieles",)),
+    # Varias respuestas son correctas: la arena interactiva, el kit pedagógico y
+    # los robots didácticos. Exigir solo una era un defecto de la prueba.
+    ConsultaMedida("¿Hay algo interactivo para niños?", AUD, ("Kinect", "Calvin", "Robots Programables")),
+    ConsultaMedida("¿Qué hacen para prevenir accidentes de tránsito?", AUD, ("fatiga",)),
+    ConsultaMedida("¿Tienen algo de salud mental?", AUD, ("ansiedad",)),
+    # --- El centro: lo institucional, que compite con 37 fichas ------------
+    ConsultaMedida("¿Qué patentes tiene el centro?", AUD, ("turbidez",)),
+    ConsultaMedida("¿Qué publicaciones científicas tienen?", AUD, ("spectroscopy",)),
+    ConsultaMedida("¿Quién dirige AudacIA?", AUD, ("Villarreal",)),
+    ConsultaMedida("¿Dónde queda AudacIA?", AUD, ("Eureka",)),
+    ConsultaMedida("¿Qué reconocimientos tiene AudacIA?", AUD, ("OEA", "MinCiencias"), todos=True),
+    ConsultaMedida("¿Cuántos núcleos de procesamiento tiene?", AUD, ("35.000",)),
+    ConsultaMedida("¿Qué servicios ofrece el centro?", AUD, ("prototipado",)),
+    ConsultaMedida("¿Cuáles son los objetivos de AudacIA?", AUD, ("apropiación social",)),
     # --- Universidad -------------------------------------------------------
     ConsultaMedida("¿Quién es el rector actualmente?", UNI, ("Consuegra Bolívar",)),
     ConsultaMedida("¿En qué año se fundó?", UNI, ("1972",)),
     ConsultaMedida("¿Cuál es la historia de la Universidad Simón Bolívar?", UNI, ("1972",)),
     ConsultaMedida("¿Qué facultades tiene la universidad?", UNI, ("Facultad de Ingenierías",)),
-    ConsultaMedida("¿Qué carreras de pregrado puedo estudiar aquí?", UNI, ("Ingeniería de Sistemas",)),
-    ConsultaMedida("¿Dónde queda la universidad?", UNI, ("Carrera 59",)),
-    ConsultaMedida("¿Cuántos doctorados ofrecen?", UNI, ("doctorados",)),
+    ConsultaMedida("¿Qué carreras de pregrado puedo estudiar aquí?", UNI, ("Ing. de Sistemas",)),
+    ConsultaMedida("¿Dónde queda la universidad?", UNI, ("El Prado",)),
     ConsultaMedida("¿Puedo estudiar medicina aquí?", UNI, ("Medicina",)),
     ConsultaMedida("¿Qué es MacondoLab?", UNI, ("MacondoLab",)),
-    ConsultaMedida("¿La universidad está acreditada?", UNI, ("Acreditación Institucional",)),
+    ConsultaMedida("¿La universidad está acreditada?", UNI, ("Acreditación",)),
+    ConsultaMedida("¿Hay doctorado en inteligencia artificial?", UNI, ("Doctorado en Inteligencia Artificial",)),
+    ConsultaMedida("¿Tienen sede en Cúcuta?", UNI, ("Cúcuta",)),
+    ConsultaMedida("¿Qué es el distrito Eureka?", UNI, ("Eureka",)),
 )
+
+# El catalogo NO se mide aqui: no se recupera por similitud sino que se carga
+# entero (`cargar_indice`), asi que su prueba es "¿estan los 32?" y vive en
+# `comprobar_indice`.
+PROYECTOS_DEL_INDICE: tuple[str, ...] = (
+    "Mary", "Patrii", "VART", "Neupeek", "Fractura Schatzker", "Sahli", "SkinnIA", "Camille",
+    "Bucólicos", "Detección de Explosivos", "Detección de Petróleo in situ", "Biotecnia",
+    "Health-Growers", "Victa", "Huellas del Maestro", "Pipemaster", "Vallenato Master",
+    "Guajira Travel", "ROV Submarino", "Adinel", "Calvin", "Mario", "Mia", "Dilce", "Solenium",
+    "Fellowship fAIr LAC", "Proyecto Tanque", "Robots Programables Avanzados",
+    "Detección de Juntas de Rieles", "Holosand", "Detección de Fatiga Visual", "Orion",
+)
+
+
+def comprobar_indice(motor: LocalRAGEngine) -> tuple[int, list[str]]:
+    """El indice tiene que traer los 32 proyectos, no una muestra."""
+    indice = motor.cargar_indice(Intencion.AUDACIA) or ""
+    plano = normalizar(indice)
+    faltan = [p for p in PROYECTOS_DEL_INDICE if normalizar(p) not in plano]
+    return len(PROYECTOS_DEL_INDICE) - len(faltan), faltan
 
 
 def medir(config: RagConfig, n_results: int, logger: logging.Logger) -> tuple[int, list[str]]:
@@ -86,10 +123,19 @@ def medir(config: RagConfig, n_results: int, logger: logging.Logger) -> tuple[in
     motor = LocalRAGEngine(config, logger)
     motor.sincronizar_documentos()
 
+    presentes, faltan = comprobar_indice(motor)
     aciertos = 0
-    detalle: list[str] = []
+    detalle: list[str] = [
+        f"  {'OK  ' if not faltan else 'MISS'} [{presentes}/{len(PROYECTOS_DEL_INDICE)}] "
+        f"índice-catálogo completo" + (f" — faltan {faltan}" if faltan else "")
+    ]
     for consulta in CONSULTAS:
-        contexto = motor.buscar(consulta.intencion, consulta.texto, n_results=n_results)
+        # El mismo camino que usa HACU en escena: para AudacIA, la politica de
+        # profundidad; para la universidad, la busqueda directa.
+        if consulta.intencion is AUD:
+            contexto = recuperar_de_audacia(motor, config, consulta.texto, consulta.texto, n_results)
+        else:
+            contexto = motor.buscar(consulta.intencion, consulta.texto, n_results=n_results)
         ok = consulta.acierta(contexto)
         aciertos += ok
         hallados, total = consulta.aciertos(contexto)

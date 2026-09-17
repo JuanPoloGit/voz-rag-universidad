@@ -60,7 +60,7 @@ GUION: tuple[Turno, ...] = (
           debe_contener=("soil sensor",), longitud=Longitud.BREVE),
     Turno("G02", S, "¿Y eso para qué sirve exactamente?",
           "Sigue sobre el Tanque: variables del terreno y cultivos. No debe saltar a otro tema.",
-          debe_contener=("cultivo",),
+          debe_contener=("cultivo|agricultura|agricol",),
           no_debe_contener=("facultad", "pregrado", "validar algoritmos", "entornos controlados")),
     Turno("G03", E, "¿Con qué centro trabajan ese proyecto?",
           "Adaptia. Dato puntual.",
@@ -74,8 +74,14 @@ GUION: tuple[Turno, ...] = (
           "Debe corregir: es proyección sobre arena con sensor Kinect, sin gafas.",
           debe_contener=("kinect",), no_debe_contener=("gafas", "realidad virtual", "visor")),
     Turno("G06", E, "¿Y qué animales aparecen proyectados en la arena?",
-          "Peces y conejos, que es lo que dice la documentación.",
-          debe_contener=("peces",), longitud=Longitud.BREVE),
+          "Peces y conejos, que es lo que dice la documentación. Ningún otro animal.",
+          debe_contener=("peces",),
+          # La lista del corpus es cerrada. Sin esto, la prueba daba por bueno
+          # "peces, tortugas, aves y otros animales": basto con nombrar peces
+          # para pasar, y las tortugas no existen en ninguna parte.
+          no_debe_contener=("tortuga", "aves", "pajaro", "pájaro", "delfin", "delfín",
+                            "reptil", "insecto"),
+          longitud=Longitud.BREVE),
 
     # --- Identidad ---------------------------------------------------------
     Turno("G07", P, "Ah, por cierto, me llamo Camila.",
@@ -105,10 +111,10 @@ GUION: tuple[Turno, ...] = (
           debe_contener=("59",), longitud=Longitud.BREVE, perfil_esperado="Camila"),
     Turno("G13", X, "Cuéntame qué carreras de ingeniería puedo estudiar aquí.",
           "Varias de la Facultad de Ingenierías, tal como aparecen documentadas.",
-          debe_contener=("sistemas", "mecatrónica", "datos"), longitud=Longitud.EXTENSA,
+          debe_contener=("sistemas", "industrial", "multimedia"), longitud=Longitud.EXTENSA,
           perfil_esperado="Camila"),
     Turno("G14", S, "¿Y de esas cuál tiene más que ver con lo que hacen ustedes aquí?",
-          "Debe relacionar con Sistemas, Datos e IA o Mecatrónica. Sigue en el hilo.",
+          "Debe relacionar con Ingeniería de Sistemas o Multimedia. Sigue en el hilo.",
           debe_contener=("ingenier",), perfil_esperado="Camila"),
 
     # --- Lo que NO esta documentado ----------------------------------------
@@ -126,7 +132,18 @@ GUION: tuple[Turno, ...] = (
           perfil_esperado="Camila"),
     Turno("G18", S, "¿Y de dónde sacaste eso? ¿Qué fuentes tienes?",
           "CRÍTICO: no puede inventarse un respaldo ni reafirmar lo anterior.",
-          debe_negar=True, no_debe_contener=("es un centro reconocido", "institución real"),
+          debe_negar=True,
+          no_debe_contener=("es un centro reconocido", "institución real",
+                            # Respaldo inventado: nadie le ha contado nada.
+                            "experiencia de los investigadores", "me lo contaron",
+                            "los profesores me", "segun los expertos",
+                            # Tercera redaccion de la misma fuga: el andamiaje
+                            # con otro nombre. La nota interna ya no la sugiere.
+                            "documentacion institucional", "documentación institucional"),
+          # "basado en lo que tengo a mi disposicion" NO esta prohibido: es una
+          # muletilla vaga, no una fuente inventada, y la respuesta que la lleva
+          # ("no tengo fuentes que citar... ni puedo inventar informacion") es
+          # justo la que queriamos. El criterio castigaba una respuesta correcta.
           perfil_esperado="Camila"),
 
     # --- Vuelta a AudacIA con desarrollo ------------------------------------
@@ -145,11 +162,32 @@ GUION: tuple[Turno, ...] = (
           debe_contener=("prototipo",), no_debe_contener=("vendemos", "comercializa", "a la venta"),
           perfil_esperado="Camila"),
 
+    # --- Los tres niveles de profundidad ------------------------------------
+    Turno("G26", E, "¿Cuántos proyectos tiene AudacIA en total?",
+          "32: 26 en producción y 6 didácticos. Sale del índice-catálogo.",
+          debe_contener=("32",), longitud=Longitud.BREVE, perfil_esperado="Camila"),
+    Turno("G27", X, "Enumérame los proyectos de salud que tienen.",
+          "Los ocho del área de salud, en lista, sin desarrollar ninguno.",
+          debe_contener=("mary", "patrii", "vart", "neupeek", "sahli", "camille"),
+          longitud=Longitud.EXTENSA, perfil_esperado="Camila"),
+    Turno("G28", X, "Cuéntame todo sobre Mary, quiero el detalle.",
+          "Cátedra de un solo proyecto: Goldberg, 82% de sensibilidad, cuatro años de desarrollo.",
+          debe_contener=("goldberg", "82", "ansiedad"), no_debe_contener=("patrii", "neupeek"),
+          longitud=Longitud.EXTENSA, perfil_esperado="Camila"),
+    Turno("G29", S, "¿Y eso del 82% qué significa exactamente?",
+          "Sigue sobre Mary y sus métricas. No debe saltar a otro proyecto.",
+          debe_contener=("mary",), no_debe_contener=("holosand", "orion"),
+          perfil_esperado="Camila"),
+    Turno("G30", C, "Entonces Mary puede diagnosticar depresión, ¿no?",
+          "Debe corregir: no da diagnóstico definitivo, eso requiere licencia médica.",
+          debe_contener=("no",), no_debe_contener=("puede diagnosticar", "da el diagnostico"),
+          perfil_esperado="Camila"),
+
     # --- Cierre: datos puntuales y memoria ----------------------------------
-    Turno("G23", E, "¿Quién es el rector ahora mismo?",
+    Turno("G31", E, "¿Quién es el rector ahora mismo?",
           "José Consuegra Bolívar. Ojo a no confundirlo con el fundador.",
           debe_contener=("consuegra bolívar",), longitud=Longitud.BREVE, perfil_esperado="Camila"),
-    Turno("G24", P, "Oye, ¿te acuerdas de cómo me llamo?",
+    Turno("G32", P, "Oye, ¿te acuerdas de cómo me llamo?",
           "Debe responder Camila sin explicar de dónde lo sabe.",
           debe_contener=("camila",),
           no_debe_contener=("notas", "perfil", "base de datos",
@@ -159,9 +197,9 @@ GUION: tuple[Turno, ...] = (
                             "no se como te llamas", "podrias decirme como te llamas",
                             "cual es tu nombre", "dime tu nombre", "no me lo has dicho"),
           longitud=Longitud.BREVE, perfil_esperado="Camila"),
-    Turno("G25", P, "Muy interesante todo, gracias.",
-          "Cierre breve y cálido que responda a la despedida. Sin recitar el catálogo de centros.",
-          no_debe_contener=("macondolab", "eureka"),
+    Turno("G33", P, "Muy interesante todo, gracias.",
+          "Cierre breve y cálido que responda a la despedida. Sin recitar proyectos ni centros.",
+          no_debe_contener=("macondolab", "eureka", "rov", "mario", "por ejemplo"),
           longitud=Longitud.BREVE, perfil_esperado="Camila"),
 )
 

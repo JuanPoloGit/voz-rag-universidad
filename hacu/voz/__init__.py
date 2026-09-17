@@ -12,10 +12,12 @@ exhibicion sin sonido es mala, pero una exhibicion caida es peor.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 from ..config import VozConfig
 from .deteccion import DetectorDeVoz, Estado, ParametrosVoz, nivel_rms, umbral_desde_ruido
 from .dispositivos import Dispositivo, comprobar, listar_dispositivos
+from .hablantes import Cambio, DetectorDeHablante
 from .microfono import AudioNoDisponible, Microfono
 from .segmentador import SegmentadorDeFrases
 from .sintetizador import (
@@ -29,13 +31,25 @@ from .sintetizador import (
 from .transcriptor import Transcriptor, TranscriptorMudo, TranscriptorWhisper
 
 __all__ = [
-    "AudioNoDisponible", "DetectorDeVoz", "Dispositivo", "Estado", "Locutor",
+    "AudioNoDisponible", "Cambio", "DetectorDeHablante", "ResultadoEscucha", "DetectorDeVoz", "Dispositivo", "Estado", "Locutor",
     "Microfono", "ParametrosVoz", "SegmentadorDeFrases", "ServicioDeVoz",
     "Sintetizador", "SintetizadorMudo", "Transcriptor", "TranscriptorMudo",
     "TranscriptorWhisper", "cadena_de_motores", "comprobar", "crear_sintetizador",
     "listar_dispositivos",
     "localizar_piper", "nivel_rms", "sintetizar_a_archivo", "umbral_desde_ruido",
 ]
+
+
+@dataclass(frozen=True)
+class ResultadoEscucha:
+    """Lo que dijo el visitante y si es el mismo visitante de antes."""
+
+    texto: str
+    cambio_de_hablante: bool = False
+    similitud: float | None = None
+
+    def __bool__(self) -> bool:
+        return bool(self.texto.strip())
 
 
 class Locutor:
@@ -70,6 +84,7 @@ class ServicioDeVoz:
         self._cfg = config
         self._log = logger.getChild("voz")
         self._micro: Microfono | None = None
+        self._hablantes: DetectorDeHablante | None = None
         self._transcriptor: Transcriptor = TranscriptorMudo()
         self._tts: Sintetizador = SintetizadorMudo()
         self._umbral = 0.0
@@ -81,9 +96,19 @@ class ServicioDeVoz:
         # El oido es opcional por separado: `solo_salida` monta la boca y se
         # ahorra el modelo de reconocimiento entero.
         if config.activa and not config.solo_salida:
+            # El reconocedor se construye aparte del microfono a proposito. Antes
+            # compartian el try, y en una maquina sin entrada de audio —una sesion
+            # remota, por ejemplo— la excepcion del microfono dejaba tambien sin
+            # reconocedor: `--transcribir fichero.wav`, que existe justamente para
+            # esa situacion, devolvia cadena vacia sin decir por que.
+            self._transcriptor = TranscriptorWhisper(config, logger)
+            if config.detectar_cambio_de_hablante:
+                self._hablantes = DetectorDeHablante(
+                    config.umbral_hablante, config.minimo_segundos_hablante,
+                    config.frecuencia, logger,
+                )
             try:
                 self._micro = Microfono(config, logger)
-                self._transcriptor = TranscriptorWhisper(config, logger)
             except AudioNoDisponible as error:
                 self.problemas.append(str(error))
                 self._log.warning("Sin captura de audio: %s", error)
@@ -130,18 +155,31 @@ class ServicioDeVoz:
         self.silenciar()
         self._micro.iniciar()
 
-    def detener_escucha(self) -> str:
-        """Cierra el microfono y devuelve lo que dijo el visitante."""
+    def detener_escucha(self) -> ResultadoEscucha:
+        """Cierra el microfono y devuelve lo dicho, y si cambio quien habla."""
         if self._micro is None:
-            return ""
-        return self._transcriptor.transcribir(self._micro.detener())
+            return ResultadoEscucha("")
+        return self._analizar(self._micro.detener())
 
-    def escuchar_una_frase(self, cancelado=None) -> str:
+    def escuchar_una_frase(self, cancelado=None) -> ResultadoEscucha:
         """Escucha automatica: espera una frase entera. Bloquea, va en un hilo."""
         if self._micro is None:
-            return ""
+            return ResultadoEscucha("")
         audio = self._micro.escuchar_hasta_silencio(self._umbral or 0.02, cancelado)
-        return self._transcriptor.transcribir(audio)
+        return self._analizar(audio)
+
+    def _analizar(self, audio) -> ResultadoEscucha:
+        """Transcribe y, de paso, mira si el timbre es el mismo de antes."""
+        texto = self._transcriptor.transcribir(audio)
+        if self._hablantes is None or not texto.strip():
+            return ResultadoEscucha(texto)
+        cambio = self._hablantes.observar(audio)
+        return ResultadoEscucha(texto, cambio is Cambio.OTRO, self._hablantes.ultima_similitud)
+
+    def olvidar_hablante(self) -> None:
+        """Borra la referencia de timbre. Se llama al pasar al siguiente visitante."""
+        if self._hablantes is not None:
+            self._hablantes.olvidar()
 
     def precargar(self) -> None:
         """Carga el modelo de reconocimiento por adelantado."""
@@ -166,6 +204,11 @@ class ServicioDeVoz:
 
     def transcribir_archivo(self, ruta) -> str:
         """Transcribe un WAV del disco. Permite probar el reconocimiento sin microfono."""
+        if isinstance(self._transcriptor, TranscriptorMudo):
+            raise RuntimeError(
+                "El reconocimiento no esta montado. Arranca con --voz (no --voz-salida) "
+                "o pon HACU_VOZ=1."
+            )
         import soundfile  # noqa: PLC0415  (solo lo necesita esta ruta de diagnostico)
 
         audio, frecuencia = soundfile.read(str(ruta), dtype="float32", always_2d=False)
@@ -177,6 +220,7 @@ class ServicioDeVoz:
 
     def cerrar(self, drenar: bool = False) -> None:
         """Apaga la capa de voz. Por defecto corta: quien cierra ya no escucha."""
+        self.olvidar_hablante()
         if not drenar:
             self.silenciar()
         if self._micro is not None:

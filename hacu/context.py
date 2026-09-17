@@ -10,14 +10,52 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from enum import Enum
 
 from .config import MemoryConfig, RagConfig
 from .memory import HacuMemoryDB
 from .prompts import MODO_TRIVIA, PERFILES_AUDIENCIA, SYSTEM_PROMPT_BASE
 from .rag import LocalRAGEngine
-from .routing import FastRouter, Intencion, es_seguimiento, normalizar
+from .routing import (
+    FastRouter,
+    Intencion,
+    es_catalogo,
+    es_despedida,
+    es_seguimiento,
+    es_sobre_el_centro,
+    normalizar,
+    pregunta_por_fuentes,
+    pide_desarrollo,
+)
 
 Mensaje = dict[str, str]
+
+
+class Profundidad(str, Enum):
+    """Cuanto material hace falta traer para poder responder bien.
+
+    Nace de una peticion concreta: con 32 proyectos, "¿cuales tienen?",
+    "explicame cada uno" y "cuentame todo sobre Mary" necesitan cosas distintas.
+    Traer siempre lo mismo hacia que la primera se quedara corta (solo salian
+    cuatro proyectos) y la tercera superficial (una linea de la ficha).
+    """
+
+    CATALOGO = "CATALOGO"   # enumerar: basta el indice
+    RESUMEN = "RESUMEN"     # un repaso de cada uno: indice + fichas
+    DETALLE = "DETALLE"     # a fondo sobre uno: fichas
+    CENTRO = "CENTRO"       # el centro en si: lo institucional
+
+
+def profundidad_de(mensaje: str) -> Profundidad:
+    """Clasifica la pregunta por cuanta anchura y cuanto fondo necesita."""
+    catalogo = es_catalogo(mensaje)
+    if catalogo and pide_desarrollo(mensaje):
+        return Profundidad.RESUMEN
+    if catalogo:
+        return Profundidad.CATALOGO
+    if es_sobre_el_centro(mensaje):
+        return Profundidad.CENTRO
+    return Profundidad.DETALLE
 
 _TERMINOS_AMPLIOS: frozenset[str] = frozenset(
     "proyecto proyectos todos todas cuales cuantos listar lista enumera facultad facultades historia".split()
@@ -91,10 +129,45 @@ def _pregunta_su_nombre(mensaje: str) -> bool:
     return any(patron.search(plano) for patron in _PATRONES_SU_NOMBRE)
 
 
+# Encabezado del material recuperado. Deliberadamente SIN la palabra
+# "documentacion": la nota decia "Recuperado de la documentacion institucional de
+# la Universidad Simon Bolivar" y HACU la repetia palabra por palabra al hablar
+# ("basada en la documentacion institucional de la Universidad Simon Bolivar").
+# Es el mismo fallo que los ejemplos del prompt: lo que se le pone delante, lo
+# copia. Si ahora copia "lo que sabes de AudacIA", suena a expositor y no a
+# lector de fichas.
 _FUENTES: dict[Intencion, str] = {
-    Intencion.AUDACIA: "documentacion interna de AudacIA",
-    Intencion.UNIVERSIDAD: "documentacion institucional de la Universidad Simon Bolivar",
+    Intencion.AUDACIA: "Lo que sabes de AudacIA",
+    Intencion.UNIVERSIDAD: "Lo que sabes de la universidad",
 }
+
+
+def recuperar_de_audacia(rag, rag_config: RagConfig, mensaje: str,
+                         consulta: str, n: int) -> str | None:
+    """Elige que traer del corpus de AudacIA segun lo que pida la pregunta.
+
+    - CATALOGO: solo el indice. Enumera los 32 proyectos de una vez.
+    - RESUMEN: el indice como esqueleto mas unas fichas para dar cuerpo.
+    - DETALLE: fichas, que es donde vive la explicacion de cada proyecto.
+    - CENTRO: lo institucional (personas, patentes, sedes, reconocimientos), que
+      de otro modo pierde siempre contra los treinta y siete fragmentos de fichas.
+
+    Vive fuera de `ContextBuilder` para que la prueba de recuperacion mida este
+    mismo camino y no una busqueda plana que el sistema ya no hace.
+    """
+    nivel = profundidad_de(mensaje)
+    if nivel is Profundidad.DETALLE:
+        return rag.buscar(Intencion.AUDACIA, consulta, n_results=n)
+    if nivel is Profundidad.CENTRO:
+        return rag.buscar(Intencion.AUDACIA, consulta,
+                          n_results=rag_config.fragmentos_centro, tipo="institucional")
+
+    indice = rag.cargar_indice(Intencion.AUDACIA)
+    if nivel is Profundidad.CATALOGO:
+        return indice
+    fichas = rag.buscar(Intencion.AUDACIA, consulta,
+                        n_results=rag_config.fragmentos_resumen, tipo="ficha")
+    return "\n---\n".join(x for x in (indice, fichas) if x) or None
 
 
 @dataclass
@@ -140,13 +213,20 @@ class ContextBuilder:
         recordatorio = self._recordatorio_de_nombre(usuario_activo, mensaje_usuario)
         if recordatorio:
             notas.append(recordatorio)
+        if pregunta_por_fuentes(mensaje_usuario):
+            notas.append(
+                "Te esta preguntando de donde sacas lo que dices. No tienes fuentes que "
+                "citar y no puedes inventarte ninguna: nadie te ha contado nada, ni has "
+                "hablado con investigadores ni con profesores. Di con naturalidad que es "
+                "lo que sabes de la exhibicion, y si lo anterior no te consta, rectificalo."
+            )
         if episodios:
             notas.append(
                 "Lo que ya sabes de esta persona, de lo mas antiguo a lo mas reciente:\n"
                 + "\n".join(f"- {e}" for e in episodios)
             )
         if contexto and intencion_fuente is not None:
-            notas.append(f"Recuperado de la {_FUENTES[intencion_fuente]}:\n{contexto}")
+            notas.append(f"{_FUENTES[intencion_fuente]}:\n{contexto}")
 
         partes: list[str] = [
             "NOTAS PRIVADAS PARA TI (no las menciones, no las cites, no las repitas):",
@@ -244,7 +324,16 @@ class ContextBuilder:
         `mensaje` es lo que dijo el visitante y decide los guardarrailes; `consulta`
         es lo que se embebe, que en un seguimiento arrastra la pregunta anterior.
         """
+        # Una despedida no necesita documentacion: darsela es invitar a rellenar.
+        if es_despedida(mensaje):
+            return None, None
+
         n = self._fragmentos(consulta, intencion)
+
+        if intencion is Intencion.AUDACIA:
+            contexto = self._recuperar_por_profundidad(mensaje, consulta, n)
+            if contexto:
+                return contexto, intencion
 
         if intencion is Intencion.GENERAL:
             # El router es lexico: una pregunta de seguimiento sin palabra clave
@@ -259,6 +348,9 @@ class ContextBuilder:
             return rescate if rescate is not None else (None, None)
 
         return self._rag.buscar(intencion, consulta, n_results=n), intencion
+
+    def _recuperar_por_profundidad(self, mensaje: str, consulta: str, n: int) -> str | None:
+        return recuperar_de_audacia(self._rag, self._rag_cfg, mensaje, consulta, n)
 
     def _fragmentos(self, mensaje: str, intencion: Intencion) -> int:
         """Cuantos fragmentos recuperar segun la amplitud detectada en la pregunta."""

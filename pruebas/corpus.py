@@ -196,5 +196,3 @@ CORPUS: tuple[CasoPrueba, ...] = (
 )
 
 
-def por_categoria(categoria: Categoria) -> tuple[CasoPrueba, ...]:
-    return tuple(c for c in CORPUS if c.categoria is categoria)

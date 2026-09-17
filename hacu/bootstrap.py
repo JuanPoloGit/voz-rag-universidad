@@ -17,7 +17,7 @@ from .identity import IdentityResolver
 from .llm import LlmService
 from .memory import HacuMemoryDB
 from .rag import LocalRAGEngine
-from .routing import FastRouter
+from .routing import FastRouter, Intencion, nombres_en_indice
 from .sanitizer import FactSanitizer
 from .session import HacuSession
 
@@ -94,7 +94,7 @@ def construir(
         mensaje = (
             "El embedding multilingue no esta disponible (falta sentence-transformers "
             "o fallo la descarga del modelo). Con el embedding por defecto la "
-            "recuperacion sobre el corpus en espanol baja de 18/20 a 9/20 consultas: "
+            "recuperacion sobre el corpus en espanol baja de 36/36 a 27/36 consultas: "
             "HACU diria no conocer proyectos que si estan documentados."
         )
         if config.rag.exigir_multilingue:
@@ -113,8 +113,17 @@ def construir(
     )
     extractor.iniciar()
 
+    router = FastRouter()
+    aprendidos = router.aprender_nombres(
+        nombres_en_indice(rag.cargar_indice(Intencion.AUDACIA) or "")
+    )
+    if aprendidos:
+        logger.info("El router aprendio %d nombres de proyecto del indice", aprendidos)
+    else:
+        logger.warning("No hay indice-catalogo: el router no reconocera nombres de proyecto")
+
     sesion = HacuSession(
-        llm=llm, db=db, router=FastRouter(), identity=identity, extractor=extractor,
+        llm=llm, db=db, router=router, identity=identity, extractor=extractor,
         context_builder=ContextBuilder(db, rag, config.rag, config.memory, config.default_user),
         logger=logger,
     )

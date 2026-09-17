@@ -39,6 +39,7 @@ from typing import Protocol
 import numpy as np
 
 from ..config import VozConfig
+from .pronunciacion import LEXICO, compilar, para_voz
 
 
 class Sintetizador(Protocol):
@@ -104,8 +105,13 @@ class _SintetizadorEnCola:
 
     nombre = "generico"
 
-    def __init__(self, logger: logging.Logger) -> None:
+    def __init__(self, logger: logging.Logger,
+                 pronunciaciones: tuple[tuple[str, str], ...] = ()) -> None:
         self._log = logger
+        # Como se escribe y como se dice no es lo mismo. Se aplica aqui, en el
+        # ultimo paso antes del motor, para que la pantalla y la memoria guarden
+        # la ortografia de verdad y solo cambie lo que sale por el altavoz.
+        self._lexico = compilar(pronunciaciones or LEXICO)
         self._cola: queue.Queue[str | None] = queue.Queue()
         self._cortar = threading.Event()
         self._vivo = True
@@ -178,7 +184,7 @@ class _SintetizadorEnCola:
                 return
             try:
                 if not self._cortar.is_set():
-                    self._pronunciar(texto)
+                    self._pronunciar(para_voz(texto, self._lexico))
             except Exception:
                 self._log.error("Fallo al sintetizar %r", texto[:60], exc_info=True)
             finally:
@@ -202,6 +208,13 @@ class OrdenPiper:
 # Silencio que se anade detras de cada frase, en segundos. 0.25 s cubre de sobra
 # la latencia tipica de WASAPI compartido (~20-40 ms) y la de un escritorio remoto.
 _COLA_SILENCIO_S = 0.25
+
+# Tamano del trozo que se entrega a la tarjeta de una vez, en segundos. Piper
+# genera una frase corta en un solo golpe, y escribirla entera dejaba la frase
+# completa dentro del buffer del dispositivo: al pedir silencio se cortaba la
+# reproduccion, pero lo ya encolado seguia sonando hasta el final de la frase.
+# En trozos de 50 ms, callar tarda como mucho eso.
+_TROZO_SALIDA_S = 0.05
 
 
 class SintetizadorPiperEnProceso(_SintetizadorEnCola):
@@ -231,7 +244,7 @@ class SintetizadorPiperEnProceso(_SintetizadorEnCola):
         self._voz = PiperVoice.load(str(ruta_voz))
         self._sintesis = _configuracion_de_sintesis(config)
         self._ruta = ruta_voz
-        super().__init__(logger.getChild("tts.piper"))
+        super().__init__(logger.getChild("tts.piper"), config.pronunciaciones)
         self._calentar()
 
     def _calentar(self) -> None:
@@ -257,13 +270,28 @@ class SintetizadorPiperEnProceso(_SintetizadorEnCola):
             if self._sintesis is None:
                 muestras = muestras * self._cfg.volumen_tts
             frecuencia = getattr(trozo, "sample_rate", None) or _frecuencia_de_voz(self._cfg)
-            self._asegurar_stream(frecuencia).write(muestras)
+            if not self._escribir_troceado(muestras, frecuencia):
+                return
         if frecuencia and not self._cortar.is_set():
             # Cola de silencio: `write` vuelve cuando la muestra entra en el
             # buffer, no cuando suena. Sin esto se pierde la ultima silaba en
             # salidas con latencia propia (WASAPI compartido, Bluetooth, remoto).
             relleno = np.zeros(int(frecuencia * _COLA_SILENCIO_S), dtype=np.float32)
-            self._asegurar_stream(frecuencia).write(relleno)
+            self._escribir_troceado(relleno, frecuencia)
+
+    def _escribir_troceado(self, muestras: np.ndarray, frecuencia: int) -> bool:
+        """Entrega el audio en trozos cortos. False si hubo que callar a mitad."""
+        salto = max(1, int(frecuencia * _TROZO_SALIDA_S))
+        for inicio in range(0, len(muestras), salto):
+            if self._cortar.is_set():
+                return False
+            try:
+                self._asegurar_stream(frecuencia).write(muestras[inicio:inicio + salto])
+            except Exception:
+                # `abort()` desde otro hilo puede reventar el write en curso: es
+                # exactamente lo que queriamos que pasara.
+                return not self._cortar.is_set()
+        return True
 
     def _asegurar_stream(self, frecuencia: int):
         """Un solo stream de salida para toda la sesion, reabierto si hace falta."""
@@ -331,10 +359,15 @@ class SintetizadorPiper(_SintetizadorEnCola):
         self._proceso: subprocess.Popen | None = None
         self._voz = _ruta_de_voz(config) or config.piper_voz
         self._frecuencia = _frecuencia_de_voz(config)
+        if _ruta_de_voz(config) is None:
+            logger.warning("Sin .onnx.json para %s: se asume %d Hz. Si la voz suena "
+                           "acelerada o lenta, descargala con `python -m hacu.voz "
+                           "--descargar` para que traiga su ficha.",
+                           config.piper_voz, self._frecuencia)
         import sounddevice  # noqa: PLC0415
 
         self._sd = sounddevice
-        super().__init__(logger.getChild("tts.piper"))
+        super().__init__(logger.getChild("tts.piper"), config.pronunciaciones)
 
     def _pronunciar(self, texto: str) -> None:
         # --output-raw escribe PCM 16 bits mono en la salida estandar, sin
@@ -376,6 +409,11 @@ class SintetizadorPiper(_SintetizadorEnCola):
             proceso.kill()
 
 
+# Banderas de SAPI5: 1 = asincrono, 2 = purgar lo pendiente antes de hablar.
+_SAPI_ASINCRONO = 1
+_SAPI_PURGAR = 2
+
+
 class SintetizadorSistema(_SintetizadorEnCola):
     """La voz que ya trae el sistema operativo. Fea, pero siempre esta."""
 
@@ -389,12 +427,18 @@ class SintetizadorSistema(_SintetizadorEnCola):
             self._voz_windows = _sapi()
         elif not shutil.which("espeak-ng") and not shutil.which("espeak"):
             raise RuntimeError("No hay sintetizador del sistema (falta espeak-ng)")
-        super().__init__(logger.getChild("tts.sistema"))
+        super().__init__(logger.getChild("tts.sistema"), config.pronunciaciones)
 
     def _pronunciar(self, texto: str) -> None:
         if self._voz_windows is not None:
-            # SVSFDefault: sincrono. El corte se hace con Speak("", PURGE).
-            self._voz_windows.Speak(texto, 0)
+            # Asincrono y esperando a ratos: con SVSFDefault (sincrono) la
+            # llamada no volvia hasta terminar la frase, asi que "callar" no
+            # surtia efecto hasta el siguiente punto.
+            self._voz_windows.Speak(texto, _SAPI_ASINCRONO)
+            while not self._cortar.is_set():
+                if self._voz_windows.WaitUntilDone(80):
+                    return
+            self._detener_reproduccion()
             return
         binario = shutil.which("espeak-ng") or shutil.which("espeak")
         self._proceso = subprocess.Popen(
@@ -407,7 +451,7 @@ class SintetizadorSistema(_SintetizadorEnCola):
     def _detener_reproduccion(self) -> None:
         if self._voz_windows is not None:
             try:
-                self._voz_windows.Speak("", 2)  # SVSFPurgeBeforeSpeak
+                self._voz_windows.Speak("", _SAPI_PURGAR)
             except Exception:
                 pass
             return
@@ -489,6 +533,7 @@ def sintetizar_a_archivo(config: VozConfig, texto: str, destino: Path) -> Path |
         return None
     voz = _ruta_de_voz(config) or config.piper_voz
     escala = 1.0 / max(config.velocidad_tts, 0.1)
+    texto = para_voz(texto, compilar(config.pronunciaciones or LEXICO))
     base = orden.para(str(voz), escala)
     # Se cambia la salida cruda por un fichero: -f en el paquete moderno,
     # --output_file en el binario antiguo.
@@ -533,15 +578,16 @@ def _ruta_de_voz(config: VozConfig) -> Path | None:
     return local if local.exists() else None
 
 
-# Frecuencia por calidad de voz, para cuando no hay .onnx.json que leer (el
-# paquete de Python guarda la voz en su propio directorio de datos).
-_FRECUENCIA_POR_CALIDAD: dict[str, int] = {
-    "x_low": 16000, "low": 16000, "medium": 22050, "high": 22050,
-}
+# Frecuencia cuando no hay .onnx.json que leer. NO se deduce de la calidad del
+# nombre: parecia razonable que "x_low" fuese siempre 16 kHz, y es falso —
+# es_ES-carlfm-x_low es 16000 y es_MX-ald-x_low es 22050. Equivocarse aqui suena
+# a ardilla o a camara lenta, asi que se usa el valor mas comun de Piper y se
+# avisa en el log de que es una suposicion.
+_FRECUENCIA_HABITUAL = 22050
 
 
-def _frecuencia_de_voz(config: VozConfig, por_defecto: int = 22050) -> int:
-    """Frecuencia de muestreo de la voz: del .onnx.json si esta, si no por calidad."""
+def _frecuencia_de_voz(config: VozConfig, por_defecto: int = _FRECUENCIA_HABITUAL) -> int:
+    """Frecuencia de muestreo de la voz, leida de su .onnx.json."""
     ruta = _ruta_de_voz(config)
     if ruta is not None:
         ficha = ruta.with_suffix(ruta.suffix + ".json")
@@ -551,8 +597,7 @@ def _frecuencia_de_voz(config: VozConfig, por_defecto: int = 22050) -> int:
                 return int(datos.get("audio", {}).get("sample_rate", por_defecto))
             except Exception:
                 pass
-    calidad = str(config.piper_voz).rsplit("-", 1)[-1].lower()
-    return _FRECUENCIA_POR_CALIDAD.get(calidad, por_defecto)
+    return por_defecto
 
 
 def _sapi():

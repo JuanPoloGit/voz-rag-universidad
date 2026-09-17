@@ -12,8 +12,10 @@ from __future__ import annotations
 
 import argparse
 import logging
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import wave
 from pathlib import Path
@@ -178,6 +180,68 @@ def _transcribir(config: AppConfig, ruta: Path) -> int:
     return 0
 
 
+# Frases de exhibicion con la palabra que TIENE que sobrevivir. Son justo los
+# nombres propios que un reconocedor generico destroza: medido, sin sembrar el
+# vocabulario "AudacIA" sale "a UDAC ya" y "Holosand" sale "olo San".
+_FRASES_AUTOPRUEBA: tuple[tuple[str, str], ...] = (
+    ("¿Qué proyectos tiene AudacIA?", "audacia"),
+    ("Cuéntame todo sobre Holosand y el sensor Kinect.", "holosand"),
+    ("Explícame el proyecto Orion para personas con discapacidad visual.", "orion"),
+    ("Hola, me llamo Camila y estudio ingeniería de sistemas.", "camila"),
+)
+
+
+def _autoprueba(config: AppConfig) -> int:
+    """Cierra el circuito sin microfono: HACU se dicta a si mismo y se transcribe.
+
+    Es la unica forma de saber si el reconocimiento funciona en esta maquina
+    cuando no hay entrada de audio —una sesion remota, un microfono que aun no ha
+    llegado— y ademas comprueba lo que de verdad importa en escena: que los
+    nombres propios de la exhibicion sobrevivan al reconocedor.
+    """
+    from ..routing import normalizar  # noqa: PLC0415
+
+    logging.basicConfig(level=logging.ERROR)
+    log = logging.getLogger("hacu")
+    temporal = Path(tempfile.mkdtemp(prefix="hacu-autoprueba-"))
+    print("\n🔁 Autoprueba de voz: sintetizar → transcribir, sin microfono.")
+
+    servicio = ServicioDeVoz(replace(config.voz, activa=True), log)
+    aciertos = 0
+    try:
+        for frase, clave in _FRASES_AUTOPRUEBA:
+            destino = temporal / f"{clave}.wav"
+            try:
+                if sintetizar_a_archivo(config.voz, frase, destino) is None:
+                    print("⚠️  Hace falta Piper para la autoprueba: pip install piper-tts")
+                    return 1
+            except Exception as error:
+                print(f"❌ No se pudo sintetizar: {error}")
+                return 1
+
+            inicio = time.perf_counter()
+            try:
+                salida = servicio.transcribir_archivo(destino)
+            except Exception as error:
+                print(f"❌ No se pudo transcribir: {error}")
+                return 1
+            ok = normalizar(clave) in normalizar(salida)
+            aciertos += ok
+            print(f"\n  {'✅' if ok else '❌'} [{time.perf_counter() - inicio:4.1f}s] {salida.strip()}")
+            print(f"      dicho: {frase}")
+            if not ok:
+                print(f"      se perdio la palabra {clave!r}")
+    finally:
+        servicio.cerrar()
+        shutil.rmtree(temporal, ignore_errors=True)
+
+    total = len(_FRASES_AUTOPRUEBA)
+    print(f"\n  {aciertos}/{total} nombres propios reconocidos")
+    if aciertos < total:
+        print("  Si falla mas de uno, revisa el vocabulario en VozConfig o sube HACU_STT=medium.")
+    return 0 if aciertos == total else 1
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Diagnostico de audio de HACU")
     parser.add_argument("--probar", action="store_true", help="graba y reproduce")
@@ -189,12 +253,19 @@ def main(argv: list[str]) -> int:
                         help="vuelca la frase a un WAV en vez de fiarse del altavoz")
     parser.add_argument("--transcribir", type=Path, default=None,
                         help="reconoce un WAV del disco (prueba el STT sin microfono)")
+    parser.add_argument("--autoprueba", action="store_true",
+                        help="sintetiza frases y se las transcribe: circuito completo sin microfono")
     args = parser.parse_args(argv[1:])
 
     config = replace(AppConfig.from_env(), voz=replace(AppConfig.from_env().voz, activa=True))
+    # Que no haya entrada de audio no puede impedir el resto del diagnostico:
+    # `--autoprueba`, `--transcribir`, `--hablar` y `--descargar` existen
+    # precisamente para las maquinas donde no hay microfono.
     codigo = _listar()
-    if codigo:
+    necesita_entrada = not (args.autoprueba or args.transcribir or args.hablar or args.descargar)
+    if codigo and necesita_entrada:
         return codigo
+    codigo = 0
 
     problemas = comprobar(config.voz)
     if problemas:
@@ -212,7 +283,10 @@ def main(argv: list[str]) -> int:
         codigo = max(codigo, _hablar(config, args.hablar, args.guardar))
     if args.transcribir:
         codigo = max(codigo, _transcribir(config, args.transcribir))
-    if not (args.calibrar or args.probar or args.hablar or args.descargar or args.transcribir):
+    if args.autoprueba:
+        codigo = max(codigo, _autoprueba(config))
+    if not (args.calibrar or args.probar or args.hablar or args.descargar
+            or args.transcribir or args.autoprueba):
         servicio = ServicioDeVoz(config.voz, logging.getLogger("hacu"))
         print(f"\n   oido : {'listo' if servicio.disponible else 'NO disponible'}")
         print(f"   voz  : {servicio.motor if servicio.puede_hablar else 'NO disponible'}")

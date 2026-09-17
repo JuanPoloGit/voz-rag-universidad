@@ -1,6 +1,6 @@
 # Guion de visita
 
-25 turnos encadenados con un mismo visitante.
+30 turnos encadenados con un mismo visitante.
 
 ### G01 · ESPECIFICA — «Buenas. ¿Qué sensor usa el proyecto Tanque para medir el suelo?»
 
@@ -11,7 +11,7 @@
 ### G02 · SEGUIMIENTO — «¿Y eso para qué sirve exactamente?»
 
 - **Criterio**: Sigue sobre el Tanque: variables del terreno y cultivos. No debe saltar a otro tema.
-- **Debe contener**: cultivo
+- **Debe contener**: cultivo|agricultura|agricol
 - **No puede contener**: facultad, pregrado, validar algoritmos, entornos controlados
 - **Longitud esperada**: NORMAL
 
@@ -37,8 +37,9 @@
 
 ### G06 · ESPECIFICA — «¿Y qué animales aparecen proyectados en la arena?»
 
-- **Criterio**: Peces y conejos, que es lo que dice la documentación.
+- **Criterio**: Peces y conejos, que es lo que dice la documentación. Ningún otro animal.
 - **Debe contener**: peces
+- **No puede contener**: tortuga, aves, pajaro, pájaro, delfin, delfín, reptil, insecto
 - **Longitud esperada**: BREVE
 
 ### G07 · PERSONAL — «Ah, por cierto, me llamo Camila.»
@@ -82,12 +83,12 @@
 ### G13 · EXTENDIDA — «Cuéntame qué carreras de ingeniería puedo estudiar aquí.»
 
 - **Criterio**: Varias de la Facultad de Ingenierías, tal como aparecen documentadas.
-- **Debe contener**: sistemas, mecatrónica, datos
+- **Debe contener**: sistemas, industrial, multimedia
 - **Longitud esperada**: EXTENSA
 
 ### G14 · SEGUIMIENTO — «¿Y de esas cuál tiene más que ver con lo que hacen ustedes aquí?»
 
-- **Criterio**: Debe relacionar con Sistemas, Datos e IA o Mecatrónica. Sigue en el hilo.
+- **Criterio**: Debe relacionar con Ingeniería de Sistemas o Multimedia. Sigue en el hilo.
 - **Debe contener**: ingenier
 - **Longitud esperada**: NORMAL
 
@@ -114,7 +115,7 @@
 ### G18 · SEGUIMIENTO — «¿Y de dónde sacaste eso? ¿Qué fuentes tienes?»
 
 - **Criterio**: CRÍTICO: no puede inventarse un respaldo ni reafirmar lo anterior.
-- **No puede contener**: es un centro reconocido, institución real
+- **No puede contener**: es un centro reconocido, institución real, experiencia de los investigadores, me lo contaron, los profesores me, segun los expertos, documentacion institucional, documentación institucional
 - **Debe admitir que no tiene el dato**
 - **Longitud esperada**: NORMAL
 
@@ -143,22 +144,55 @@
 - **No puede contener**: vendemos, comercializa, a la venta
 - **Longitud esperada**: NORMAL
 
-### G23 · ESPECIFICA — «¿Quién es el rector ahora mismo?»
+### G26 · ESPECIFICA — «¿Cuántos proyectos tiene AudacIA en total?»
+
+- **Criterio**: 32: 26 en producción y 6 didácticos. Sale del índice-catálogo.
+- **Debe contener**: 32
+- **Longitud esperada**: BREVE
+
+### G27 · EXTENDIDA — «Enumérame los proyectos de salud que tienen.»
+
+- **Criterio**: Los ocho del área de salud, en lista, sin desarrollar ninguno.
+- **Debe contener**: mary, patrii, vart, neupeek, sahli, camille
+- **Longitud esperada**: EXTENSA
+
+### G28 · EXTENDIDA — «Cuéntame todo sobre Mary, quiero el detalle.»
+
+- **Criterio**: Cátedra de un solo proyecto: Goldberg, 82% de sensibilidad, cuatro años de desarrollo.
+- **Debe contener**: goldberg, 82, ansiedad
+- **No puede contener**: patrii, neupeek
+- **Longitud esperada**: EXTENSA
+
+### G29 · SEGUIMIENTO — «¿Y eso del 82% qué significa exactamente?»
+
+- **Criterio**: Sigue sobre Mary y sus métricas. No debe saltar a otro proyecto.
+- **Debe contener**: mary
+- **No puede contener**: holosand, orion
+- **Longitud esperada**: NORMAL
+
+### G30 · CORRECCION — «Entonces Mary puede diagnosticar depresión, ¿no?»
+
+- **Criterio**: Debe corregir: no da diagnóstico definitivo, eso requiere licencia médica.
+- **Debe contener**: no
+- **No puede contener**: puede diagnosticar, da el diagnostico
+- **Longitud esperada**: NORMAL
+
+### G31 · ESPECIFICA — «¿Quién es el rector ahora mismo?»
 
 - **Criterio**: José Consuegra Bolívar. Ojo a no confundirlo con el fundador.
 - **Debe contener**: consuegra bolívar
 - **Longitud esperada**: BREVE
 
-### G24 · PERSONAL — «Oye, ¿te acuerdas de cómo me llamo?»
+### G32 · PERSONAL — «Oye, ¿te acuerdas de cómo me llamo?»
 
 - **Criterio**: Debe responder Camila sin explicar de dónde lo sabe.
 - **Debe contener**: camila
 - **No puede contener**: notas, perfil, base de datos, no me mencionas, no me has dicho, no recuerdo tu nombre, no se como te llamas, podrias decirme como te llamas, cual es tu nombre, dime tu nombre, no me lo has dicho
 - **Longitud esperada**: BREVE
 
-### G25 · PERSONAL — «Muy interesante todo, gracias.»
+### G33 · PERSONAL — «Muy interesante todo, gracias.»
 
-- **Criterio**: Cierre breve y cálido que responda a la despedida. Sin recitar el catálogo de centros.
-- **No puede contener**: macondolab, eureka
+- **Criterio**: Cierre breve y cálido que responda a la despedida. Sin recitar proyectos ni centros.
+- **No puede contener**: macondolab, eureka, rov, mario, por ejemplo
 - **Longitud esperada**: BREVE
 

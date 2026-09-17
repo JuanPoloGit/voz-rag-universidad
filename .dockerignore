@@ -1,9 +1,21 @@
+# Lo que nunca debe entrar en la imagen. El modelo, el corpus indexado y la
+# memoria se montan como volumen en tiempo de ejecucion (ver docs/docker.md):
+# meterlos en la imagen la haria de varios gigas y la ataria a unos datos.
 venv/
+.venv/
 __pycache__/
+*.pyc
 models/
 chroma_db/
 logs/
 hacu_memory.db*
+pruebas/informes/
+*.wav
 .git/
+.github/
+Claude outputs/
+
+# La documentacion no se ejecuta... salvo el corpus, que SI es dato de entrada.
 *.md
+docs/
 !documents/*.md

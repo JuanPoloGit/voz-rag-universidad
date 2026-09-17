@@ -57,12 +57,16 @@ _ADULACION: tuple[re.Pattern[str], ...] = tuple(
     re.compile(p) for p in (
         r"me alegra (que|saber|conocer|poder|mucho|verte|tenerte)",
         r"que (bueno|genial|interesante|alegria) (que|verte|tenerte)",
-        r"(excelente|buena) pregunta",
+        r"(excelente|buena|muy buena|gran) pregunta",
         r"me encanta (que|tu pregunta)",
-        r"es un placer (conocerte|tenerte|saludarte)",
-        r"gracias por (preguntar|compartir|tu pregunta)",
+        r"gracias por (preguntar|tu pregunta)",
     )
 )
+# "Gracias por compartirlo" y "es un placer conocerte" SALIERON de la lista a
+# proposito. Se filtraban siempre, y cuando un visitante cuenta algo suyo esa
+# frase es la respuesta correcta, no un halago: borrarla dejaba a HACU
+# contestando a una confidencia con una pregunta de tramite. El problema medido
+# eran los elogios A LA PREGUNTA antes de un dato, y esos siguen fuera.
 _LONGITUD_MAXIMA_ADULACION = 120
 
 # Afirmaciones que no dicen nada y con las que el modelo abre cuando le piden
@@ -110,6 +114,13 @@ def filtrar_adulacion(texto: str) -> tuple[str, int]:
 # notas"). Se eliminan como giro, conservando el contenido de la frase: lo que
 # sobra es la referencia al documento, no el dato.
 _FUGAS: tuple[tuple[re.Pattern[str], str], ...] = (
+    # Primero el caso en el que el giro ES la respuesta: "no aparece en las
+    # notas" quiere decir "no lo tengo", y borrar solo el giro dejaba un "No"
+    # suelto. Va antes que los patrones genericos, que se lo comerian a medias.
+    (re.compile(r"\bno\s+(?:aparece|figura|consta|esta|viene|se\s+menciona)\s+en\s+"
+                r"(?:las|mis|estas)\s+notas\b", re.IGNORECASE), "no lo tengo"),
+    (re.compile(r"\bno\s+(?:aparece|figura|consta|esta|viene|se\s+menciona)\s+en\s+"
+                r"(?:la\s+)?documentaci[oó]n\b", re.IGNORECASE), "no lo tengo"),
     (re.compile(r",?\s*(?:que\s+)?(?:menciono|menciona|mencionan|aparecen?|figuran?|"
                 r"se\s+mencionan?|se\s+menciona|tengo|hay)\s+en\s+(?:las|mis|estas)\s+notas\b",
                 re.IGNORECASE), ""),
@@ -118,8 +129,54 @@ _FUGAS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\ben\s+(?:las|mis|estas)\s+notas(?:\s+de\s+la\s+documentaci[oó]n[^,.]*)?,?\s*",
                 re.IGNORECASE), ""),
     (re.compile(r"\b(?:las|mis|estas)\s+notas\b", re.IGNORECASE), "lo que sé"),
+    # Fuga nueva, vista en 11 de 30 turnos del guion: prohibida "segun mis
+    # notas", el modelo encontro "segun la documentacion de AudacIA". Es el mismo
+    # andamiaje con otro nombre, y en escena suena a que lee de una ficha.
+    # No se come la coma de delante: comersela pegaba el vocativo a la frase
+    # ("Camila, segun la documentacion, los proyectos" -> "Camilalos proyectos").
+    (re.compile(r"\s*seg[uú]n\s+(?:la\s+|el\s+|mi\s+|mis\s+)?"
+                r"(?:documentaci[oó]n|informaci[oó]n|corpus|material)"
+                r"(?:\s+interna)?(?:\s+(?:que|de\s+la\s+que)\s+(?:tengo|dispongo|manejo))?"
+                r"(?:\s+(?:de|del|de\s+la)\s+[^,.:]{1,40})?\s*,?\s*", re.IGNORECASE), " "),
+    (re.compile(r",?\s*(?:que\s+)?(?:se\s+)?(?:mencionan?|aparecen?|figuran?)\s+en\s+"
+                r"(?:la\s+)?documentaci[oó]n(?:\s+(?:de|del|de\s+la)\s+[^,.:]{1,40})?",
+                re.IGNORECASE), ""),
+    (re.compile(r"\bla\s+documentaci[oó]n\s+interna\b", re.IGNORECASE), "lo que sé"),
+    # Se come el giro entero hasta la siguiente puntuacion. Cualquier frase que
+    # diga "la documentacion institucional" ya es una fuga, asi que no hay nada
+    # que conservar dentro del giro; afinar los limites palabra a palabra solo
+    # dejaba colgando el final ("...es lo que sé disposición").
+    (re.compile(r"(?:basad[oa]s?\s+en\s+)?\bla\s+documentaci[oó]n\s+"
+                r"(?:institucional|interna|oficial)[^.;:!?]{0,70}", re.IGNORECASE), "lo que sé"),
 )
 _ESPACIO_SOBRANTE = re.compile(r"\s{2,}")
+
+# El stream de llama.cpp pierde de vez en cuando el espacio inicial de un token y
+# salen pegones: "productos comerciales.AudacIA se enfoca", "Esto incluye26". En
+# pantalla es feo; en voz es peor, porque el sintetizador lo lee como una sola
+# palabra. Se separa solo donde no hay ambiguedad: nunca dentro de un decimal
+# (3.000) ni de una sigla con puntos (R.O.V.).
+_PEGONES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"([.!?,;:])([A-ZÁÉÍÓÚÑ][a-záéíóúñ])"), r"\1 \2"),
+    (re.compile(r"([a-záéíóúñ])(\d{2,})"), r"\1 \2"),
+    # Sigla pegada a la palabra siguiente: "ROVSubmarino". Exige dos mayusculas
+    # seguidas y luego una palabra capitalizada, para no partir "MacondoLab"
+    # (una sola mayuscula interior) ni "AudacIA" (no lleva palabra detras).
+    # Limitacion conocida: si el pegon es sigla + palabra en minuscula
+    # ("VARTevalua"), la expresion no sabe donde acaba la sigla y corta mal
+    # ("VAR Tevalua"). Solo dispara sobre texto que YA venia roto, asi que el
+    # resultado no es peor que la entrada, pero tampoco lo arregla.
+    (re.compile(r"\b([A-ZÁÉÍÓÚÑ]{2,})([A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,})"), r"\1 \2"),
+)
+
+
+def separar_pegones(texto: str) -> tuple[str, int]:
+    """Repone los espacios que se pierden en el stream. Devuelve (texto, arreglos)."""
+    total = 0
+    for patron, reemplazo in _PEGONES:
+        texto, n = patron.subn(reemplazo, texto)
+        total += n
+    return texto, total
 
 
 def limpiar_fugas(texto: str) -> tuple[str, int]:
@@ -130,6 +187,8 @@ def limpiar_fugas(texto: str) -> tuple[str, int]:
         total += n
     if not total:
         return texto, 0
+    if not texto[:1].isspace():
+        limpio = limpio.lstrip()
     limpio = _ESPACIO_SOBRANTE.sub(" ", limpio)
     limpio = re.sub(r"\s+([,.;:])", r"\1", limpio)
     # Una frase que empezaba por el giro eliminado arranca ahora en minuscula.
@@ -158,13 +217,25 @@ def es_coletilla(frase: str) -> bool:
 class RetenedorDeCola:
     """Deja pasar el stream salvo la ultima frase, que se decide al cerrar."""
 
-    def __init__(self) -> None:
+    def __init__(self, permitir_cierre_breve: bool = False,
+                 permitir_calidez: bool = False) -> None:
+        # En una despedida, "De nada, Camila." es la respuesta COMPLETA, asi que
+        # el minimo de contenido previo no aplica: sin esto, la coletilla
+        # "¿te gustaria saber mas sobre otros proyectos?" se conservaba para no
+        # dejar el turno mudo, y convertia un cierre correcto en un folleto.
+        self._permitir_cierre_breve = permitir_cierre_breve
+        # Cuando el visitante cuenta algo personal, el filtro de adulacion se
+        # apaga: reconocer lo que acaban de contarte es el trabajo de un
+        # expositor, no un halago vacio. El filtro se hizo contra "Excelente
+        # pregunta" delante de un dato, no contra "que bueno, enhorabuena".
+        self._permitir_calidez = permitir_calidez
         self._buffer = ""
         self._emitido = ""
         self.descartada = False
         self.truncada = False
         self.adulaciones_quitadas = 0
         self.fugas_limpiadas = 0
+        self.pegones_separados = 0
 
     def alimentar(self, fragmento: str) -> str:
         """Acumula el fragmento y devuelve el texto que ya es seguro emitir."""
@@ -173,10 +244,13 @@ class RetenedorDeCola:
         if corte <= 0:
             return ""
         listo, self._buffer = self._buffer[:corte], self._buffer[corte:]
-        listo, quitadas = filtrar_adulacion(listo)
-        self.adulaciones_quitadas += quitadas
+        if not self._permitir_calidez:
+            listo, quitadas = filtrar_adulacion(listo)
+            self.adulaciones_quitadas += quitadas
         listo, fugas = limpiar_fugas(listo)
         self.fugas_limpiadas += fugas
+        listo, pegones = separar_pegones(listo)
+        self.pegones_separados += pegones
         self._emitido = self._emitido + listo
         return listo
 
@@ -194,15 +268,19 @@ class RetenedorDeCola:
             self.truncada = True
             return ""
         # Nunca se descarta si dejaria el turno mudo o reducido a un saludo.
-        if len(self._emitido.strip()) >= _MINIMO_CONTENIDO_PREVIO and cola.strip() and es_coletilla(cola):
+        suficiente = (self._permitir_cierre_breve
+                      or len(self._emitido.strip()) >= _MINIMO_CONTENIDO_PREVIO)
+        if suficiente and cola.strip() and es_coletilla(cola):
             self.descartada = True
             return ""
         # La cola tambien puede ser un cumplido suelto, si no deja el turno mudo.
-        if self._emitido.strip():
+        if self._emitido.strip() and not self._permitir_calidez:
             cola, quitadas = filtrar_adulacion(cola)
             self.adulaciones_quitadas += quitadas
         cola, fugas = limpiar_fugas(cola)
         self.fugas_limpiadas += fugas
+        cola, pegones = separar_pegones(cola)
+        self.pegones_separados += pegones
         return cola
 
     @staticmethod

@@ -58,6 +58,9 @@ from .widgets import (
 )
 
 _REFRESCO_NIVEL_MS = 40
+# El recuento de hechos no cambia deprisa; cada dos segundos sobra y no castiga
+# la base de datos.
+_REFRESCO_PERFIL_MS = 2000
 
 
 class VentanaHacu(QMainWindow):
@@ -75,6 +78,11 @@ class VentanaHacu(QMainWindow):
         self._escucha: TrabajadorEscuchaContinua | None = None
         self._tareas: list[TrabajadorTarea] = []
         self._burbuja_actual: BurbujaMensaje | None = None
+        # `HACU_VOZ_AUTO=1` pide escucha automatica desde el arranque, pero no se
+        # puede calibrar mientras HACU saluda: el altavoz entraria en la medida de
+        # ruido de sala y el umbral quedaria por encima de cualquier voz humana.
+        # Queda armada y el reloj de nivel la activa en cuanto la sala calla.
+        self._auto_pendiente = config.voz.deteccion_automatica
 
         self.setWindowTitle("HACU · AudacIA · Universidad Simón Bolívar")
         self.resize(config.interfaz.ancho, config.interfaz.alto)
@@ -85,6 +93,13 @@ class VentanaHacu(QMainWindow):
         self._reloj = QTimer(self)
         self._reloj.timeout.connect(self._refrescar_nivel)
         self._reloj.start(_REFRESCO_NIVEL_MS)
+
+        # El extractor de memoria trabaja en segundo plano y termina despues del
+        # turno, asi que el recuento de hechos del panel se quedaba en el valor
+        # viejo: parecia que HACU no recordaba nada de nadie.
+        self._reloj_perfil = QTimer(self)
+        self._reloj_perfil.timeout.connect(self._refrescar_perfil)
+        self._reloj_perfil.start(_REFRESCO_PERFIL_MS)
 
         self._saludar()
         if config.interfaz.pantalla_completa:
@@ -112,6 +127,9 @@ class VentanaHacu(QMainWindow):
 
         vertical.addWidget(self._pie())
         self._panel.setVisible(self._cfg.interfaz.mostrar_panel_operador)
+        # La ventana se queda el teclado: es quien atiende la barra espaciadora.
+        raiz.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setFocus()
 
     def _cabecera(self) -> QFrame:
         marco = QFrame()
@@ -165,6 +183,10 @@ class VentanaHacu(QMainWindow):
         vertical.addWidget(self._medidor)
 
         self._boton = BotonHablar()
+        # El boton nunca toma el foco de teclado: si lo tuviera, Qt se quedaria
+        # con la barra espaciadora para su propio "pulsar boton" y la ventana no
+        # llegaria a ver la tecla.
+        self._boton.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._boton.pulsado.connect(self._empezar_a_escuchar)
         self._boton.soltado.connect(self._dejar_de_escuchar)
         vertical.addWidget(self._boton)
@@ -203,6 +225,12 @@ class VentanaHacu(QMainWindow):
         fila.setContentsMargins(24, 14, 24, 14)
         fila.setSpacing(12)
         self._entrada = QLineEdit()
+        # Solo toma el teclado si alguien hace clic en ella. Por defecto se lo
+        # quedaba nada mas abrir, y entonces la barra espaciadora escribia un
+        # espacio en vez de abrir el microfono: habia que hacer clic fuera del
+        # recuadro para poder hablarle, que es justo lo contrario de lo que
+        # necesita quien atiende una exhibicion.
+        self._entrada.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self._entrada.setPlaceholderText("…o escribe aquí y pulsa Enter")
         self._entrada.returnPressed.connect(self._enviar_escrito)
         enviar = QPushButton("Enviar")
@@ -296,10 +324,16 @@ class VentanaHacu(QMainWindow):
     def _atajos(self) -> None:
         QShortcut(QKeySequence("F9"), self, activated=self._alternar_panel)
         QShortcut(QKeySequence("F11"), self, activated=self._alternar_pantalla)
-        QShortcut(QKeySequence("Esc"), self, activated=self._voz.silenciar)
+        QShortcut(QKeySequence("Esc"), self, activated=self._callar)
         # A pantalla completa no hay barra de titulo que cerrar, y Alt+F4 no es
         # algo que se le pida a quien atiende una exhibicion.
         QShortcut(QKeySequence("Ctrl+Q"), self, activated=self.close)
+
+    def _callar(self) -> None:
+        """Esc: corta la voz y recupera el teclado si se habia quedado en el texto."""
+        self._voz.silenciar()
+        self._entrada.clearFocus()
+        self.setFocus()
 
     # ------------------------------------------------------------------ eventos
 
@@ -340,8 +374,18 @@ class VentanaHacu(QMainWindow):
         self._medidor.set_nivel(nivel, escuchando)
         if self._estado is EstadoUI.HABLANDO and not self._voz.hablando:
             self._cambiar_estado(EstadoUI.REPOSO)
+        if self._auto_pendiente and not self._voz.hablando:
+            self._auto_pendiente = False
+            if self._voz.disponible:
+                self._continua.setChecked(True)   # dispara la calibracion
         if self._escucha is not None:
             self._escucha.pausar(self._voz.hablando or self._turno is not None)
+
+    def _refrescar_perfil(self) -> None:
+        """Mantiene al dia el recuento de hechos, que llega despues del turno."""
+        descripcion = self._descripcion_perfil()
+        if descripcion != self._etiqueta_perfil.text():
+            self._etiqueta_perfil.setText(descripcion)
 
     def _resumen_voz(self) -> str:
         oido = "oído" if self._voz.disponible else "sin oído"
@@ -369,15 +413,31 @@ class VentanaHacu(QMainWindow):
         self._transcripcion.fallo.connect(self._con_fallo)
         self._transcripcion.start()
 
-    @Slot(str)
-    def _con_transcripcion(self, texto: str) -> None:
+    @Slot(str, bool, float)
+    def _con_transcripcion(self, texto: str, otro_hablante: bool, similitud: float) -> None:
         self._transcripcion = None
         self._pista.setText("Mantén pulsada la barra espaciadora")
         if not texto.strip():
             self._cambiar_estado(EstadoUI.REPOSO)
             self._anotar("No se entendió nada. Acércate al micrófono e inténtalo otra vez.")
             return
+        if otro_hablante:
+            self._cerrar_perfil_por_voz(similitud)
         self._lanzar_turno(texto.strip())
+
+    def _cerrar_perfil_por_voz(self, similitud: float) -> None:
+        """Suena otra persona: se cierra el perfil anterior antes de responderle.
+
+        Es lo que evita que el siguiente visitante herede el nombre y los hechos
+        del anterior. No identifica a nadie: solo nota que el timbre cambio.
+        """
+        anterior = self._comp.sesion.usuario_activo
+        self._comp.sesion.identidad.reiniciar()
+        self._voz.olvidar_hablante()
+        self._etiqueta_perfil.setText(self._descripcion_perfil())
+        self._m_perfil.set(self._comp.sesion.usuario_activo)
+        detalle = f" (similitud {similitud:.2f})" if similitud >= 0 else ""
+        self._anotar(f"👥 Suena otra persona{detalle}. Se cerró el perfil de {anterior}.")
 
     @Slot()
     def _enviar_escrito(self) -> None:
@@ -385,6 +445,10 @@ class VentanaHacu(QMainWindow):
         if not texto or self._turno is not None:
             return
         self._entrada.clear()
+        # Devuelve el teclado a la ventana: tras enviar por escrito, la barra
+        # espaciadora tiene que volver a servir para hablar.
+        self._entrada.clearFocus()
+        self.setFocus()
         self._lanzar_turno(texto)
 
     def _lanzar_turno(self, texto: str) -> None:
@@ -424,7 +488,6 @@ class VentanaHacu(QMainWindow):
             self._anotar(f"Perfil migrado a {resultado.usuario}.")
         if not self._voz.hablando:
             self._cambiar_estado(EstadoUI.REPOSO)
-        self._entrada.setFocus()
 
     @Slot(str)
     def _con_fallo(self, mensaje: str) -> None:
@@ -463,6 +526,24 @@ class VentanaHacu(QMainWindow):
         self._anotar("HACU está listo. Mantén pulsada la barra espaciadora para hablarle, "
                      "o escribe abajo.")
         self._anotar("Para cerrar: Ctrl+Q, o Ctrl+C en la terminal.")
+        self._dar_la_bienvenida()
+
+    def _dar_la_bienvenida(self) -> None:
+        """La primera frase de HACU: burbuja normal, hablada si hay altavoz.
+
+        Es texto fijo y no una respuesta del modelo (ver `HacuSession.saludar`),
+        pero se ve y se oye igual que cualquier otro turno suyo, porque para el
+        visitante lo es. Se repite al pasar al siguiente visitante: quien acaba de
+        acercarse tiene que oir la invitacion a decir su nombre.
+        """
+        texto = self._comp.sesion.saludar(self._cfg.saludo_inicial)
+        if not texto:
+            return
+        self._anadir_burbuja("Hacu", es_hacu=True, texto=texto)
+        if self._voz.puede_hablar:
+            self._voz.decir(texto)
+            # El reloj de nivel devuelve el estado a REPOSO en cuanto calla.
+            self._cambiar_estado(EstadoUI.HABLANDO)
 
     def _limpiar_conversacion(self) -> None:
         while self._hilo_mensajes.count() > 1:
@@ -495,9 +576,11 @@ class VentanaHacu(QMainWindow):
 
     def _nuevo_visitante(self) -> None:
         self._comp.sesion.identidad.reiniciar()
+        self._voz.olvidar_hablante()
         self._etiqueta_perfil.setText(self._descripcion_perfil())
         self._m_perfil.set(self._comp.sesion.usuario_activo)
         self._limpiar_conversacion()
+        self._dar_la_bienvenida()
 
     def _cambiar_audiencia(self, perfil: str) -> None:
         self._comp.sesion.estado.perfil_audiencia = perfil

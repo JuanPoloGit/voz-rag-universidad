@@ -12,6 +12,8 @@ import os
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from .prompts import SALUDO_INICIAL
+
 PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent
 
 # Tamano aproximado del system prompt mas la directriz de audiencia, en caracteres.
@@ -75,18 +77,31 @@ class RagConfig:
     db_path: Path = PROJECT_ROOT / "chroma_db"
     chunk_size: int = 800
     chunk_overlap: int = 150
+    # El troceo respeta las secciones `##`: una ficha de proyecto entra entera en
+    # un fragmento y no se parte por la mitad. Solo se subdivide la seccion que
+    # pase de este tamano. 2200 cubre la ficha mas larga del corpus actual.
+    chunk_max_seccion: int = 2200
 
     # Fragmentos recuperados segun la amplitud detectada en la pregunta.
     # Calibrado con `python -m pruebas.recuperacion` sobre el corpus real:
-    # n=2 recuperaba 15/20 y n=4 llega a 18/20. Las consultas de catalogo
+    # con el corpus ampliado (53 fragmentos) n=4 recupera 33/36 y n=6 llega a 36/36.
     # ("todos los proyectos") necesitan 10 para cubrir los seis proyectos.
-    default_results: int = 4
-    broad_results_audacia: int = 10
+    default_results: int = 6
+    # Desde que existe el indice-catalogo, la anchura la da el indice y no un
+    # monton de fichas: no hace falta traer diez fragmentos para enumerar.
+    broad_results_audacia: int = 6
     broad_results_universidad: int = 8
+    # Fichas que acompanan al indice cuando piden un repaso de cada proyecto.
+    fragmentos_resumen: int = 4
+    # Fragmentos institucionales cuando preguntan por el centro y no por un
+    # proyecto. Solo hay diez en total, asi que seis cubren casi cualquier
+    # pregunta sin arrastrar fichas que estorban.
+    fragmentos_centro: int = 6
 
     # Embeddings multilingues. El modelo por defecto de Chroma (all-MiniLM-L6-v2)
-    # esta entrenado en ingles y sobre este corpus en espanol recuperaba 9/20
-    # consultas con verdad documentada, frente a 18/20 del multilingue.
+    # esta entrenado en ingles y sobre este corpus en espanol recupera 27/36
+    # consultas con verdad documentada, frente a 36/36 del multilingue.
+    # (Medido con `python -m pruebas.recuperacion --n 6`.)
     # Requiere `pip install sentence-transformers`. Usa colecciones propias, asi
     # que al activarlo el corpus se reindexa una sola vez.
     multilingual_embeddings: bool = True
@@ -188,6 +203,20 @@ class VozConfig:
         "Soil Sensor", "Barranquilla", "Jose Consuegra",
     )
 
+    # --- Quien esta hablando ----------------------------------------------
+    # Distingue que se acerco OTRA persona, sin identificar a nadie y sin guardar
+    # nada: la referencia de timbre vive en memoria durante la visita. Evita que
+    # el siguiente visitante herede el perfil del anterior.
+    detectar_cambio_de_hablante: bool = True
+    # Similitud del coseno por debajo de la cual se considera otra persona.
+    # Medido con dos voces sinteticas distintas: misma voz 0.844-0.947, voces
+    # distintas 0.314-0.448. Con gente real y ruido de sala el hueco se estrecha;
+    # el log registra cada comparacion para poder recalibrar en la propia sala.
+    umbral_hablante: float = 0.65
+    # Menos audio que esto no da para decidir un timbre: se deja pasar sin tocar
+    # la referencia, que es preferible a reiniciar el perfil por un monosilabo.
+    minimo_segundos_hablante: float = 1.2
+
     # --- Sintesis ----------------------------------------------------------
     # "piper" es la voz buena y offline; "sistema" usa el sintetizador del sistema
     # operativo (SAPI5 en Windows, espeak-ng en Linux) para que la exhibicion hable
@@ -207,6 +236,10 @@ class VozConfig:
     # trocear "Si." de su continuacion suena entrecortado.
     minimo_frase: int = 12
     maximo_frase: int = 240
+    # Reescrituras que se aplican SOLO al texto que va al sintetizador: la
+    # pantalla y la memoria conservan la ortografia original. Vacio usa el lexico
+    # por defecto de `hacu.voz.pronunciacion`; una tupla propia lo sustituye.
+    pronunciaciones: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -235,6 +268,9 @@ class AppConfig:
     default_user: str = "visitante"
     log_file: Path = PROJECT_ROOT / "logs" / "hacu.log"
     debug_console: bool = False
+    # Lo primero que dice HACU al arrancar, antes de que nadie le pregunte nada.
+    # Vacio = no saluda (util en el harness de pruebas, que mide turnos limpios).
+    saludo_inicial: str = SALUDO_INICIAL
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -248,6 +284,7 @@ class AppConfig:
         HACU_CTX=8192         ventana de contexto (un modelo mas grande deja menos VRAM)
         HACU_VOZ=1            activa microfono y altavoz
         HACU_VOZ_SALIDA=1     solo altavoz: HACU habla pero no escucha
+        HACU_HABLANTES=0      no distinguir cuando cambia la persona que habla
         HACU_VOZ_AUTO=1       escucha sola en vez de pulsar-para-hablar
         HACU_STT=medium       tamano del modelo de reconocimiento
         HACU_TTS=sistema      motor de sintesis: auto | piper | sistema | mudo
@@ -256,6 +293,7 @@ class AppConfig:
         HACU_ENTRADA=3        indice del microfono (ver --diagnostico)
         HACU_SALIDA=5         indice del altavoz
         HACU_PANTALLA_COMPLETA=1  la ventana arranca a pantalla completa
+        HACU_SALUDO="..."     otra frase de apertura ("" = arrancar sin saludo)
         """
         base = cls(debug_console=_bandera("HACU_DEBUG"))
         memoria = base.memory
@@ -287,6 +325,8 @@ class AppConfig:
             voz = replace(voz, activa=True)
         if _bandera("HACU_VOZ_SALIDA"):
             voz = replace(voz, solo_salida=True)
+        if os.getenv("HACU_HABLANTES", "").strip() == "0":
+            voz = replace(voz, detectar_cambio_de_hablante=False)
         if _bandera("HACU_VOZ_AUTO"):
             voz = replace(voz, deteccion_automatica=True)
         stt = _texto("HACU_STT")
@@ -310,6 +350,12 @@ class AppConfig:
         if _bandera("HACU_PANTALLA_COMPLETA"):
             interfaz = replace(interfaz, pantalla_completa=True)
 
+        # Cadena vacia es una eleccion valida (arrancar callado), asi que aqui no
+        # sirve `_texto`, que la confunde con "no definida".
+        saludo = os.getenv("HACU_SALUDO")
+        if saludo is not None:
+            base = replace(base, saludo_inicial=saludo.strip())
+
         return replace(base, memory=memoria, rag=rag, model=modelo, voz=voz, interfaz=interfaz)
 
     def presupuesto_contexto(self) -> tuple[int, int]:
@@ -320,7 +366,7 @@ class AppConfig:
         sin recalcular: llama.cpp truncaria por la izquierda, comiendose el system
         prompt, y el fallo se veria como un cambio de personalidad inexplicable.
         """
-        fragmentos = self.rag.broad_results_audacia * (self.rag.chunk_size + self.rag.chunk_overlap)
+        fragmentos = self.rag.broad_results_audacia * self.rag.chunk_max_seccion
         hechos = self.memory.max_facts_per_profile * 80
         historial = self.memory.history_messages * self.model.chat_max_tokens_extenso * 4 // 2
         caracteres = _CARACTERES_SISTEMA + fragmentos + hechos + historial + 400

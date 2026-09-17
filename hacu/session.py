@@ -18,7 +18,15 @@ from .extractor import BackgroundMemoryExtractor
 from .identity import IdentityResolver
 from .llm import LlmService
 from .memory import HacuMemoryDB
-from .routing import FastRouter, Intencion, es_seguimiento, pide_desarrollo
+from .routing import (
+    FastRouter,
+    Intencion,
+    es_catalogo,
+    es_confidencia,
+    es_despedida,
+    es_seguimiento,
+    pide_desarrollo,
+)
 
 
 @dataclass(frozen=True)
@@ -94,6 +102,29 @@ class HacuSession:
             self._log.debug("Seguimiento: se hereda el dominio %s", intencion.value)
         return intencion, time.perf_counter() - inicio
 
+    def saludar(self, texto: str) -> str:
+        """Abre la visita con una frase fija y la deja escrita en el historial.
+
+        No pasa por el modelo a proposito. Una frase literal puesta delante de un
+        8B es lo que el modelo acaba recitando en los turnos siguientes, y en este
+        proyecto eso ya ocurrio cuatro veces con textos de andamiaje.
+
+        Si que se guarda como turno de HACU, y eso es lo importante: cuando el
+        visitante conteste "Daniela", el modelo vera la pregunta justo encima. Sin
+        esto, el primer mensaje de la conversacion seria un nombre suelto sin nada
+        que lo explique, y la respuesta saldria desorientada.
+
+        Devuelve el texto guardado (cadena vacia si no hay saludo configurado),
+        para que la consola y la ventana muestren exactamente lo mismo que se
+        registro.
+        """
+        limpio = texto.strip()
+        if not limpio:
+            return ""
+        self._db.add_message(self.usuario_activo, "assistant", limpio)
+        self._log.debug("Saludo de apertura registrado para %s", self.usuario_activo)
+        return limpio
+
     def turno(
         self,
         texto: str,
@@ -118,7 +149,10 @@ class HacuSession:
 
         inicio = time.perf_counter()
         emitido: list[str] = []
-        retenedor = RetenedorDeCola()
+        retenedor = RetenedorDeCola(
+            permitir_cierre_breve=es_despedida(texto),
+            permitir_calidez=es_confidencia(texto),
+        )
         tokens = 0
 
         def emitir(texto: str) -> None:
@@ -131,7 +165,9 @@ class HacuSession:
         # Una peticion de desarrollo ("explicame cada proyecto") necesita mas techo
         # que una pregunta de tarima. Y hay que saber POR QUE termino la
         # generacion: si fue por tope, lo retenido es media frase y no se emite.
-        extenso = pide_desarrollo(texto)
+        # Anchura o fondo: las dos necesitan techo. Enumerar 32 proyectos no cabe
+        # en 384 tokens, y explicar uno a fondo tampoco.
+        extenso = pide_desarrollo(texto) or es_catalogo(texto)
         motivo: list[str | None] = [None]
 
         for fragmento in self._llm.stream_chat(mensajes, extenso=extenso,

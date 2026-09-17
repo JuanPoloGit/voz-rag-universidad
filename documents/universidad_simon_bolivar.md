@@ -1,59 +1,96 @@
-# Base de Conocimiento Institucional: Universidad Simón Bolívar (UniSimón)
+# Universidad Simón Bolívar (UniSimón)
 
-**Última actualización:** Agosto 2026
-**Ubicación Principal:** Barranquilla, Atlántico, Colombia.
-**Sedes:** Barranquilla y Cúcuta.
-**Naturaleza:** Institución de Educación Superior privada, sin ánimo de lucro.
+Institución de educación superior privada, sin ánimo de lucro, con sede principal
+en Barranquilla (Atlántico) y sede en Cúcuta (Norte de Santander), Colombia.
 
-## 1. Información General y Acreditación
+## Reseña Histórica, Fundador e Ideario Bolivariano
 
-* La **Universidad Simón Bolívar (UniSimón)** es una institución de educación superior en Colombia, reconocida por su fuerte enfoque en la investigación, la innovación y el compromiso social.
-* Cuenta con la **Acreditación Institucional en Alta Calidad** otorgada por el Ministerio de Educación Nacional de Colombia.
-* La sede principal se encuentra ubicada en la Carrera 59 No. 59-65 en Barranquilla.
+- Fecha de Fundación: 15 de noviembre de 1972 (iniciando actividades académicas formales en 1973).
+- Fundador: Dr. José Consuegra Higgins (1924–2015), ilustre economista, educador, humanista, escritor y pensador social colombiano.
+- Propósito Creador: La universidad nació para democratizar el acceso a la educación superior en la Región Caribe colombiana, abriendo las puertas de la formación profesional de alta calidad a sectores sociales tradicionalmente excluidos o con limitados recursos económicos.
+- Ideario Bolivariano: La institución toma su nombre e ideario del Libertador Simón Bolívar, promoviendo los principios de libertad, equidad social, integración de los pueblos de América Latina, autodeterminación y formación ciudadana ética.
 
-## 2. Historia, Misión, Visión y Valores
+## Misión, Visión 2030 y Principios Institucionales
 
-* **Historia:** Fue fundada en el año 1972 en la ciudad de Barranquilla. Su fundador principal fue el destacado académico José Consuegra Higgins.
-* **Visión (2037):** En 2037, la Universidad Simón Bolívar será reconocida por la calidad, la capacidad de innovación y el compromiso social de la docencia, la investigación científica y la extensión. También busca ser reconocida por su aporte al desarrollo sostenible en los ámbitos nacional e internacional.
-* **Valores Institucionales:**
-  * **Ética:** Apego a la consideración del bien común como base del bienestar y compromiso social.
-  * **Responsabilidad:** Cumplimiento de deberes, ejercicio de derechos y asunción de consecuencias.
-  * **Convivencia:** Promoción del respeto, diálogo claro y bienestar colectivo.
-  * **Compromiso y Calidad:** Funcionar como ente transformador de la sociedad, prestando un servicio de educación superior basado en el mejoramiento continuo.
-  * **Inclusión:** Generación de escenarios respetuosos y flexibles frente a la diversidad y la pluralidad cultural.
+- Misión Institucional: La Universidad Simón Bolívar es una institución de educación superior dedicada a la formación integral, la investigación científica, la innovación y la proyección social. Su compromiso se centra en el desarrollo de la ciencia, la cultura y la tecnología con criterios de inclusión social, equidad, sostenibilidad, ética y pertinencia regional y nacional.
+- Visión (Proyección a 2030): Consolidarse como una universidad de docencia con investigación de clase mundial, reconocida internacionalmente por su excelencia académica, su ecosistema de innovación y emprendimiento (Distrito de Conocimiento e Innovación Eureka), y su impacto transformador en el desarrollo socioeconómico de Colombia y América Latina.
+- Lema Institucional: "Educación de Alta Calidad con Inclusión Social".
 
-## 3. Liderazgo y Directivas
+## Acreditación de Alta Calidad y Reconocimientos
 
-* **Rector:** El actual rector de la Universidad Simón Bolívar es **José Consuegra Bolívar**. Ha sido un líder clave en el fortalecimiento del ecosistema de Ciencia y en 2022 fue elegido presidente de la Asociación Colombiana de Universidades (Ascún).
-* **Gestión Administrativa Destacada:**
-  * Jefatura de Admisiones y Promoción Institucional: Maribel Omayra Martínez Franco.
-  * Jefatura de Matrículas y Graduación: Angélica María Redondo Quintero.
-  * Coordinación de Admisiones y Promoción en la sede Cúcuta: Mónica Delgado Rangel.
+- Estatus de Universidad: Reconocimiento institucional otorgado por el Ministerio de Educación Nacional (MEN) mediante el Decreto 3354 de 2005.
+- Acreditación Institucional de Alta Calidad:
+- Acreditación Inicial: Otorgada en 2016 por el Ministerio de Educación Nacional (Resolución 23095).
+- Renovación Institucional de Alta Calidad: Otorgada en 2021 mediante la Resolución 013718 del MEN por un periodo de 8 años, el máximo reconocimiento a la excelencia académica en Colombia.
+- Posicionamiento en Rankings:
+- ART-Sapiens: Clasificada sistemáticamente entre las mejores universidades privadas de Colombia en desarrollo de productos tecnológicos e innovación.
+- QS Latin America & Times Higher Education (THE): Destacada en clasificaciones internacionales por su contribución a los Objetivos de Desarrollo Sostenible (ODS) de la ONU y su impacto científico.
 
-## 4. Facultades y Oferta Académica de Pregrado
+## Gobierno Universitario y Liderazgo
 
-La universidad posee múltiples facultades con programas altamente reconocidos (muchos de ellos con acreditación de alta calidad):
+- Rectoría Institucional: Dr. José Eusebio Consuegra Bolívar.
+- Vicerrectoría de Investigación, Extensión e Innovación: Dra. Paola Amar Sepúlveda.
+- Órganos Máximos de Dirección: Sala General, Consejo Directivo y Consejo Académico.
 
-* **Facultad de Administración y Negocios:** Administración de Empresas, Comercio y Negocios Internacionales, Contaduría Pública, Marketing y Negocios Digitales.
-* **Facultad de Ciencias Jurídicas y Sociales:** Derecho, Psicología, Trabajo Social, Ciencias Políticas y Gobierno.
-* **Facultad de Ciencias de la Salud & Ciencias Básicas y Biomédicas:** Medicina, Enfermería, Fisioterapia, Instrumentación Quirúrgica, Nutrición y Dietética, Microbiología.
-* **Facultad de Ingenierías:** Ingeniería de Sistemas, Ingeniería Industrial, Ingeniería Multimedia, Ingeniería Mecánica, Ingeniería Mecatrónica, Ingeniería Civil, Diseño Industrial, Diseño Gráfico Digital, Ingeniería de Datos e Inteligencia Artificial (IA), y Diseño de Modas.
+## Distribución Geográfica, Sedes e Infraestructura Cultural
 
-## 5. Oferta de Posgrados (Especializaciones, Maestrías y Doctorados)
+- Sede Principal — Barranquilla (Atlántico):
+- Campus Central (Barrio El Prado): Integración de arquitectura patrimonial con modernos bloques tecnológicos en el tradicional barrio El Prado (Carreras 54, 53 y 59).
+- Teatro José Consuegra Higgins: Centro cultural y de eventos insignia de la ciudad con capacidad para más de 1.000 espectadores.
+- Museo Bibliográfico Bolivariano: Espacio dedicado a la preservación documental y memoria histórica de la gesta bolivariana.
+- Casa de la Cultura de la Universidad Simón Bolívar: Epicentro de desarrollo artístico y comunitario.
+- Sede Cúcuta — Norte de Santander:
+- Sedes en Barrio Blanco y Los Caobos, creadas para impulsar la educación, investigación y desarrollo socioeconómico en la frontera oriental colombo-venezolana.
 
-La institución cuenta con una robusta oferta académica de posgrados orientada a la especialización profesional y la investigación:
+## Estructura académica y oferta de programas
 
-* **Sede Barranquilla:** Cuenta con aproximadamente 16 maestrías, 35 especializaciones y 5 doctorados.
-* **Sede Cúcuta:** Ofrece 9 maestrías, 12 especializaciones y 1 doctorado.
-* **Especializaciones destacadas:** Áreas de la salud altamente especializadas como Anestesiología, Cardiología, Cirugía Plástica, Ginecología, Neurología, Medicina Crítica, Psiquiatría, entre otras. También especializaciones en Seguridad y Salud en el Trabajo y Finanzas.
-* **Maestrías:** Destacan la Maestría en Gestión y Emprendimiento Tecnológico, Ingeniería de Sistemas y Computación, y Sistemas de Gestión.
-* **Doctorados:** Ofrece doctorados en Administración, Ciencias de la Educación, Genética y Biología Molecular, Gestión de la Tecnología y la Innovación, Psicología, y Sociedad y Cultura Caribe.
+Facultades, pregrados y posgrados de la Universidad Simón Bolívar.
 
-## 6. Ecosistema de Innovación e Investigación
+### Facultad de Ingenierías
 
-La universidad se destaca a nivel nacional e internacional por su infraestructura de investigación e innovación tecnológica:
+- Pregrados: Ing. de Sistemas    Ing. Industrial    Ing. Mecánica    Ing. Multimedia    Ing. de Mantenimiento
+- Posgrados: Doctorado en Inteligencia Artificial (Primer Doctorado en IA del Caribe)    M. en Ing. de Sistemas y Computación    M. en Ing. Industrial
 
-* **MacondoLab:** Es el Centro de Crecimiento Empresarial e Innovación de la universidad. Reconocida como una de las incubadoras y aceleradoras de negocios más importantes de América Latina.
-* **AudacIA:** Centro de Investigación, Desarrollo Tecnológico e Innovación en Inteligencia Artificial y Robótica.
-* **Eureka:** Centro de investigación que se especializa en ciencias de la vida y la salud.
-* **Impacto Regional:** Los centros de investigación de UniSimón trabajan en constante articulación con empresas privadas, sector público y comunidades vulnerables para ofrecer soluciones tecnológicas y sociales al entorno.
+### Facultad de Ciencias de la Salud
+
+- Pregrados: Medicina    Enfermería    Fisioterapia    Instrumentación Quirúrgica    Psicología    Trabajo Social
+- Posgrados: Doctorado en Psicología    M. en Neuropsicología    M. en Discapacidad    M. en Actividad Física y Salud    M. en Psicología Clínica    Especializaciones Médicas (Pediatría, Ginecología, Medicina Interna, Cirugía General)
+
+### Facultad de Ciencias Básicas y Biomédicas
+
+- Pregrados: Microbiología
+- Posgrados: Doctorado en Genética y Biología Molecular    M. en Genética    M. en Ciencias Médicas
+
+### Facultad de Ciencias Jurídicas y Sociales
+
+- Pregrados: Derecho    Ciencia Política
+- Posgrados: Doctorado en Ciencias de la Educación    Doctorado en Sociedad y Cultura Caribe    M. en Derecho Administrativo, Penal y Constitucional    M. en Educación
+
+### Facultad de Administración y Negocios
+
+- Pregrados: Administración de Empresas    Comercio y Negocios Internacionales    Contaduría Pública
+- Posgrados: Doctorado en Administración    Doctorado en Gestión de la Tecnología y la Innovación    M. en Administración (MBA)    M. en Negocios Internacionales
+
+## Ecosistema I+D+i: Distrito de Conocimiento e Innovación Eureka
+
+- La investigación, desarrollo tecnológico e innovación en Unisimón se concentra en el Distrito Eureka, integrado por unidades de vanguardia:
+- AudacIA (Centro de Excelencia en IA y Robótica):
+- Primer Centro de Excelencia en IA y Robótica para las Américas reconocido por la OEA y MinCiencias.
+- Cuenta con un supercomputador de más de 35.000 núcleos e infraestructura física de 3.000 m².
+- Desarrollador de más de 25 soluciones en salud (VART, PATRii, Mary, Neupeek), robótica submarina (ROV), espectroscopia (Detección de explosivos y petróleo) y agro-tecnología.
+- MacondoLab (Centro de Crecimiento Empresarial e Innovación):
+- Aceleradora de empresas e incubadora tecnológica posicionada entre las mejores de Latinoamérica (Top 5 según UBI Global).
+- Lidera procesos de vigilancia tecnológica, empaquetamiento de patentes y creación de empresas de base tecnológica (spin-offs).
+- CICV (Centro de Investigaciones en Ciencias de la Vida):
+- Unidad de investigación biomédica, genética molecular y cultivo celular.
+- Lideró procesos de secuenciación genómica y diagnóstico molecular durante emergencias sanitarias en el Caribe colombiano.
+- ADAPTIA (Centro de Investigaciones Medioambientales):
+- Dedicado a la investigación en cambio climático, gestión del riesgo, sostenibilidad hídrica y desarrollo de tecnología robótica agrícola (drones terrestres).
+- CRIC (Centro de Investigaciones e Innovación Social Pedro Romero):
+- Enfocado en estudios de comportamiento social, equidad de género, construcción de paz y desarrollo comunitario.
+
+## Inclusión Social e Impacto Comunitario
+
+- Movilidad Social: Más del 70% de la población estudiantil inscrita pertenece a los estratos socioeconómicos 1, 2 y 3.
+- Fondo de Becas: Programas internos de apoyo económico, becas al mérito académico, deportivo y cultural.
+- Propiedad Intelectual: La universidad ocupa lugares destacados en Colombia en solicitudes y concesión de patentes de invención ante la Superintendencia de Industria y Comercio (SIC).

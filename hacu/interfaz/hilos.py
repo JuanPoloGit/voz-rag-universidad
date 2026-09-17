@@ -62,7 +62,9 @@ class TrabajadorTurno(QThread):
 class TrabajadorTranscripcion(QThread):
     """Cierra el microfono y transcribe lo grabado."""
 
-    transcrito = Signal(str)
+    # (texto, cambio de hablante, similitud). La similitud viaja para poder
+    # calibrar el umbral en la sala mirando numeros reales.
+    transcrito = Signal(str, bool, float)
     fallo = Signal(str)
 
     def __init__(self, voz: ServicioDeVoz, logger: logging.Logger, parent=None) -> None:
@@ -72,7 +74,9 @@ class TrabajadorTranscripcion(QThread):
 
     def run(self) -> None:
         try:
-            self.transcrito.emit(self._voz.detener_escucha())
+            escucha = self._voz.detener_escucha()
+            self.transcrito.emit(escucha.texto, escucha.cambio_de_hablante,
+                                 escucha.similitud if escucha.similitud is not None else -1.0)
         except Exception as error:
             self._log.error("Fallo la transcripcion", exc_info=True)
             self.fallo.emit(str(error))
@@ -81,7 +85,7 @@ class TrabajadorTranscripcion(QThread):
 class TrabajadorEscuchaContinua(QThread):
     """Escucha automatica: espera frases hasta que se le pide parar."""
 
-    transcrito = Signal(str)
+    transcrito = Signal(str, bool, float)
     fallo = Signal(str)
 
     def __init__(self, voz: ServicioDeVoz, logger: logging.Logger, parent=None) -> None:
@@ -104,9 +108,12 @@ class TrabajadorEscuchaContinua(QThread):
                 if self._pausado:
                     self.msleep(120)
                     continue
-                texto = self._voz.escuchar_una_frase(cancelado=self._debe_salir)
-                if texto.strip():
-                    self.transcrito.emit(texto.strip())
+                escucha = self._voz.escuchar_una_frase(cancelado=self._debe_salir)
+                if escucha:
+                    self.transcrito.emit(
+                        escucha.texto.strip(), escucha.cambio_de_hablante,
+                        escucha.similitud if escucha.similitud is not None else -1.0,
+                    )
         except Exception as error:
             self._log.error("Fallo la escucha continua", exc_info=True)
             self.fallo.emit(str(error))

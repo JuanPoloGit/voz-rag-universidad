@@ -1,6 +1,7 @@
 """Ejecuta el guion conversacional contra el modelo real.
 
-    python -m pruebas.conversacion            # la visita completa, 25 turnos
+    python -m pruebas.conversacion            # la visita completa
+    python -m pruebas.conversacion --voz      # y ademas la escuchas, como en la tarima
     python -m pruebas.conversacion --listar   # el guion con sus criterios
     python -m pruebas.conversacion --desde G15
 
@@ -34,7 +35,13 @@ _NEGACIONES: tuple[str, ...] = (
     "no tengo", "no dispongo", "no aparece", "no figura", "no consta", "no me consta",
     "no esta documentad", "no hay informacion", "no encuentro", "no puedo confirmar",
     "no se menciona", "no cuento con", "desconozco", "no lo se", "no tengo constancia",
-    "no forma parte", "no esta recogido",
+    "no forma parte", "no esta recogido", "no lo tengo",
+    # Negar el HECHO es tan valido como negar el dato, y es lo que hay que hacer
+    # con una falsedad: ante "la universidad tiene un observatorio", la respuesta
+    # correcta es "no tiene un observatorio", no "no tengo ese dato". Faltaban, y
+    # la prueba marcaba como fallo justo la respuesta que queriamos.
+    "no tiene", "no cuenta con", "no existe", "no posee", "no hay ningun",
+    "no es correcto", "no es cierto", "hay un error", "no dispone de",
 )
 # El minimo de EXTENSA empezo en 480 y marcaba como fallo respuestas completas:
 # la explicacion de Orion traia los cuatro eslabones de la cadena en 451 caracteres.
@@ -97,7 +104,12 @@ def evaluar(turno: Turno, respuesta: str, perfil: str) -> ResultadoTurno:
                           respuesta=respuesta, perfil=perfil, criterio=turno.criterio,
                           caracteres=len(respuesta))
 
-    fila.faltan = [d for d in turno.debe_contener if normalizar(d) not in plano]
+    # Una entrada puede ofrecer alternativas con "|": varias respuestas pueden
+    # ser correctas y exigir una sola palabra convierte la prueba en una trampa.
+    fila.faltan = [
+        exigido for exigido in turno.debe_contener
+        if not any(normalizar(v) in plano for v in exigido.split("|"))
+    ]
     fila.prohibidos = [d for d in turno.no_debe_contener if aparece_afirmado(plano, d)]
     if turno.debe_negar and not any(n in plano for n in _NEGACIONES):
         fila.sin_negacion = True
@@ -135,7 +147,7 @@ def preparar(turnos: list[Turno]) -> tuple[list[Turno], list[str]]:
     return ajustados, retirados
 
 
-def ejecutar(turnos: list[Turno], config: AppConfig) -> list[ResultadoTurno]:
+def ejecutar(turnos: list[Turno], config: AppConfig, voz=None) -> list[ResultadoTurno]:
     logger = configurar_logging(config.log_file, debug_console=False)
     print("🔧 Levantando HACU...")
     comp = construir(config, logger, progreso=lambda m: print(f"   {m}"))
@@ -143,7 +155,15 @@ def ejecutar(turnos: list[Turno], config: AppConfig) -> list[ResultadoTurno]:
     try:
         for i, turno in enumerate(turnos, 1):
             print(f"\n[{i:02d}/{len(turnos)}] {turno.id} · {turno.tipo.value}\n> {turno.texto}")
-            salida = comp.sesion.turno(turno.texto)
+            # Con voz, el ensayo suena como en escena: se habla frase a frase y
+            # no se pasa al turno siguiente hasta que HACU termina de hablar.
+            locutor = voz.locutor() if voz is not None and voz.puede_hablar else None
+            salida = comp.sesion.turno(
+                turno.texto, on_token=locutor.alimentar if locutor else None
+            )
+            if locutor is not None:
+                locutor.cerrar()
+                voz.esperar_a_que_calle(timeout=180)
             comp.extractor.esperar_vacio()
 
             fila = evaluar(turno, salida.respuesta, salida.usuario)
@@ -239,6 +259,8 @@ def listar() -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Guion conversacional de HACU")
     parser.add_argument("--listar", action="store_true")
+    parser.add_argument("--voz", action="store_true",
+                        help="ademas de medirlo, lo dice en voz alta")
     parser.add_argument("--desde", type=str, default="", help="empieza en ese id (p.ej. G15)")
     parser.add_argument("--tipo", type=str, default="", help="solo turnos de ese tipo")
     parser.add_argument("--salida", type=Path, default=PROJECT_ROOT / "pruebas" / "informes")
@@ -271,9 +293,21 @@ def main() -> int:
     config = AppConfig.from_env()
     config = replace(config, memory=replace(config.memory, db_path=temporal / "memoria.db"))
     print(f"🧪 Memoria temporal en {temporal}")
+
+    voz = None
+    if args.voz:
+        # Solo la boca: el guion escribe las preguntas, no las dice nadie.
+        from hacu.voz import ServicioDeVoz
+
+        voz = ServicioDeVoz(replace(config.voz, solo_salida=True, activa=False),
+                            configurar_logging(config.log_file, debug_console=False))
+        print(f"🔊 Voz: {voz.motor if voz.puede_hablar else 'NO disponible'}")
+
     try:
-        resultados = ejecutar(turnos, config)
+        resultados = ejecutar(turnos, config, voz)
     finally:
+        if voz is not None:
+            voz.cerrar(drenar=True)
         shutil.rmtree(temporal, ignore_errors=True)
 
     args.salida.mkdir(parents=True, exist_ok=True)

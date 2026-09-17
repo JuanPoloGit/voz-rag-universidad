@@ -14,6 +14,13 @@ faster-whisper>=1.0.0
 # La voz se baja aparte: python -m hacu.voz --descargar
 piper-tts>=1.2.0
 
+# Distingue cuando se acerca OTRA persona, sin identificar a nadie: el vector de
+# timbre vive en memoria durante la visita y no se guarda nunca. Desactivable con
+# HACU_HABLANTES=0. `setuptools` va explicito porque resemblyzer depende de
+# webrtcvad, que todavia importa pkg_resources.
+resemblyzer>=0.1.1
+setuptools
+
 # Solo en Windows: da acceso a SAPI5 como respaldo del sintetizador.
 pywin32>=306; sys_platform == "win32"
 soundfile>=0.12.1   # solo para `python -m hacu.voz --transcribir`: leer un WAV del disco
