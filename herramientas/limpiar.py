@@ -23,6 +23,8 @@ el siguiente arranque, o se regenera con una orden que se indica al lado.
 from __future__ import annotations
 
 import argparse
+import fnmatch
+import os
 import shutil
 import sys
 from collections.abc import Iterator
@@ -30,6 +32,28 @@ from dataclasses import dataclass
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
+
+# Carpetas en las que nunca hace falta bajar a mirar. Un `venv/` con
+# llama-cpp-python, torch (via sentence-transformers), chromadb y PySide6
+# instalados tiene decenas de miles de ficheros, y un `__pycache__` ahi
+# dentro no lo genero este proyecto: lo genero pip al instalar el paquete.
+# `RAIZ.glob("**/__pycache__")` no tiene forma de podar el descenso, asi que
+# recorria site-packages entero para no encontrar nada que valiera la pena
+# borrar: medido, eso es lo que hacia lento este comando en Windows.
+_CARPETAS_EXCLUIDAS = frozenset({"venv", ".venv", "env", ".git", "node_modules"})
+
+
+def _recorrer_podando(patron: str) -> Iterator[Path]:
+    """Como `RAIZ.glob('**/' + patron)`, sin bajar a `_CARPETAS_EXCLUIDAS`."""
+    for carpeta, subcarpetas, ficheros in os.walk(RAIZ):
+        subcarpetas[:] = [c for c in subcarpetas if c not in _CARPETAS_EXCLUIDAS]
+        if patron in subcarpetas:
+            yield Path(carpeta) / patron
+            subcarpetas.remove(patron)  # se borra entera; no hace falta bajar mas
+            continue
+        for fichero in ficheros:
+            if fnmatch.fnmatch(fichero, patron):
+                yield Path(carpeta) / fichero
 
 
 @dataclass(frozen=True)
@@ -41,7 +65,10 @@ class Objetivo:
     opcional: str = ""   # nombre de la bandera que hace falta para incluirlo
 
     def encontrar(self) -> Iterator[Path]:
-        yield from sorted(RAIZ.glob(self.patron))
+        if self.patron.startswith("**/"):
+            yield from sorted(_recorrer_podando(self.patron.removeprefix("**/")))
+        else:
+            yield from sorted(RAIZ.glob(self.patron))
 
 
 OBJETIVOS: tuple[Objetivo, ...] = (

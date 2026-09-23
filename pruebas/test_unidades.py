@@ -2059,6 +2059,50 @@ def probar_presupuesto_vram(v: Verificador) -> None:
     v.check("sin soporte, se arranca en fp16 en vez de reventar", opciones == {}, opciones)
 
 
+def probar_limpiar(v: Verificador) -> None:
+    """`herramientas.limpiar` no debe bajar a `venv/`: ahi vive site-packages entero.
+
+    Medido en la maquina real: con llama-cpp-python, torch, chromadb y PySide6
+    instalados, `RAIZ.glob("**/__pycache__")` recorria decenas de miles de
+    ficheros que no genero el proyecto, los genero pip. Este bloque prueba
+    que la poda funciona, no que el comando sea rapido (eso no se mide en dos
+    segundos y sin GPU).
+    """
+    v.bloque("limpiar")
+    import herramientas.limpiar as limpiar
+
+    tmp = Path(tempfile.mkdtemp(prefix="hacu-limpiar-"))
+    original = limpiar.RAIZ
+    try:
+        # Lo que el proyecto genera de verdad, y que si hay que encontrar.
+        (tmp / "hacu" / "__pycache__").mkdir(parents=True)
+        (tmp / "hacu" / "__pycache__" / "modulo.cpython-311.pyc").write_bytes(b"")
+        (tmp / "hacu" / "suelto.pyc").write_bytes(b"")
+
+        # Lo mismo, pero dentro de venv/: no lo genero el proyecto, lo genero
+        # pip al instalar el paquete, y es la carpeta que hacia lento el barrido.
+        paquete = tmp / "venv" / "Lib" / "site-packages" / "paquete" / "__pycache__"
+        paquete.mkdir(parents=True)
+        (paquete / "interno.cpython-311.pyc").write_bytes(b"")
+        (tmp / "venv" / "suelto_de_pip.pyc").write_bytes(b"")
+
+        limpiar.RAIZ = tmp
+        pycache = set(limpiar.Objetivo("**/__pycache__", "x").encontrar())
+        pyc = set(limpiar.Objetivo("**/*.pyc", "x").encontrar())
+
+        v.check("encuentra el __pycache__ del proyecto",
+                tmp / "hacu" / "__pycache__" in pycache, pycache)
+        v.check("encuentra el .pyc suelto del proyecto",
+                tmp / "hacu" / "suelto.pyc" in pyc, pyc)
+        v.check("no baja a venv/ a buscar __pycache__",
+                not any("venv" in p.parts for p in pycache), pycache)
+        v.check("no baja a venv/ a buscar .pyc",
+                not any("venv" in p.parts for p in pyc), pyc)
+    finally:
+        limpiar.RAIZ = original
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _lanza(fn, excepcion) -> bool:
     try:
         fn()
@@ -2986,6 +3030,7 @@ def main(argv: list[str]) -> int:
         "social": lambda: probar_conversacion_social(v),
         "amnesia": lambda: probar_amnesia(v),
         "vram": lambda: probar_presupuesto_vram(v),
+        "limpiar": lambda: probar_limpiar(v),
         "dispositivos": lambda: probar_dispositivos(v),
         "interfaz": lambda: probar_interfaz(v, tmp, log),
         "config": lambda: probar_configuracion(v),
