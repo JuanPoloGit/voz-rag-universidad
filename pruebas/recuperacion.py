@@ -82,6 +82,14 @@ CONSULTAS: tuple[ConsultaMedida, ...] = (
     ConsultaMedida("¿Cuántos núcleos de procesamiento tiene?", AUD, ("35.000",)),
     ConsultaMedida("¿Qué servicios ofrece el centro?", AUD, ("prototipado",)),
     ConsultaMedida("¿Cuáles son los objetivos de AudacIA?", AUD, ("apropiación social",)),
+    # --- Centros hermanos: lo que NO es AudacIA ----------------------------
+    # Tres piezas del corpus MENCIONAN MacondoLab de pasada y una lo EXPLICA.
+    # Las cuatro empatan a una palabra distintiva, y el cupo del rescate es de
+    # dos: sin desempate por titulo ganaban las menciones y estas tres lineas
+    # fallaban. Miden ese desempate, no el embedding.
+    ConsultaMedida("¿Qué es MacondoLab?", AUD, ("incubación", "2014"), todos=True),
+    ConsultaMedida("¿MacondoLab es un proyecto de ustedes?", AUD, ("al mismo nivel",)),
+    ConsultaMedida("¿Y el CICV qué es?", AUD, ("Ciencias de la Vida", "2003"), todos=True),
     # --- Universidad -------------------------------------------------------
     ConsultaMedida("¿Quién es el rector actualmente?", UNI, ("Consuegra Bolívar",)),
     ConsultaMedida("¿En qué año se fundó?", UNI, ("1972",)),

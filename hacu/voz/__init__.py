@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from ..config import VozConfig
 from .deteccion import DetectorDeVoz, Estado, ParametrosVoz, nivel_rms, umbral_desde_ruido
 from .dispositivos import Dispositivo, comprobar, listar_dispositivos
-from .hablantes import Cambio, DetectorDeHablante
+from .hablantes import Cambio, DetectorDeHablante, motivo_de_indisponibilidad
 from .microfono import AudioNoDisponible, Microfono
 from .segmentador import SegmentadorDeFrases
 from .sintetizador import (
@@ -26,18 +26,43 @@ from .sintetizador import (
     cadena_de_motores,
     crear_sintetizador,
     localizar_piper,
+    ruta_de_voz,
     sintetizar_a_archivo,
 )
 from .transcriptor import Transcriptor, TranscriptorMudo, TranscriptorWhisper
 
 __all__ = [
-    "AudioNoDisponible", "Cambio", "DetectorDeHablante", "ResultadoEscucha", "DetectorDeVoz", "Dispositivo", "Estado", "Locutor",
+    "AudioNoDisponible", "Cambio", "DetectorDeHablante", "comprobar_dependencias",
+    "motivo_de_indisponibilidad", "ruta_de_voz", "ResultadoEscucha", "DetectorDeVoz", "Dispositivo", "Estado", "Locutor",
     "Microfono", "ParametrosVoz", "SegmentadorDeFrases", "ServicioDeVoz",
     "Sintetizador", "SintetizadorMudo", "Transcriptor", "TranscriptorMudo",
     "TranscriptorWhisper", "cadena_de_motores", "comprobar", "crear_sintetizador",
     "listar_dispositivos",
     "localizar_piper", "nivel_rms", "sintetizar_a_archivo", "umbral_desde_ruido",
 ]
+
+
+def comprobar_dependencias(config: VozConfig) -> list[str]:
+    """Lo que falta para que la capa de voz funcione entera, en una lista.
+
+    Complementa a `comprobar`, que solo mira las tarjetas de sonido. Estas dos
+    ausencias no impiden arrancar —HACU habla igual y reconoce igual— pero
+    degradan la exhibicion, y las dos se notan en escena y no en el arranque si
+    nadie las busca: una voz que se corta entre frases y un detector de visitante
+    que nunca dispara.
+    """
+    problemas: list[str] = []
+    if config.detectar_cambio_de_hablante:
+        motivo = motivo_de_indisponibilidad()
+        if motivo:
+            problemas.append(motivo)
+    if ruta_de_voz(config) is None:
+        problemas.append(
+            f"La voz {config.piper_voz} no esta descargada en {config.carpeta_voces}. "
+            "Piper arrancara un proceso por frase (~2.5 s frente a 0.2 s): habra "
+            "pausas largas. Descargala con `python -m hacu.voz --descargar`."
+        )
+    return problemas
 
 
 @dataclass(frozen=True)
@@ -103,10 +128,16 @@ class ServicioDeVoz:
             # esa situacion, devolvia cadena vacia sin decir por que.
             self._transcriptor = TranscriptorWhisper(config, logger)
             if config.detectar_cambio_de_hablante:
-                self._hablantes = DetectorDeHablante(
-                    config.umbral_hablante, config.minimo_segundos_hablante,
-                    config.frecuencia, logger,
-                )
+                # Se comprueba aqui y no al primer turno: un aviso en el arranque
+                # es accionable; un traceback por cada frase del visitante, no.
+                motivo = motivo_de_indisponibilidad()
+                if motivo:
+                    self._log.warning("Sin distincion de voces: %s", motivo)
+                else:
+                    self._hablantes = DetectorDeHablante(
+                        config.umbral_hablante, config.minimo_segundos_hablante,
+                        config.frecuencia, logger,
+                    )
             try:
                 self._micro = Microfono(config, logger)
             except AudioNoDisponible as error:
@@ -114,6 +145,7 @@ class ServicioDeVoz:
                 self._log.warning("Sin captura de audio: %s", error)
         self._tts = crear_sintetizador(config, logger)
         self.problemas.extend(comprobar(config) if self._micro else [])
+        self.problemas.extend(comprobar_dependencias(config))
 
     # ------------------------------------------------------------------ estado
 
@@ -138,6 +170,38 @@ class ServicioDeVoz:
     @property
     def nivel(self) -> float:
         return self._micro.nivel if self._micro else 0.0
+
+    # -------------------------------------------------------------- dispositivos
+
+    def dispositivos(self) -> list[Dispositivo]:
+        """Inventario de tarjetas de audio. Lista vacia si no hay PortAudio."""
+        try:
+            return listar_dispositivos()
+        except Exception:
+            self._log.debug("No se pudo inventariar el audio", exc_info=True)
+            return []
+
+    @property
+    def entrada_actual(self) -> int | None:
+        """Indice del microfono en uso. None = el que elija el sistema."""
+        return self._micro.dispositivo if self._micro else None
+
+    @property
+    def salida_actual(self) -> int | None:
+        """Indice del altavoz en uso. None = el que elija el sistema."""
+        return getattr(self._tts, "_salida", None)
+
+    def usar_entrada(self, indice: int | None) -> None:
+        """Cambia de microfono. Surte efecto en la proxima escucha, no a mitad."""
+        if self._micro is None:
+            return
+        self._micro.dispositivo = indice
+        self._log.info("Microfono cambiado a %s",
+                       indice if indice is not None else "por defecto")
+
+    def usar_salida(self, indice: int | None) -> None:
+        """Cambia de altavoz. El motor cierra su stream y reabre en el nuevo."""
+        self._tts.usar_salida(indice)
 
     # ----------------------------------------------------------------- escuchar
 

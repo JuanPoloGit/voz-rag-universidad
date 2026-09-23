@@ -1,7 +1,7 @@
 # Generar el manual en PDF
 
 `docs/HACU-documentacion.pdf` es la documentación de `docs/` ensamblada en un solo
-manual de ~56 páginas, con portada, índice y enlaces internos. No se escribe: se
+manual de ~71 páginas, con portada, índice y enlaces internos. No se escribe: se
 genera, y hay que regenerarlo cada vez que cambia algo en `docs/`.
 
 ```bash

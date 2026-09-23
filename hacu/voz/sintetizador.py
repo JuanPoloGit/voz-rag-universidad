@@ -39,6 +39,7 @@ from typing import Protocol
 import numpy as np
 
 from ..config import VozConfig
+from .audio import comprimir_silencios, nivelar
 from .pronunciacion import LEXICO, compilar, para_voz
 
 
@@ -60,6 +61,9 @@ class Sintetizador(Protocol):
     def hablando(self) -> bool: ...
 
     def cerrar(self, drenar: bool = True, timeout: float = 30.0) -> None: ...
+
+    def usar_salida(self, indice: int | None) -> None:  # noqa: ARG002
+        """Cambia de altavoz en caliente. Los motores que no puedan, no hacen nada."""
 
 
 class SintetizadorMudo:
@@ -83,6 +87,9 @@ class SintetizadorMudo:
     @property
     def hablando(self) -> bool:
         return False
+
+    def usar_salida(self, indice: int | None) -> None:  # noqa: ARG002
+        return None
 
     def cerrar(self, drenar: bool = True, timeout: float = 30.0) -> None:  # noqa: ARG002
         return None
@@ -119,6 +126,9 @@ class _SintetizadorEnCola:
         self._condicion = threading.Condition()
         self._hilo = threading.Thread(target=self._bucle, name="hacu-tts", daemon=True)
         self._hilo.start()
+
+    def usar_salida(self, indice: int | None) -> None:  # noqa: ARG002
+        """Por defecto no se puede cambiar de tarjeta; los motores que si, lo pisan."""
 
     def decir(self, texto: str) -> None:
         if not texto.strip() or not self._vivo:
@@ -241,6 +251,7 @@ class SintetizadorPiperEnProceso(_SintetizadorEnCola):
         self._cfg = config
         self._sd = sounddevice
         self._stream = None
+        self._salida: int | None = config.dispositivo_salida
         self._voz = PiperVoice.load(str(ruta_voz))
         self._sintesis = _configuracion_de_sintesis(config)
         self._ruta = ruta_voz
@@ -267,9 +278,13 @@ class SintetizadorPiperEnProceso(_SintetizadorEnCola):
                 return
             muestras = np.frombuffer(trozo.audio_int16_bytes, dtype=np.int16)
             muestras = muestras.astype(np.float32) / 32768.0
-            if self._sintesis is None:
-                muestras = muestras * self._cfg.volumen_tts
             frecuencia = getattr(trozo, "sample_rate", None) or _frecuencia_de_voz(self._cfg)
+            # Piper entrega un trozo por frase, asi que el recorte de huecos ve
+            # la frase entera sin acumular nada ni anadir latencia.
+            muestras = comprimir_silencios(
+                muestras, frecuencia, self._cfg.pausa_maxima_ms,
+            )
+            muestras = nivelar(muestras, self._cfg.volumen_tts)
             if not self._escribir_troceado(muestras, frecuencia):
                 return
         if frecuencia and not self._cortar.is_set():
@@ -300,7 +315,7 @@ class SintetizadorPiperEnProceso(_SintetizadorEnCola):
         if self._stream is None:
             self._stream = self._sd.OutputStream(
                 samplerate=frecuencia, channels=1, dtype="float32",
-                device=self._cfg.dispositivo_salida,
+                device=self._salida,
             )
         if self._stream.stopped:
             self._stream.start()
@@ -315,6 +330,15 @@ class SintetizadorPiperEnProceso(_SintetizadorEnCola):
         except Exception:
             self._log.debug("Fallo cerrando el stream de salida", exc_info=True)
         self._stream = None
+
+    def usar_salida(self, indice: int | None) -> None:
+        """Cierra el stream actual; el siguiente `write` lo reabre en la nueva tarjeta."""
+        if indice == self._salida:
+            return
+        self._salida = indice
+        self._cerrar_stream()
+        self._log.info("Salida de audio cambiada a %s",
+                       indice if indice is not None else "por defecto")
 
     def _detener_reproduccion(self) -> None:
         if self._stream is not None:
@@ -334,9 +358,20 @@ def _configuracion_de_sintesis(config: VozConfig):
         from piper import SynthesisConfig  # noqa: PLC0415
     except ImportError:
         return None
+    # El volumen y la normalizacion los lleva `hacu.voz.audio`: Piper normaliza
+    # por pico y por frase, que iguala picos pero no sonoridad (medido: 14.6 %
+    # de dispersion de RMS frente al 9.8 % del audio crudo).
     try:
         return SynthesisConfig(
-            volume=config.volumen_tts,
+            volume=1.0,
+            length_scale=1.0 / max(config.velocidad_tts, 0.1),
+            normalize_audio=False,
+        )
+    except TypeError:
+        pass
+    try:
+        return SynthesisConfig(
+            volume=1.0,
             length_scale=1.0 / max(config.velocidad_tts, 0.1),
         )
     except TypeError:
@@ -357,9 +392,10 @@ class SintetizadorPiper(_SintetizadorEnCola):
         self._cfg = config
         self._orden = orden
         self._proceso: subprocess.Popen | None = None
-        self._voz = _ruta_de_voz(config) or config.piper_voz
+        self._voz = ruta_de_voz(config) or config.piper_voz
         self._frecuencia = _frecuencia_de_voz(config)
-        if _ruta_de_voz(config) is None:
+        self._salida: int | None = config.dispositivo_salida
+        if ruta_de_voz(config) is None:
             logger.warning("Sin .onnx.json para %s: se asume %d Hz. Si la voz suena "
                            "acelerada o lenta, descargala con `python -m hacu.voz "
                            "--descargar` para que traiga su ficha.",
@@ -395,9 +431,15 @@ class SintetizadorPiper(_SintetizadorEnCola):
         # audio— esa diferencia se come la ultima silaba. Reproducir silencio
         # detras no cuesta nada y garantiza que la voz sale entera.
         relleno = np.zeros(int(self._frecuencia * _COLA_SILENCIO_S), dtype=np.float32)
-        salida = np.concatenate([muestras * self._cfg.volumen_tts, relleno])
-        self._sd.play(salida, self._frecuencia, device=self._cfg.dispositivo_salida)
+        muestras = comprimir_silencios(
+            muestras, self._frecuencia, self._cfg.pausa_maxima_ms,
+        )
+        salida = np.concatenate([nivelar(muestras, self._cfg.volumen_tts), relleno])
+        self._sd.play(salida, self._frecuencia, device=self._salida)
         self._sd.wait()
+
+    def usar_salida(self, indice: int | None) -> None:
+        self._salida = indice
 
     def _detener_reproduccion(self) -> None:
         try:
@@ -490,7 +532,7 @@ def crear_sintetizador(config: VozConfig, logger: logging.Logger) -> Sintetizado
     for motor in cadena_de_motores(peticion):
         try:
             if motor == "piper-proceso":
-                ruta = _ruta_de_voz(config)
+                ruta = ruta_de_voz(config)
                 if ruta is None:
                     log.info("La voz %s no esta en %s; descargala con "
                              "`python -m hacu.voz --descargar`",
@@ -504,7 +546,7 @@ def crear_sintetizador(config: VozConfig, logger: logging.Logger) -> Sintetizado
                 if invocacion is None:
                     log.info("Piper no esta instalado (pip install piper-tts)")
                     continue
-                if not invocacion.moderno and _ruta_de_voz(config) is None:
+                if not invocacion.moderno and ruta_de_voz(config) is None:
                     log.info("Falta el modelo de voz %s en %s",
                              config.piper_voz, config.carpeta_voces)
                     continue
@@ -531,7 +573,7 @@ def sintetizar_a_archivo(config: VozConfig, texto: str, destino: Path) -> Path |
     orden = localizar_piper(config)
     if orden is None:
         return None
-    voz = _ruta_de_voz(config) or config.piper_voz
+    voz = ruta_de_voz(config) or config.piper_voz
     escala = 1.0 / max(config.velocidad_tts, 0.1)
     texto = para_voz(texto, compilar(config.pronunciaciones or LEXICO))
     base = orden.para(str(voz), escala)
@@ -569,7 +611,7 @@ def localizar_piper(config: VozConfig) -> OrdenPiper | None:
     return OrdenPiper([str(junto_a_las_voces)], moderno=False) if junto_a_las_voces.exists() else None
 
 
-def _ruta_de_voz(config: VozConfig) -> Path | None:
+def ruta_de_voz(config: VozConfig) -> Path | None:
     """El .onnx descargado, si esta en la carpeta de voces del proyecto."""
     candidata = Path(config.piper_voz)
     if candidata.suffix == ".onnx" and candidata.exists():
@@ -588,7 +630,7 @@ _FRECUENCIA_HABITUAL = 22050
 
 def _frecuencia_de_voz(config: VozConfig, por_defecto: int = _FRECUENCIA_HABITUAL) -> int:
     """Frecuencia de muestreo de la voz, leida de su .onnx.json."""
-    ruta = _ruta_de_voz(config)
+    ruta = ruta_de_voz(config)
     if ruta is not None:
         ficha = ruta.with_suffix(ruta.suffix + ".json")
         if ficha.exists():

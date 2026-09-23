@@ -94,6 +94,7 @@ def preparar(ruta: Path, clave: str, titulo_forzado: str | None) -> Capitulo:
 
     fuera = SECCIONES_FUERA.get(ruta.name, ())
     saltando = False
+    nivel_excluido = 0
     contador = 0
     salida: list[str] = []
 

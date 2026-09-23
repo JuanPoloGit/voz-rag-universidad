@@ -54,6 +54,10 @@ class Microfono:
         self._nivel = 0.0
         self._candado = threading.Lock()
         self._muestras_bloque = max(1, int(config.frecuencia * config.bloque_ms / 1000))
+        # El operador puede cambiar de tarjeta a mitad de exhibicion, asi que el
+        # indice no se lee de la config congelada: se guarda aqui y el proximo
+        # `iniciar()` abre el stream donde toque.
+        self.dispositivo: int | None = config.dispositivo_entrada
 
     # ------------------------------------------------------------------ estado
 
@@ -79,7 +83,7 @@ class Microfono:
             channels=self._cfg.canales,
             dtype="float32",
             blocksize=self._muestras_bloque,
-            device=self._cfg.dispositivo_entrada,
+            device=self.dispositivo,
             callback=self._recibir,
         )
         self._stream.start()

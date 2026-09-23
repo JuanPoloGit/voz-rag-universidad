@@ -49,7 +49,7 @@ Paso a paso completo, con verificación y errores típicos:
 | `python run_hacu.py --ui --voz` | Ventana con micrófono y altavoz |
 | `python run_hacu.py --ui --voz --pantalla-completa` | Lo que se proyecta el día de la exhibición |
 | `python -m hacu.voz` | Diagnóstico de audio: qué micrófono y qué altavoz |
-| `python -m pruebas.test_unidades` | 383 comprobaciones, ~2 s, sin GPU |
+| `python -m pruebas.test_unidades` | 742 comprobaciones, ~2 s, sin GPU |
 | `python -m herramientas.limpiar` | Qué sobra en la carpeta de trabajo |
 | `.\iniciar_robot.ps1` | Lo mismo dentro de Docker con GPU |
 
@@ -72,11 +72,11 @@ Paso a paso completo, con verificación y errores típicos:
 | **[Datos](docs/datos.md)** | Qué se guarda de los visitantes y quién decide |
 
 Todo lo anterior, en un solo manual con portada e índice:
-**[docs/HACU-documentacion.pdf](docs/HACU-documentacion.pdf)** (~56 páginas). Se
+**[docs/HACU-documentacion.pdf](docs/HACU-documentacion.pdf)** (~71 páginas). Se
 regenera desde `docs/` con [build/README.md](build/README.md).
 
 Referencias generadas: `PRUEBAS.md` (las 60 entradas de la batería) y `GUION.md`
-(los 30 turnos de la visita completa).
+(los 100 turnos de la visita completa).
 
 ---
 

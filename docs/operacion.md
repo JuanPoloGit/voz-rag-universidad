@@ -10,8 +10,8 @@ Guion de operación: qué hacer antes de abrir, durante la jornada y al cerrar.
 cd D:\Proyectos\voz-rag-universidad
 .\venv\Scripts\Activate.ps1
 
-python -m pruebas.test_unidades        # 383 en verde
-python -m pruebas.recuperacion         # 36/36
+python -m pruebas.test_unidades        # 742 en verde
+python -m pruebas.recuperacion         # 39/39
 python -m pruebas.conversacion         # la visita completa, contra el modelo real
 ```
 
@@ -24,6 +24,11 @@ Comprobar que el modelo está donde se espera y que la GPU lo acepta:
 python -c "from llama_cpp import llama_supports_gpu_offload as g; print('GPU:', g())"
 ```
 
+**Y comprobar que arranca sin red**, que es como va a estar la sala. Desconecta el
+Wi-Fi y arranca: el embedding del RAG y el reconocedor se abren desde la caché, así
+que tiene que levantar igual. Si se queda esperando a `huggingface.co`, falta
+descargar algo y hay que hacerlo **hoy**, con red, no mañana en el montaje.
+
 ---
 
 ## Al llegar a la sala, antes de levantar el modelo
@@ -35,6 +40,11 @@ python -m hacu.voz                     # ¿qué micrófono y qué altavoz hay?
 python -m hacu.voz --probar            # graba 3 s y los reproduce
 python -m hacu.voz --hablar "Hola, soy Hacu. Bienvenido a AudacIA."
 ```
+
+`python -m hacu.voz` también lista lo que falta sin impedir el arranque: la voz de
+Piper sin descargar y `resemblyzer` sin instalar. Las dos degradan la exhibición en
+silencio —pausas largas entre frases y un detector de visitante que nunca dispara—
+así que si aparecen, se arreglan hoy.
 
 En una portátil con webcam, base de conexiones y auriculares llega a haber cinco
 entradas. Si el sistema no elige la correcta, se fija por índice:
@@ -98,6 +108,25 @@ de niños y con colas.
 `Esc` o **Callar a HACU** corta la frase de inmediato. También corta volver a
 pulsar la barra espaciadora: el visitante que interrumpe no tiene que esperar.
 
+### Cuando alguien lo está pasando mal
+
+Si un visitante menciona suicidio o hacerse daño, HACU **no improvisa**: responde
+un texto fijo que le remite a ti, y te avisa en la pantalla con
+«⚠ Atención: el visitante ha dicho algo que necesita una persona, no un robot».
+
+Cuando veas ese aviso, acércate. No hay nada que tocar en el sistema; lo que hace
+falta eres tú. Ten localizado antes de abrir a quién de Bienestar Universitario
+puedes llamar ese día.
+
+Si el centro te ha dado unos recursos concretos, configúralos antes de arrancar
+para que HACU los diga:
+
+```powershell
+$env:HACU_AYUDA="Bienestar Universitario: <dónde y cómo>. Línea de apoyo: <cuál>."
+```
+
+Vacío, HACU remite solo a ti, que es la respuesta correcta en cualquier caso.
+
 ### Cuando dice algo raro
 
 HACU está construido para admitir que no sabe algo, y las pruebas lo verifican.
@@ -107,6 +136,11 @@ tiempo.
 
 Lo que **no** hay que hacer es discutir con él delante del público. **Nuevo
 visitante** y seguir.
+
+Para dejar constancia de una conversación entera —un fallo que reportar, un
+intercambio que salió bien y quieres guardar— **Ctrl+T** abre la transcripción en
+texto plano, lista para copiar o guardar como `.txt`. Es más rápido y más fiel que
+capturar la pantalla mensaje a mensaje.
 
 ### Si se queda colgado
 
@@ -144,5 +178,6 @@ del operador.
 | Entrar o salir de pantalla completa | **F11** |
 | Siguiente visitante | Botón **Nuevo visitante** |
 | Cerrar | **Ctrl+Q** |
+| Copiar la conversación entera | **Ctrl+T**, o botón **Copiar la conversación** |
 | Ver lo que recuerda de alguien | Botón **Ver lo que recuerda** |
 | Borrar todo | Botón **Borrar TODO** |

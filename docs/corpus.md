@@ -22,6 +22,7 @@ preguntas. El corpus está en dos niveles:
 | `audacia_proyectos_energia.md` | fichas | energía, servicios públicos y programas estratégicos |
 | `audacia_proyectos_didacticos.md` | fichas | proyectos didácticos y experimentales |
 | `audacia_centro.md` | institucional | personas, sedes, patentes, publicaciones, reconocimientos |
+| `audacia_centros_hermanos.md` | institucional | **escrito a mano**: MacondoLab y CICV, las unidades que NO son AudacIA |
 | `universidad_simon_bolivar.md` | institucional | historia, programas, ecosistema Eureka |
 
 **El nombre del archivo decide el corpus**: los que contienen «audacia» van a la
@@ -52,10 +53,38 @@ python herramientas/construir_corpus.py fuente.json documents/ [corpus_anterior.
 python -m pruebas.recuperacion --n 6 --detalle
 ```
 
-`herramientas/breves.py` es **lo único escrito a mano**: el resumen de una línea de
-cada proyecto para el índice-catálogo. Es compresión editorial de las
-descripciones del propio informe, y existe porque el índice tiene que caber entero
-en el contexto para poder enumerar los 32 proyectos de una vez.
+`herramientas/breves.py` es lo único escrito a mano **dentro del generador**: el
+resumen de una línea de cada proyecto para el índice-catálogo. Es compresión
+editorial de las descripciones del propio informe, y existe porque el índice
+tiene que caber entero en el contexto para poder enumerar los 32 proyectos de una
+vez.
+
+### Documentos escritos a mano junto a los generados
+
+`construir_corpus.py` escribe solo los archivos que él nombra y después lista la
+carpeta, así que **un `.md` con nombre propio sobrevive a la regeneración**. Es la
+vía para lo que no está en los informes en Word.
+
+`audacia_centros_hermanos.md` es el único hoy. Existe porque MacondoLab y el CICV
+se nombraban en el corpus sin tener nada que los explicara, y HACU contestaba,
+con razón, que no tenía el dato —falló en las tres corridas de 100 turnos—. El
+prefijo `audacia_` no es decorativo: es lo que manda el archivo a la colección de
+AudacIA, que es la que consulta una pregunta como «pero MacondoLab es parte de
+AudacIA, ¿no?».
+
+Tres reglas para añadir otro:
+
+1. **Prefijo `audacia_`** si debe responder a preguntas sobre el centro; sin él va
+   a la colección institucional.
+2. **Una sección `##` por tema**, por debajo de `chunk_max_seccion` (2 200
+   caracteres) para que entre entera en un fragmento, y con el **título igual al
+   nombre de lo que explica**: a igualdad de palabras compartidas, el rescate
+   léxico prefiere la pieza cuyo título lleva la palabra.
+3. **Sin URLs ni notas para el lector dentro del texto.** Un modelo de 8B recita
+   literalmente lo que se le pone delante: se ha observado cuatro veces. Las
+   fuentes van en el commit, no en el corpus.
+
+Y medir siempre después: `python -m pruebas.recuperacion --n 6 --detalle`.
 
 ### El tercer argumento, y por qué avisa
 
@@ -87,7 +116,7 @@ python herramientas/construir_corpus.py fuente.json documents/ audacia_anterior.
    python -m pruebas.recuperacion --n 6 --detalle
    ```
 
-   La referencia actual es **36/36** con el embedding multilingüe (27/36 con el de
+   La referencia actual es **39/39** con el embedding multilingüe (38/39 con el de
    Chroma por defecto). Una consulta que baja es un proyecto que HACU dejará de
    encontrar.
 3. **Comprobar que el índice sigue completo**: `pruebas/recuperacion.py` verifica
@@ -110,6 +139,46 @@ python -m herramientas.limpiar --aplicar --indice
 ```
 
 Se reconstruye entero en el siguiente arranque, un par de minutos.
+
+---
+
+## Advertencias de seguridad de cada montaje
+
+HACU tiene una regla de prudencia física: nunca invita a tocar, manipular, abrir,
+conectar ni llevarse nada a la boca, y ante la duda remite a quien atiende el
+stand. Eso es **conducta**, y vive en el system prompt.
+
+Lo que **no** hace, y no debe hacer, es inventarse riesgos concretos ni
+tranquilizar sobre lo que no le consta: decir que una arena es atóxica o que un
+montaje es apto para niños sin tenerlo documentado es exactamente la clase de
+invención que el resto del sistema existe para evitar.
+
+Si quieres que avise de algo específico —«no toques los circuitos del Tanque»,
+«la arena de Holosand no se come»— tiene que estar **en el corpus**, y solo lo
+puede escribir quien conoce el montaje. La vía es una línea más en la ficha del
+proyecto, dentro del informe en Word del que se genera el corpus:
+
+```
+* **Seguridad:** <qué no se debe hacer y por qué, en una frase>
+```
+
+También valen `Precaución:`, `Advertencia:` y `Cuidado:`.
+
+Esa línea **no se queda en el corpus esperando a que el modelo se acuerde**. Al
+recuperar la ficha, `hacu/context.py` la extrae y la pone en las notas del turno
+como instrucción explícita: dila, con naturalidad, sin añadir ninguna que no esté
+y sin decir que algo es seguro. Con seis fragmentos delante, un 8B se queda con lo
+vistoso, y la línea de seguridad es justo la que menos luce.
+
+Mientras nadie escriba ninguna, el mecanismo no hace nada: no hay advertencias
+inventadas por defecto.
+
+Al regenerar, esa línea entra en la ficha y HACU la recupera con el resto del
+proyecto. Después, medir:
+
+```powershell
+python -m pruebas.recuperacion --n 6 --detalle
+```
 
 ---
 

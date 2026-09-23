@@ -166,7 +166,7 @@ gh pr create --fill
 ```
 
 `python -m pruebas.test_unidades` tarda dos segundos y no necesita GPU: no hay
-excusa para saltárselo. Las 383 comprobaciones existen porque cada una cubre algo
+excusa para saltárselo. Las 742 comprobaciones existen porque cada una cubre algo
 que se rompió de verdad alguna vez.
 
 ### Mensajes de commit
@@ -199,8 +199,8 @@ python -m pruebas.test_unidades || exit 1
 
 `pruebas/test_unidades.py` corre sin GPU, sin red y sin tarjeta de sonido — está
 escrito así a propósito, y el bloque de la interfaz usa el backend `offscreen` de
-Qt. Eso lo hace apto para GitHub Actions tal cual, y el flujo **ya está en el
-repositorio**, en `.github/workflows/pruebas.yml`:
+Qt. Eso lo hace apto para GitHub Actions tal cual. Guarda esto como
+`.github/workflows/pruebas.yml`:
 
 ```yaml
 name: pruebas
@@ -222,8 +222,11 @@ Nota: el flujo **no** instala `requirements.txt`, y es a propósito. La suite no
 necesita `llama-cpp-python` ni ChromaDB: los bloques que los usarían trabajan con
 dobles, y esas dos librerías se importan de forma perezosa. Las tres del `pip
 install` son las únicas que se importan a nivel de módulo en el camino de las
-pruebas. Verificado en un entorno limpio: **383/383 con PySide6, 365/365 sin él**
-(el bloque de la interfaz se omite solo). Si en el futuro un bloque nuevo importa
+pruebas. La suite omite el bloque que no puede correr en vez de fallar, así que la
+cuenta depende de lo instalado. Medido en entornos limpios: **742/742** con todo,
+**741/741** con esas tres (sin ChromaDB no corre una comprobación de red),
+**710/710** sin PySide6 pero con ChromaDB, y **709/709** sin ninguna de las dos
+—que es el caso del flujo—. Si en el futuro un bloque nuevo importa
 el motor real, habrá que añadir la instalación y el flujo pasará de segundos a
 minutos.
 

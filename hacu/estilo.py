@@ -60,6 +60,35 @@ _ADULACION: tuple[re.Pattern[str], ...] = tuple(
         r"(excelente|buena|muy buena|gran) pregunta",
         r"me encanta (que|tu pregunta)",
         r"gracias por (preguntar|tu pregunta)",
+        # Entusiasmo inflado. No es adulacion AL VISITANTE —por eso los patrones
+        # de arriba no lo cazaban— sino una frase entera de "me parece muy
+        # interesante" delante de la respuesta de verdad. En la sesion con
+        # publico aparecia en casi todos los turnos, y cuando ocupa la frase
+        # completa no aporta un solo dato: se va, y lo que queda es el contenido.
+        # Todos estos terminan en `$`: solo se descarta la frase cuando el
+        # entusiasmo ES la frase entera. "Me parece muy interesante el proyecto
+        # Mary." se va; "...es muy interesante porque analiza el lenguaje para
+        # detectar ansiedad" se queda, porque despues del adjetivo viene la
+        # respuesta de verdad y la cola se pasa del limite.
+        r"(me parece|me resulta|encuentro) (muy |bastante |realmente |especialmente )?"
+        r"(interesante|innovador|innovadora|emocionante|fascinante|impresionante|"
+        r"valioso|valiosa|prometedor|prometedora|apasionante)[^.!?]{0,30}[.!]?$",
+        r"es (un proyecto |una iniciativa )?(muy |realmente )?"
+        r"(interesante|innovador|innovadora|emocionante|fascinante|impresionante)"
+        r"[^.!?]{0,25}[.!]?$",
+        r"(que|muy) (interesante|emocionante|innovador)[^.!?]{0,25}[.!]?$",
+        # Risa de relleno. Visto en escena delante de alguien que decia no saber
+        # quien era: "¡Ahah, no te preocupes!". No hay turno en una exhibicion en
+        # el que una risa escrita aporte algo, y hay muchos en los que ofende.
+        r"(a?ja)?(ja|je|ha|ah)(ja|je|ha|ah)+[^.!?]{0,30}[.!]?$",
+        r"no te preocupes[^.!?]{0,20}[.!]?$",
+        r"que (bueno|genial|bien|chevere)[^.!?]{0,18}[.!]?$",
+        # "Me parece que el proyecto Mary es muy interesante." El sujeto va en
+        # medio, asi que los patrones anteriores no lo alcanzan.
+        r"(me parece|creo|considero|dirian?) que .{0,45}? es "
+        r"(muy |bastante |realmente )?"
+        r"(interesante|innovador|innovadora|emocionante|fascinante|impresionante)"
+        r"[^.!?]{0,25}[.!]?$",
     )
 )
 # "Gracias por compartirlo" y "es un placer conocerte" SALIERON de la lista a
@@ -96,6 +125,54 @@ def es_adulacion(frase: str) -> bool:
     return any(patron.match(plano) for patron in _ADULACION)
 
 
+# Atribuciones: frases en las que HACU le cuenta al visitante lo que el visitante
+# supuestamente dijo o entendio. En la sesion con publico del 21/09 aparecieron
+# siete veces y las siete eran FALSAS: "me parece que has mencionado varios
+# proyectos que te han llamado la atencion, incluyendo el proyecto Mario, el ROV
+# Submarino y Solenium" —el visitante no habia nombrado ninguno de los tres—.
+# Es el contexto recuperado leido como si lo hubiera dicho la persona de enfrente,
+# y es peor que divagar: le pone palabras en la boca a quien tienes delante.
+#
+# Se cazan solo las metaobservaciones sobre lo que el visitante menciono o
+# entendio. "Me dijiste que estudias Sistemas" NO esta aqui a proposito: eso es
+# seguir el hilo, que es justo lo que queremos.
+_ATRIBUCIONES: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(p) for p in (
+        r"(me parece|veo|noto|entiendo|celebro) que (has|hayas|habias) "
+        r"(mencionado|entendido|comprendido|captado|apreciado|encontrado|"
+        r"senalado|valorado|dicho|planteado)",
+        r"(has|habias) mencionado (varios|varias|algunos|algunas|que|lo|los|las)",
+        r"(me alegra|me gusta) que (hayas|has) (entendido|comprendido|captado|mencionado)",
+        r"gracias por (compartir|contarme|darme|explicarme|brindarme)"
+        r"( conmigo)? (la|esa|toda esa|esta|tanta) informacion",
+        r"(has|habias) (entendido|comprendido) (muy bien|correctamente|perfectamente)",
+    )
+)
+_LONGITUD_MAXIMA_ATRIBUCION = 400
+
+
+def es_atribucion(frase: str) -> bool:
+    """True si la frase le atribuye al visitante algo que dijo o entendio."""
+    limpia = frase.strip()
+    if not limpia or len(limpia) > _LONGITUD_MAXIMA_ATRIBUCION:
+        return False
+    plano = _VOCATIVO.sub("", normalizar(limpia).lstrip("¡!¿? "))
+    return any(patron.match(plano) for patron in _ATRIBUCIONES)
+
+
+def filtrar_atribuciones(texto: str) -> tuple[str, int]:
+    """Quita las frases que le ponen palabras en la boca al visitante."""
+    frases = [f for f in _SEPARADOR_FRASES.split(texto) if f.strip()]
+    conservadas = [f.strip() for f in frases if not es_atribucion(f)]
+    quitadas = len(frases) - len(conservadas)
+    if not quitadas:
+        return texto, 0
+    if not conservadas:
+        return "", quitadas
+    prefijo = " " if texto[:1].isspace() else ""
+    return prefijo + " ".join(conservadas), quitadas
+
+
 def filtrar_adulacion(texto: str) -> tuple[str, int]:
     """Quita las frases que son puro cumplido. Devuelve (texto, frases quitadas)."""
     frases = [f for f in _SEPARADOR_FRASES.split(texto) if f.strip()]
@@ -128,6 +205,12 @@ _FUGAS: tuple[tuple[re.Pattern[str], str], ...] = (
                 re.IGNORECASE), ""),
     (re.compile(r"\ben\s+(?:las|mis|estas)\s+notas(?:\s+de\s+la\s+documentaci[oó]n[^,.]*)?,?\s*",
                 re.IGNORECASE), ""),
+    # Visto en escena: "En el contexto de lo que sé privadas que tengo...". El
+    # modelo escribio "las notas privadas que tengo" y el patron generico de
+    # abajo se comio solo "las notas", dejando el adjetivo huerfano. La frase
+    # entera, con sus adjetivos y su coletilla, va primero.
+    (re.compile(r"\b(?:las|mis|estas)\s+notas(?:\s+(?:privadas|internas|que\s+tengo|"
+                r"de\s+que\s+dispongo))+", re.IGNORECASE), "lo que sé"),
     (re.compile(r"\b(?:las|mis|estas)\s+notas\b", re.IGNORECASE), "lo que sé"),
     # Fuga nueva, vista en 11 de 30 turnos del guion: prohibida "segun mis
     # notas", el modelo encontro "segun la documentacion de AudacIA". Es el mismo
@@ -177,6 +260,38 @@ def separar_pegones(texto: str) -> tuple[str, int]:
         texto, n = patron.subn(reemplazo, texto)
         total += n
     return texto, total
+
+
+# Marcas de Markdown. El modelo las escribe por costumbre —"**Salud y
+# Diagnostico Medico**"— y aqui no las renderiza nadie: en pantalla se ven los
+# asteriscos crudos y Piper los LEE, asi que el visitante oye "asterisco
+# asterisco salud". Se quitan en la misma capa que las fugas para que pantalla,
+# voz y memoria sigan recibiendo exactamente el mismo texto.
+_MARCAS: tuple[tuple[re.Pattern[str], str], ...] = (
+    # Encabezados al principio de linea: "### Titulo" -> "Titulo".
+    (re.compile(r"^#{1,6}\s+", re.MULTILINE), ""),
+    # Negrita y cursiva, con y sin subrayado. El contenido se conserva entero.
+    (re.compile(r"\*\*\*(?=\S)(.+?)(?<=\S)\*\*\*", re.DOTALL), r"\1"),
+    (re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*", re.DOTALL), r"\1"),
+    (re.compile(r"(?<![\w*])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![\w*])"), r"\1"),
+    # El subrayado solo cuenta como marca si esta suelto: `snake_case` y
+    # `n_ctx` son nombres de cosas de este proyecto, no cursivas.
+    (re.compile(r"(?<![\w_])__(?=\S)(.+?)(?<=\S)__(?![\w_])", re.DOTALL), r"\1"),
+    # Codigo entre comillas invertidas: se lee el contenido, no la comilla.
+    (re.compile(r"`{1,3}([^`\n]+?)`{1,3}"), r"\1"),
+    # Vinetas al principio de linea. La numerada ("1. Mary:") se queda: se lee
+    # bien en voz alta y ordena la enumeracion.
+    (re.compile(r"^[ \t]*[-*+•]\s+", re.MULTILINE), ""),
+)
+
+
+def limpiar_marcas(texto: str) -> tuple[str, int]:
+    """Quita el Markdown que nadie renderiza. Devuelve (texto, marcas quitadas)."""
+    limpio, total = texto, 0
+    for patron, reemplazo in _MARCAS:
+        limpio, n = patron.subn(reemplazo, limpio)
+        total += n
+    return (limpio, total) if total else (texto, 0)
 
 
 def limpiar_fugas(texto: str) -> tuple[str, int]:
@@ -234,8 +349,10 @@ class RetenedorDeCola:
         self.descartada = False
         self.truncada = False
         self.adulaciones_quitadas = 0
+        self.atribuciones_quitadas = 0
         self.fugas_limpiadas = 0
         self.pegones_separados = 0
+        self.marcas_quitadas = 0
 
     def alimentar(self, fragmento: str) -> str:
         """Acumula el fragmento y devuelve el texto que ya es seguro emitir."""
@@ -247,8 +364,14 @@ class RetenedorDeCola:
         if not self._permitir_calidez:
             listo, quitadas = filtrar_adulacion(listo)
             self.adulaciones_quitadas += quitadas
+        # Las atribuciones se filtran SIEMPRE, tambien en las confidencias: que
+        # el visitante cuente algo suyo no autoriza a inventarse lo que dijo.
+        listo, atribuidas = filtrar_atribuciones(listo)
+        self.atribuciones_quitadas += atribuidas
         listo, fugas = limpiar_fugas(listo)
         self.fugas_limpiadas += fugas
+        listo, marcas = limpiar_marcas(listo)
+        self.marcas_quitadas += marcas
         listo, pegones = separar_pegones(listo)
         self.pegones_separados += pegones
         self._emitido = self._emitido + listo
@@ -277,8 +400,13 @@ class RetenedorDeCola:
         if self._emitido.strip() and not self._permitir_calidez:
             cola, quitadas = filtrar_adulacion(cola)
             self.adulaciones_quitadas += quitadas
+        if self._emitido.strip():
+            cola, atribuidas = filtrar_atribuciones(cola)
+            self.atribuciones_quitadas += atribuidas
         cola, fugas = limpiar_fugas(cola)
         self.fugas_limpiadas += fugas
+        cola, marcas = limpiar_marcas(cola)
+        self.marcas_quitadas += marcas
         cola, pegones = separar_pegones(cola)
         self.pegones_separados += pegones
         return cola

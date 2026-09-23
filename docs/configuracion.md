@@ -26,10 +26,14 @@ Lo que se puede cambiar sin tocar código ni reinstalar nada.
 | `HACU_DEBUG=1` | Diagnóstico en consola: router, perfil, latencia, migraciones |
 | `HACU_MODELO=ruta.gguf` | Otro modelo (relativo a `models/`, o ruta absoluta) |
 | `HACU_CTX=8192` | Ventana de contexto; un modelo mayor deja menos VRAM |
+| `HACU_KV8=1` | Caché KV a 8 bits: la mitad de VRAM por token de contexto. Es la palanca que decide si caben 32k (ver `herramientas/presupuesto_vram.py`) |
+| `HACU_HISTORIAL=24` | Mensajes de conversación que viajan en cada turno. **Subir `HACU_CTX` sin subir esto no cambia nada**: agranda el envase y deja la holgura sin usar |
 | `HACU_RETENCION=8` | Horas de historial que se conservan (`0` desactiva la poda) |
+| `HACU_DB=/app/datos/hacu.db` | Dónde vive la memoria. En contenedor, apuntar a un volumen montado |
 | `HACU_FRAGMENTOS=4` | Fragmentos recuperados por consulta normal |
 | `HACU_MULTILINGUE=0` | Acepta el embedding por defecto de Chroma; **degrada el RAG a la mitad** |
 | `HACU_SALUDO="..."` | Otra frase de apertura. `""` arranca sin saludar |
+| `HACU_AYUDA="..."` | Recursos de ayuda del centro, para el modo cuidado. Vacío por defecto |
 | `HACU_VOZ=1` | Activa micrófono y altavoz |
 | `HACU_VOZ_SALIDA=1` | Solo altavoz: HACU habla pero no escucha |
 | `HACU_VOZ_AUTO=1` | Escucha automática en vez de pulsar-para-hablar (solo en la ventana) |
@@ -40,6 +44,7 @@ Lo que se puede cambiar sin tocar código ni reinstalar nada.
 | `HACU_VOZ_MODELO=es_ES-davefx-medium` | Otra voz de Piper |
 | `HACU_ENTRADA=3` | Índice del micrófono (ver `python -m hacu.voz`) |
 | `HACU_SALIDA=5` | Índice del altavoz |
+| `HACU_PAUSA_MS=120` | Tope del silencio interno de una frase, en ms (`0` deja el audio de Piper tal cual) |
 | `HACU_PANTALLA_COMPLETA=1` | La ventana arranca a pantalla completa |
 
 ```powershell
@@ -96,7 +101,7 @@ HACU_DEBUG=1 HACU_STT=tiny python run_hacu.py --ui --voz
 | `exigir_multilingue` | `True` | **Aborta el arranque** si el multilingüe no está |
 
 Sobre esa última: con el embedding por defecto de Chroma —entrenado en inglés— la
-recuperación sobre el corpus en español baja de 36/36 a 27/36 consultas, y HACU
+recuperación sobre el corpus en español baja de 39/39 a 38/39 consultas, y HACU
 afirmaría no conocer proyectos que sí están documentados. Para una exhibición eso
 es peor que no arrancar. `HACU_MULTILINGUE=0` acepta el modo degradado a
 sabiendas.
@@ -147,6 +152,7 @@ Detalle completo en [voz.md](voz.md). Lo que más se toca:
 | `log_file` | `logs/hacu.log` | Dónde va el log |
 | `debug_console` | `False` | Diagnóstico en pantalla |
 | `saludo_inicial` | «Hola, soy Hacu. Bienvenido a AudacIA. ¿Serías tan amable de decirme cuál es tu nombre?» | La primera frase. `""` arranca callado |
+| `recursos_de_ayuda` | `""` | Adónde mandar a quien lo está pasando mal. Vacío a propósito: lo rellena el centro ([datos.md](datos.md)) |
 
 ---
 

@@ -24,25 +24,16 @@ from pathlib import Path
 from hacu.bootstrap import cerrar, construir
 from hacu.config import PROJECT_ROOT, AppConfig
 from hacu.logging_setup import configurar_logging
-from hacu.routing import normalizar
+from hacu.routing import NEGACIONES, normalizar
 
 from .bateria import detectar_guiones, revisar_estilo
 from .guion import GUION, Longitud, Tipo, Turno
 
-# Formas de admitir que algo no se sabe. Sin una de estas, una respuesta a un
-# dato no documentado esta inventando.
-_NEGACIONES: tuple[str, ...] = (
-    "no tengo", "no dispongo", "no aparece", "no figura", "no consta", "no me consta",
-    "no esta documentad", "no hay informacion", "no encuentro", "no puedo confirmar",
-    "no se menciona", "no cuento con", "desconozco", "no lo se", "no tengo constancia",
-    "no forma parte", "no esta recogido", "no lo tengo",
-    # Negar el HECHO es tan valido como negar el dato, y es lo que hay que hacer
-    # con una falsedad: ante "la universidad tiene un observatorio", la respuesta
-    # correcta es "no tiene un observatorio", no "no tengo ese dato". Faltaban, y
-    # la prueba marcaba como fallo justo la respuesta que queriamos.
-    "no tiene", "no cuenta con", "no existe", "no posee", "no hay ningun",
-    "no es correcto", "no es cierto", "hay un error", "no dispone de",
-)
+# La lista de negaciones vive en `hacu.routing`: el runtime tambien la necesita
+# —para saber si acaba de negar algo y detectar que le estan presionando— y dos
+# copias se habrian separado al primer ajuste.
+_NEGACIONES = NEGACIONES
+
 # El minimo de EXTENSA empezo en 480 y marcaba como fallo respuestas completas:
 # la explicacion de Orion traia los cuatro eslabones de la cadena en 451 caracteres.
 # El numero de caracteres mide verboseria, no cobertura; quien mide cobertura es
@@ -262,6 +253,7 @@ def main() -> int:
     parser.add_argument("--voz", action="store_true",
                         help="ademas de medirlo, lo dice en voz alta")
     parser.add_argument("--desde", type=str, default="", help="empieza en ese id (p.ej. G15)")
+    parser.add_argument("--hasta", type=str, default="", help="termina en ese id (p.ej. G50)")
     parser.add_argument("--tipo", type=str, default="", help="solo turnos de ese tipo")
     parser.add_argument("--salida", type=Path, default=PROJECT_ROOT / "pruebas" / "informes")
     args = parser.parse_args()
@@ -271,6 +263,12 @@ def main() -> int:
         return 0
 
     turnos = list(GUION)
+    # Cien turnos son entre veinte y treinta y cinco minutos de GPU. `--desde` y
+    # `--hasta` permiten partir la visita en dos sesiones sin editar el guion.
+    if args.hasta:
+        ids = [t.id for t in turnos]
+        if args.hasta.upper() in ids:
+            turnos = turnos[: ids.index(args.hasta.upper()) + 1]
     if args.desde:
         ids = [t.id for t in turnos]
         if args.desde.upper() in ids:

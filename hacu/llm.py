@@ -16,6 +16,7 @@ import subprocess
 import threading
 import time
 from collections.abc import Callable, Iterator, Sequence
+from enum import Enum
 from typing import Any
 
 from .config import PROJECT_ROOT, ModelConfig
@@ -35,6 +36,20 @@ def detectar_gpu() -> str | None:
         return None
     primera = salida.stdout.strip().splitlines()
     return primera[0].strip() if primera else None
+
+
+class Aliento(str, Enum):
+    """Cuanto aire tiene el turno. Lo decide lo que PIDEN, no lo que escriben.
+
+    Una pregunta de tres palabras puede necesitar seis frases ("¿y Orion?") y un
+    parrafo de agradecimiento se contesta con una. Atar el techo a la longitud de
+    la entrada es justo el error que hacia que un "gracias, ha sido muy
+    interesante" recibiera cuatro parrafos.
+    """
+
+    BREVE = "BREVE"      # turno social: cierre, elogio, acuse de recibo
+    NORMAL = "NORMAL"    # el caso corriente de tarima
+    EXTENSO = "EXTENSO"  # piden desarrollo o catalogo entero
 
 
 class LlmService:
@@ -65,8 +80,42 @@ class LlmService:
             n_batch=self._cfg.n_batch,
             n_threads=self._cfg.n_threads,
             verbose=self._cfg.verbose,
+            **self._opciones_de_cache(Llama),
         )
         self._log.info("Modelo cargado: %s", self._cfg.model_path.name)
+
+    def _opciones_de_cache(self, Llama: type) -> dict[str, object]:  # noqa: N803
+        """`type_k`/`type_v` y `flash_attn`, si esta version de llama.cpp los trae.
+
+        Se consultan en vez de darlos por hechos: el proyecto tiene que arrancar
+        con la rueda que haya instalada, y una version antigua que no conozca
+        estos argumentos reventaria en el constructor. Sin ellos HACU funciona
+        igual, solo que la cache KV ocupa el doble.
+        """
+        import inspect  # noqa: PLC0415
+
+        admitidos = inspect.signature(Llama.__init__).parameters
+        opciones: dict[str, object] = {}
+        if self._cfg.flash_attn and "flash_attn" in admitidos:
+            opciones["flash_attn"] = True
+        if not self._cfg.kv_8bits:
+            return opciones
+        if "type_k" not in admitidos or "type_v" not in admitidos:
+            self._log.warning(
+                "Esta version de llama-cpp-python no admite cache KV cuantizada; "
+                "se usa fp16 y el contexto ocupa el doble."
+            )
+            return opciones
+        try:
+            from llama_cpp import GGML_TYPE_Q8_0  # noqa: PLC0415
+        except ImportError:
+            import llama_cpp  # noqa: PLC0415
+
+            GGML_TYPE_Q8_0 = getattr(llama_cpp, "GGML_TYPE_Q8_0", 8)  # noqa: N806
+        opciones["type_k"] = GGML_TYPE_Q8_0
+        opciones["type_v"] = GGML_TYPE_Q8_0
+        self._log.info("Cache KV a 8 bits: la mitad de VRAM por token de contexto")
+        return opciones
 
     @staticmethod
     def _preparar_entorno_windows() -> None:
@@ -104,13 +153,30 @@ class LlmService:
 
     # ------------------------------------------------------------- inferencia
 
+    def _tope(self, aliento: "Aliento | None", extenso: bool) -> int:
+        """Techo de tokens del turno. `extenso` es el atajo heredado de EXTENSO."""
+        if aliento is None:
+            aliento = Aliento.EXTENSO if extenso else Aliento.NORMAL
+        return {
+            Aliento.BREVE: self._cfg.chat_max_tokens_breve,
+            Aliento.NORMAL: self._cfg.chat_max_tokens,
+            Aliento.EXTENSO: self._cfg.chat_max_tokens_extenso,
+        }[aliento]
+
     def stream_chat(
         self,
         mensajes: Sequence[Mensaje],
         extenso: bool = False,
         al_terminar: Callable[[str | None], None] | None = None,
+        aliento: "Aliento | None" = None,
     ) -> Iterator[str]:
         """Genera la respuesta de escena token a token manteniendo el lock durante todo el stream.
+
+        `aliento` decide el techo de tokens en tres niveles; `extenso` se
+        conserva como atajo del nivel EXTENSO. El techo se decide por lo que el
+        turno PIDE, no por lo largo que venga: hay preguntas de tres palabras
+        que necesitan seis frases y parrafos enteros de agradecimiento que se
+        contestan con una.
 
         `extenso` sube el tope solo en las preguntas que piden desarrollo, sin
         relajarlo para todas: con el tope corto, "explicame cada proyecto" se
@@ -123,8 +189,7 @@ class LlmService:
         with self._lock:
             stream = self._modelo.create_chat_completion(
                 messages=list(mensajes),
-                max_tokens=(self._cfg.chat_max_tokens_extenso if extenso
-                            else self._cfg.chat_max_tokens),
+                max_tokens=self._tope(aliento, extenso),
                 temperature=self._cfg.chat_temperature,
                 stream=True,
             )

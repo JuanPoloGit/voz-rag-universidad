@@ -11,6 +11,10 @@ logs/
 hacu_memory.db*
 pruebas/informes/
 *.wav
+.ruff_cache/
+.pytest_cache/
+*.onnx
+*.onnx.json
 .git/
 .github/
 Claude outputs/

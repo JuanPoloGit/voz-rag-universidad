@@ -29,6 +29,7 @@ escuchando (los anillos siguen el nivel real del micrófono), **ámbar** pensand
 | `Enter` en el recuadro | Enviar lo escrito |
 | `F9` | Oculta o muestra el panel del operador |
 | `F11` | Pantalla completa |
+| `Ctrl+T` | Abrir la transcripción de la conversación |
 | `Esc` | Callar a HACU en mitad de una frase, y recuperar el teclado |
 | `Ctrl+Q` | Cerrar (a pantalla completa no hay barra de título) |
 
@@ -70,11 +71,26 @@ ventana funciona igual.
 |---|---|
 | **Escucha automática** | Calibra el ruido de sala y escucha sin pulsar nada. Con altavoz abierto HACU se oye a sí mismo: es para sala controlada o auriculares |
 | **Callar a HACU** | Corta la frase en curso de inmediato (≈10 ms). Igual que `Esc` |
+| **Micrófono** | Elige por qué entrada oye HACU. Surte efecto en la siguiente escucha, no a mitad de una |
+| **Altavoz** | Elige por dónde habla. El motor cierra su flujo de audio y lo reabre en la tarjeta nueva, así que surte efecto en la siguiente frase |
+| **Buscar dispositivos** | Vuelve a inventariar el audio. Para cuando se conecta una diadema con HACU ya arrancado |
+
+Los dos desplegables ofrecen siempre **Predeterminado**, que es dejar elegir al
+sistema, y solo listan lo que sirve: un altavoz no aparece como micrófono. El
+nombre completo de cada tarjeta está en el *tooltip* de su línea, porque el panel
+es estrecho y los nombres de PortAudio son largos. Elegir a mano deja constancia
+en la transcripción, de modo que al revisar una sesión rara se sabe por qué
+dispositivo entraba y salía el audio.
+
+Esto sustituye a tener que averiguar el índice con `python -m hacu.voz` y
+relanzar con `HACU_ENTRADA`/`HACU_SALIDA`. Esas dos variables siguen valiendo
+para fijar el arranque; el panel las pisa en caliente.
 
 ### Memoria
 
 | Mando | Qué hace |
 |---|---|
+| **Copiar la conversación** | Abre la conversación entera en texto plano, ya seleccionada: `Ctrl+C` y listo. También la guarda como `.txt`. Evita tener que capturar la pantalla mensaje a mensaje |
 | **Ver lo que recuerda** | Los hechos del perfil activo, tal cual están guardados |
 | **Limpiar la pantalla** | Borra las burbujas y el chat inmediato; conserva los hechos |
 | **Borrar TODO** | Purga la base entera, con confirmación. No se puede deshacer |
@@ -108,7 +124,13 @@ python -m pruebas.test_unidades interfaz
 
 No comprueba que sea bonita —eso se mira— sino que se monta, que el turno llega al
 hilo correcto, que el texto que se pinta es el mismo que se habla, que los atajos
-existen, que el foco del teclado se comporta y que la ventana abre saludando.
+existen, que el foco del teclado se comporta, que la ventana abre saludando y que
+la transcripción contiene lo que se vio en pantalla.
+
+La transcripción se arma del hilo de burbujas y no de la base de datos, a
+propósito: la base guarda solo los últimos mensajes y solo los del perfil activo,
+y lo que interesa copiar es la sesión entera, con los cambios de visitante y los
+avisos del sistema incluidos.
 
 ---
 

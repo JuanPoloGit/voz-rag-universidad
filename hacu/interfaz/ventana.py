@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import signal
+from datetime import datetime
 
 from PySide6.QtCore import Qt, QTimer, Slot
 from PySide6.QtGui import QKeySequence, QShortcut
@@ -37,6 +38,7 @@ from PySide6.QtWidgets import (
 
 from ..bootstrap import Componentes
 from ..config import AppConfig
+from ..cuidado import AVISO_OPERADOR, Cuidado
 from ..prompts import PERFILES_AUDIENCIA
 from ..session import ResultadoTurno
 from ..voz import ServicioDeVoz
@@ -50,9 +52,11 @@ from .hilos import (
 from .widgets import (
     BotonHablar,
     BurbujaMensaje,
+    DialogoTranscripcion,
     MedidorNivel,
     Metrica,
     NucleoHacu,
+    etiqueta_campo,
     separador,
     titulo_panel,
 )
@@ -61,6 +65,10 @@ _REFRESCO_NIVEL_MS = 40
 # El recuento de hechos no cambia deprisa; cada dos segundos sobra y no castiga
 # la base de datos.
 _REFRESCO_PERFIL_MS = 2000
+
+
+# El nombre entero de la tarjeta va en el tooltip de cada linea del desplegable.
+_TOOLTIP = Qt.ItemDataRole.ToolTipRole
 
 
 class VentanaHacu(QMainWindow):
@@ -283,11 +291,33 @@ class VentanaHacu(QMainWindow):
         callar.setEnabled(self._voz.puede_hablar)
         vertical.addWidget(callar)
 
+        # El sistema no siempre elige la tarjeta que uno cree: en una portatil con
+        # webcam, base de conexiones y diadema hay cinco entradas. Aqui se elige a
+        # mano, sin variables de entorno ni reiniciar la aplicacion.
+        vertical.addWidget(etiqueta_campo("Micrófono"))
+        self._caja_microfono = QComboBox()
+        self._caja_microfono.setToolTip("Se aplica en la siguiente escucha")
+        vertical.addWidget(self._caja_microfono)
+        vertical.addWidget(etiqueta_campo("Altavoz"))
+        self._caja_altavoz = QComboBox()
+        self._caja_altavoz.setToolTip("Se aplica en la siguiente frase")
+        vertical.addWidget(self._caja_altavoz)
+        refrescar = QPushButton("Buscar dispositivos")
+        refrescar.clicked.connect(self._cargar_dispositivos)
+        vertical.addWidget(refrescar)
+        self._cargar_dispositivos()
+        self._caja_microfono.currentIndexChanged.connect(self._cambiar_entrada)
+        self._caja_altavoz.currentIndexChanged.connect(self._cambiar_salida)
+
         vertical.addWidget(separador())
         vertical.addWidget(titulo_panel("Memoria"))
         auditar = QPushButton("Ver lo que recuerda")
         auditar.clicked.connect(self._auditar_memoria)
         vertical.addWidget(auditar)
+        transcribir = QPushButton("Copiar la conversación")
+        transcribir.setToolTip("Abre la conversación entera en texto plano (Ctrl+T)")
+        transcribir.clicked.connect(self._mostrar_transcripcion)
+        vertical.addWidget(transcribir)
         limpiar = QPushButton("Limpiar la pantalla")
         limpiar.clicked.connect(self._limpiar_conversacion)
         vertical.addWidget(limpiar)
@@ -323,6 +353,7 @@ class VentanaHacu(QMainWindow):
 
     def _atajos(self) -> None:
         QShortcut(QKeySequence("F9"), self, activated=self._alternar_panel)
+        QShortcut(QKeySequence("Ctrl+T"), self, activated=self._mostrar_transcripcion)
         QShortcut(QKeySequence("F11"), self, activated=self._alternar_pantalla)
         QShortcut(QKeySequence("Esc"), self, activated=self._callar)
         # A pantalla completa no hay barra de titulo que cerrar, y Alt+F4 no es
@@ -484,6 +515,12 @@ class VentanaHacu(QMainWindow):
         self._m_latencia.set(f"{resultado.segundos:.2f} s")
         self._m_velocidad.set(f"{resultado.tokens_por_segundo:.0f}")
         self._etiqueta_perfil.setText(self._descripcion_perfil())
+        if resultado.cuidado is Cuidado.CRISIS:
+            # El operador tiene que enterarse AHORA, no al leer el log de noche.
+            # Un dialogo modal delante del visitante seria peor: esto se queda en
+            # el hilo, destacado, y en el rotulo del pie.
+            self._anotar("⚠  " + AVISO_OPERADOR)
+            self._log.warning("Turno de cuidado atendido con el texto fijo")
         if resultado.migrado:
             self._anotar(f"Perfil migrado a {resultado.usuario}.")
         if not self._voz.hablando:
@@ -545,6 +582,38 @@ class VentanaHacu(QMainWindow):
             # El reloj de nivel devuelve el estado a REPOSO en cuanto calla.
             self._cambiar_estado(EstadoUI.HABLANDO)
 
+    def transcripcion(self) -> str:
+        """La conversacion en texto plano, tal como se ve en pantalla.
+
+        Se arma del hilo de burbujas y no de la base de datos por dos motivos: la
+        base guarda solo los ultimos mensajes y solo los del perfil activo, y aqui
+        interesa la sesion entera, con los cambios de visitante y los avisos del
+        sistema incluidos. Lo que se copia es lo que ocurrio.
+        """
+        lineas = [
+            "HACU · AudacIA · Universidad Simón Bolívar",
+            f"Transcripción de la conversación — {datetime.now().strftime('%d/%m/%Y %H:%M')}",
+            "=" * 72,
+            "",
+        ]
+        for i in range(self._hilo_mensajes.count()):
+            widget = self._hilo_mensajes.itemAt(i).widget()
+            if isinstance(widget, BurbujaMensaje):
+                cuerpo = widget.texto.strip()
+                if not cuerpo:
+                    continue
+                lineas.append(f"[{widget.hora}] {widget.autor.upper()}:")
+                lineas.extend(f"    {linea}" for linea in cuerpo.splitlines())
+                lineas.append("")
+            elif isinstance(widget, QLabel) and widget.text().strip():
+                lineas.append(f"    · {widget.text().strip()} ·")
+                lineas.append("")
+        return "\n".join(lineas)
+
+    def _mostrar_transcripcion(self) -> None:
+        dialogo = DialogoTranscripcion(self.transcripcion(), self)
+        dialogo.show()
+
     def _limpiar_conversacion(self) -> None:
         while self._hilo_mensajes.count() > 1:
             elemento = self._hilo_mensajes.takeAt(0)
@@ -590,6 +659,40 @@ class VentanaHacu(QMainWindow):
         self._comp.sesion.estado.trivia = activo
         self._anotar("Modo trivia " + ("activado." if activo else "desactivado."))
 
+    def _cargar_dispositivos(self) -> None:
+        """Rellena los dos desplegables sin disparar los `currentIndexChanged`."""
+        dispositivos = self._voz.dispositivos()
+        for caja, filtro, actual in (
+            (self._caja_microfono, lambda d: d.es_entrada, self._voz.entrada_actual),
+            (self._caja_altavoz, lambda d: d.es_salida, self._voz.salida_actual),
+        ):
+            caja.blockSignals(True)
+            caja.clear()
+            caja.addItem("Predeterminado", None)
+            for d in dispositivos:
+                if not filtro(d):
+                    continue
+                caja.addItem(f"[{d.indice}] {d.nombre[:46]}", d.indice)
+                # El panel es estrecho y los nombres de tarjeta son largos: el
+                # nombre entero queda en el tooltip de cada linea.
+                caja.setItemData(caja.count() - 1, d.etiqueta(), _TOOLTIP)
+            posicion = caja.findData(actual)
+            caja.setCurrentIndex(posicion if posicion >= 0 else 0)
+            caja.setEnabled(caja.count() > 1)
+            caja.blockSignals(False)
+        if not dispositivos:
+            sin = "No se detectó ninguna tarjeta de audio"
+            self._caja_microfono.setToolTip(sin)
+            self._caja_altavoz.setToolTip(sin)
+
+    def _cambiar_entrada(self) -> None:
+        self._voz.usar_entrada(self._caja_microfono.currentData())
+        self._anotar(f"Micrófono: {self._caja_microfono.currentText()}")
+
+    def _cambiar_salida(self) -> None:
+        self._voz.usar_salida(self._caja_altavoz.currentData())
+        self._anotar(f"Altavoz: {self._caja_altavoz.currentText()}")
+
     def _cambiar_escucha_continua(self, activo: bool) -> None:
         if not self._voz.disponible:
             return
@@ -632,11 +735,15 @@ class VentanaHacu(QMainWindow):
         )
         if respuesta is not QMessageBox.StandardButton.Yes:
             return
-        borrados = self._comp.db.purge_all()
-        self._comp.sesion.identidad.reiniciar()
+        borrados = self._comp.sesion.olvidar_todo()
+        self._voz.olvidar_hablante()
         self._limpiar_conversacion()
         self._anotar(f"Memoria borrada: {borrados} perfiles.")
         self._m_perfil.set(self._comp.sesion.usuario_activo)
+        self._etiqueta_perfil.setText(self._descripcion_perfil())
+        self._audiencia.setCurrentText(self._comp.sesion.estado.perfil_audiencia)
+        self._trivia.setChecked(self._comp.sesion.estado.trivia)
+        self._dar_la_bienvenida()
 
     def _alternar_panel(self) -> None:
         self._panel.setVisible(not self._panel.isVisible())

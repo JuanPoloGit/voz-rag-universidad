@@ -15,7 +15,7 @@
 | **[datos.md](datos.md)** | Qué se guarda de los visitantes y quién decide |
 
 Todo esto, ensamblado en un solo manual con portada e índice:
-**[HACU-documentacion.pdf](HACU-documentacion.pdf)** (~56 páginas). Se regenera con
+**[HACU-documentacion.pdf](HACU-documentacion.pdf)** (~71 páginas). Se regenera con
 [build/README.md](../build/README.md) cada vez que cambia algo de aquí.
 
 Volver al [README principal](../README.md).

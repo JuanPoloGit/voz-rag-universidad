@@ -53,6 +53,11 @@ Si PowerShell se niega a ejecutar el script de activación:
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
 
+El entorno hay que activarlo **en cada terminal nueva**, no solo la primera vez.
+Cuando está activo, el prompt lleva `(venv)` delante; si no lo lleva, `python` es
+el del sistema y el arranque falla con `ModuleNotFoundError` en el primer import
+que no sea de la biblioteca estándar.
+
 `requirements.txt` instala el núcleo: ChromaDB, los embeddings multilingües y el
 troceador de texto. **No** instala `llama-cpp-python` con CUDA — eso es el paso
 siguiente, porque depende de tu tarjeta.
@@ -147,6 +152,18 @@ En Linux, `sounddevice` necesita además PortAudio del sistema:
 sudo apt install portaudio19-dev
 ```
 
+**Comprueba que la capa de voz quedó entera**, porque instalada a medias no falla
+al arrancar: degrada en escena.
+
+```powershell
+python -m hacu.voz
+```
+
+Lista micrófonos y altavoces, y además avisa de las dos ausencias que no impiden
+arrancar pero se notan con público delante: la voz de Piper sin descargar (Piper
+arranca un proceso por frase, ~2,5 s contra 0,2 s) y `resemblyzer` sin instalar
+(HACU no nota cuándo se acerca otra persona).
+
 Detalle completo de la capa de voz en [voz.md](voz.md).
 
 ---
@@ -159,6 +176,12 @@ python run_hacu.py --debug
 
 La primera vez descarga el modelo de embeddings (~470 MB) e indexa el corpus:
 tarda un par de minutos. Las siguientes arrancan directamente.
+
+**Solo el primer arranque necesita conexión.** Una vez descargados, el embedding
+del RAG y el modelo de reconocimiento se abren desde la caché local y HACU no
+vuelve a consultar la red: la sala de la exhibición puede no tener Wi-Fi. Si
+alguna vez ves que el arranque se queda esperando a `huggingface.co`, es que algo
+no está en la caché — no que el sistema necesite internet para funcionar.
 
 Lo que tiene que aparecer, en este orden:
 
@@ -187,13 +210,13 @@ precalentamiento debe tardar **segundos, no minutos**.
 Lista de verificación completa:
 
 ```powershell
-python -m pruebas.test_unidades     # 383 comprobaciones, ~2 s, sin GPU
+python -m pruebas.test_unidades     # 742 comprobaciones, ~2 s, sin GPU
 python -m pruebas.recuperacion      # calidad del RAG sobre el corpus real
 python -m hacu.voz                  # inventario de micrófonos y altavoces
 python -m hacu.voz --autoprueba     # circuito de voz completo sin micrófono
 ```
 
-`test_unidades` en verde y `recuperacion` en 36/36 significan que el sistema está
+`test_unidades` en verde y `recuperacion` en 39/39 significan que el sistema está
 sano. Ver [pruebas.md](pruebas.md).
 
 ---
@@ -220,13 +243,16 @@ python run_hacu.py --ui --voz --pantalla-completa
 
 | Síntoma | Causa | Qué hacer |
 |---|---|---|
+| `ModuleNotFoundError: No module named '...'` | Estás usando el Python del sistema, no el del entorno | Activar el entorno. Lo delata el prompt: sin `(venv)` delante, es el otro Python |
 | `No se detecto GPU NVIDIA` | `nvidia-smi` no está en el PATH | Reinstalar el controlador |
 | Arranca pero va lentísimo | `llama-cpp-python` sin CUDA | Paso 3b |
 | `ConfiguracionInviable: El prompt estimado...` | El presupuesto no cabe en `n_ctx` | Bajar `HACU_FRAGMENTOS`, o subir `HACU_CTX` |
-| `ConfiguracionInviable: El embedding multilingue no esta disponible` | Falta `sentence-transformers` o falló la descarga | Reinstalarlo; `HACU_MULTILINGUE=0` acepta el modo degradado **a sabiendas** |
+| `ConfiguracionInviable: El embedding multilingue no esta disponible` | Falta `sentence-transformers`, o no está descargado y no hay conexión | Reinstalarlo; con red, el primer arranque lo baja. `HACU_MULTILINGUE=0` acepta el modo degradado **a sabiendas** |
+| `getaddrinfo failed` hacia `huggingface.co` en el arranque | Sin DNS, y el modelo no está en la caché | Conectar una vez para descargarlo; después ya no hace falta |
 | `Falta la interfaz grafica` | Sin PySide6 | `pip install -r requirements-ui.txt` |
 | `🎤 Oido: NO disponible` | Sin micrófono o sin `sounddevice` | `python -m hacu.voz`; ver [voz.md](voz.md) |
-| Pausas larguísimas entre frases | Piper arranca un proceso por frase | El arranque lo avisa; `python -m hacu.voz --descargar` |
+| Pausas larguísimas entre frases | La voz de Piper no está en `models/voz/`, así que arranca un proceso por frase (~2,5 s contra 0,2 s) | `python -m hacu.voz --descargar` |
+| `Falta resemblyzer para distinguir voces` | La capa de voz está instalada a medias | `pip install -r requirements-voz.txt`. Si `webrtcvad` no compila en Windows, arranca con `HACU_HABLANTES=0` y sigue sin esa función |
 | `CUDA out of memory` al cargar Whisper | El STT no cabe junto al Llama | `HACU_STT=tiny`, o `--voz-salida` |
 
 El log completo queda en `logs/hacu.log`.

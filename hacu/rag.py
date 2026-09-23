@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -19,7 +20,9 @@ from typing import Any
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from .config import RagConfig
-from .routing import Intencion
+from .lexico import IndiceLexico
+from .lexico import Pieza as PiezaLexica
+from .routing import Intencion, nombres_en_indice, normalizar
 
 
 # Marcas de exportacion que arrastra el corpus ("[cite: 1]"). No aportan nada al
@@ -55,6 +58,29 @@ def _tipo_de_documento(nombre_archivo: str) -> str:
     return "institucional"
 
 
+def tipo_de_pieza(tipo_archivo: str, titulo: str, proyectos: frozenset[str]) -> str:
+    """Afina el tipo por seccion, no solo por archivo.
+
+    Un archivo `audacia_proyectos_*.md` no contiene solo fichas: tambien lleva
+    alguna seccion institucional, como "Objetivos del portafolio didactico".
+    Medido sobre el corpus real, esa seccion aparecia entre los seis fragmentos
+    en TODAS las consultas sueltas que se probaron —conductores, artistas,
+    ingenieria de sistemas, "explicame un proyecto interesante"—, porque es un
+    texto generico que roza todos los temas y no es de ninguno. Es la misma
+    patologia por la que el indice se carga en vez de buscarse, y gastaba uno de
+    los seis huecos en cada turno.
+
+    La regla es exacta, no heuristica: una seccion es ficha solo si su titulo es
+    un proyecto nombrado en el indice-catalogo. Medido sobre el corpus actual las
+    32 fichas casan y la unica seccion huerfana es esa, y la bateria de
+    recuperacion da lo mismo antes y despues (35/36): no se pierde nada y se
+    libera un hueco por turno.
+    """
+    if tipo_archivo != "ficha" or not proyectos:
+        return tipo_archivo
+    return "ficha" if normalizar(titulo) in proyectos else "institucional"
+
+
 _CABECERA_SECCION = re.compile(r"^##\s+(?!#)(.+?)\s*$", re.MULTILINE)
 
 # Una pieza mas corta que esto no informa de nada y si estorba: el titulo suelto
@@ -88,9 +114,11 @@ def _partir_en_secciones(texto: str) -> list[tuple[str, str]]:
 class LocalRAGEngine:
     """Indexa el corpus institucional y resuelve consultas semanticas por dominio."""
 
-    def __init__(self, config: RagConfig, logger: logging.Logger) -> None:
+    def __init__(self, config: RagConfig, logger: logging.Logger,
+                 progreso: Callable[[str], None] | None = None) -> None:
         self._cfg = config
         self._log = logger.getChild("rag")
+        self._avisar = progreso or (lambda _: None)
 
         import chromadb
 
@@ -106,6 +134,10 @@ class LocalRAGEngine:
                 name=f"universidad_knowledge{sufijo}", embedding_function=funcion_embedding
             ),
         }
+        # Indice lexico por corpus. Se arma de lo que Chroma tiene indexado y no
+        # de los .md, para que no pueda describir algo distinto de lo que se
+        # busca. Vacio hasta el primer uso: si nadie busca, no se paga.
+        self._lexicos: dict[Intencion, IndiceLexico] = {}
         self._divisor = RecursiveCharacterTextSplitter(
             chunk_size=config.chunk_size, chunk_overlap=config.chunk_overlap
         )
@@ -115,19 +147,49 @@ class LocalRAGEngine:
         if not self._cfg.multilingual_embeddings:
             return "", None
         try:
-            from chromadb.utils import embedding_functions
-
-            funcion = embedding_functions.SentenceTransformerEmbeddingFunction(
-                model_name=self._cfg.multilingual_model
-            )
-            self._log.info("Embeddings multilingues activos: %s", self._cfg.multilingual_model)
-            return "_ml", funcion
+            return "_ml", self._cargar_embeddings()
         except Exception:
             self._log.warning(
                 "No se pudo cargar sentence-transformers; se usa el embedding por defecto",
                 exc_info=True,
             )
             return "", None
+
+    def _cargar_embeddings(self) -> Any:
+        """Carga el embedding multilingue, la copia en disco antes que la red.
+
+        El primer intento es estrictamente local. Importa mas de lo que parece:
+        sentence-transformers consulta HuggingFace al construir el modelo aunque
+        ya este descargado —comprueba si hay un adaptador PEFT— y si la sala no
+        tiene red, esa consulta no falla con elegancia: revienta el arranque de
+        un sistema que se anuncia como enteramente local. Con el modelo en cache
+        y sin red, este camino no toca la red ni una vez.
+
+        Solo si no hay copia local se intenta la descarga, que es lo que tiene
+        que pasar el primer dia. Se avisa, porque son ~470 MB y el arranque se
+        queda callado un buen rato.
+        """
+        from chromadb.utils import embedding_functions  # noqa: PLC0415
+
+        try:
+            funcion = embedding_functions.SentenceTransformerEmbeddingFunction(
+                model_name=self._cfg.multilingual_model, local_files_only=True
+            )
+            self._log.info("Embeddings multilingues desde la cache local: %s",
+                           self._cfg.multilingual_model)
+            return funcion
+        except Exception as error:
+            self._log.info("El embedding no esta en la cache local (%s); se descarga", error)
+
+        self._avisar(
+            f"Descargando el embedding multilingue ({self._cfg.multilingual_model}, "
+            "~470 MB). Solo la primera vez; despues arranca sin red."
+        )
+        funcion = embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name=self._cfg.multilingual_model
+        )
+        self._log.info("Embeddings multilingues descargados: %s", self._cfg.multilingual_model)
+        return funcion
 
     def purgar_colecciones_obsoletas(self) -> list[str]:
         """Elimina colecciones de configuraciones de embedding anteriores.
@@ -169,13 +231,37 @@ class LocalRAGEngine:
             self._log.warning("No hay documentos que indexar en %s", carpeta)
             return
 
+        proyectos = self._proyectos_del_indice(archivos)
         for archivo in archivos:
             try:
-                self._sincronizar_archivo(archivo)
+                self._sincronizar_archivo(archivo, proyectos)
             except Exception:
                 self._log.error("Fallo la indexacion de %s", archivo.name, exc_info=True)
 
         self._purgar_documentos_borrados({a.name for a in archivos})
+        self.olvidar_lexico()
+
+    def _proyectos_del_indice(self, archivos: list[Path]) -> frozenset[str]:
+        """Nombres de proyecto del indice-catalogo, normalizados.
+
+        Se leen del disco antes de indexar nada: deciden que secciones de los
+        archivos de fichas son de verdad una ficha (ver `tipo_de_pieza`). Sin
+        indice, la clasificacion se queda como estaba —por archivo— en vez de
+        degradar a ciegas.
+        """
+        for archivo in archivos:
+            if _tipo_de_documento(archivo.name) != "indice":
+                continue
+            try:
+                texto = archivo.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                self._log.warning("No se pudo leer el indice %s", archivo.name, exc_info=True)
+                continue
+            nombres = frozenset(normalizar(n) for n in nombres_en_indice(texto))
+            self._log.info("El indice aporta %d nombres de proyecto", len(nombres))
+            return nombres
+        self._log.warning("Sin indice-catalogo: las secciones se clasifican por archivo")
+        return frozenset()
 
     def _purgar_documentos_borrados(self, vigentes: set[str]) -> None:
         """Borra los fragmentos de documentos que ya no estan en la carpeta.
@@ -203,7 +289,7 @@ class LocalRAGEngine:
                 self._log.info("Documentos retirados del corpus %s: %s (%d fragmentos)",
                                intencion.value, ", ".join(sorted(map(str, fuentes))), len(sobrantes))
 
-    def _sincronizar_archivo(self, archivo: Path) -> None:
+    def _sincronizar_archivo(self, archivo: Path, proyectos: frozenset[str]) -> None:
         texto = limpiar_corpus(archivo.read_text(encoding="utf-8", errors="ignore"))
         if not texto.strip():
             return
@@ -225,7 +311,8 @@ class LocalRAGEngine:
             documents=[p.texto for p in piezas],
             ids=ids,
             metadatas=[
-                {"source": archivo.name, "doc_hash": huella, "tipo": tipo,
+                {"source": archivo.name, "doc_hash": huella,
+                 "tipo": tipo_de_pieza(tipo, p.titulo, proyectos),
                  "titulo": p.titulo, "orden": i}
                 for i, p in enumerate(piezas)
             ],
@@ -310,7 +397,36 @@ class LocalRAGEngine:
 
         distancia, intencion, documentos = mejor
         self._log.debug("Rescate GENERAL -> %s (distancia %.4f)", intencion.value, distancia)
+        documentos = self._rescatar_por_nombre(intencion, consulta, list(documentos),
+                                               n_results)
         return "\n---\n".join(documentos), intencion
+
+    def _rescatar_por_nombre(self, intencion: Intencion, consulta: str,
+                             documentos: list[str], n_results: int) -> list[str]:
+        """Rescate lexico para la ruta GENERAL, restringido a nombres propios.
+
+        La ruta GENERAL no pasaba por el rescate lexico y se notaba: a "¿Que es
+        MacondoLab?" el embedding devolvia seis fichas —Vallenato Master,
+        Neupeek, Camille...— y NINGUNA nombraba MacondoLab, que vive en dos
+        piezas del corpus. HACU contestaba, con razon, que no tenia el dato.
+
+        Aqui se exige nombre propio y no solo rareza. Medido: "anos" sale en UNA
+        sola pieza, asi que por rareza habria arrastrado la ficha de Mary a un
+        "¿cuantos anos tienes?" —y con ella habria desactivado el aviso de
+        fuera-de-dominio, que se apaga en cuanto hay contexto recuperado—.
+        """
+        if not documentos:
+            return documentos
+        cupo = max(1, n_results // 3)
+        rescatadas = self._lexico(intencion).rescatar(
+            consulta, ya_recuperado=set(documentos), maximo=cupo, solo_nombres=True
+        )
+        if not rescatadas:
+            return documentos
+        self._log.info("Rescate por nombre propio en %s: %s", intencion.value,
+                       ", ".join(p.titulo or "(sin titulo)" for p in rescatadas))
+        conservadas = documentos[: max(0, len(documentos) - len(rescatadas))]
+        return conservadas + [p.texto for p in rescatadas]
 
     def cargar_indice(self, intencion: Intencion) -> str | None:
         """Devuelve el indice-catalogo ENTERO, en orden, sin pasar por el embedding.
@@ -337,6 +453,36 @@ class LocalRAGEngine:
                            key=lambda par: (par[1].get("source", ""), par[1].get("orden", 0)))
         return "\n".join(doc for doc, _ in ordenados)
 
+    def _lexico(self, intencion: Intencion) -> IndiceLexico:
+        """Indice lexico del corpus, construido una vez y reutilizado."""
+        cacheado = self._lexicos.get(intencion)
+        if cacheado is not None:
+            return cacheado
+        indice = IndiceLexico()
+        coleccion = self._colecciones.get(intencion)
+        if coleccion is not None:
+            try:
+                todo = coleccion.get(include=["documents", "metadatas"])
+            except Exception:
+                self._log.error("No se pudo leer %s para el indice lexico",
+                                intencion.value, exc_info=True)
+                todo = {}
+            documentos = todo.get("documents") or []
+            metadatos = todo.get("metadatas") or []
+            for texto, meta in zip(documentos, metadatos):
+                meta = meta or {}
+                if meta.get("tipo") == "indice":
+                    continue          # el indice se carga entero, no se rescata
+                indice.anadir(PiezaLexica(texto=texto, titulo=str(meta.get("titulo", "")),
+                                          tipo=str(meta.get("tipo", ""))))
+        self._log.info("Indice lexico de %s: %d piezas", intencion.value, len(indice))
+        self._lexicos[intencion] = indice
+        return indice
+
+    def olvidar_lexico(self) -> None:
+        """Invalida el indice lexico. Lo llama la sincronizacion del corpus."""
+        self._lexicos.clear()
+
     def buscar(self, intencion: Intencion, consulta: str, n_results: int,
                tipo: str | None = None) -> str | None:
         """Recupera fragmentos del corpus de la intencion detectada.
@@ -362,5 +508,31 @@ class LocalRAGEngine:
             self._log.error("Error consultando el corpus %s", intencion.value, exc_info=True)
             return None
 
-        documentos = (resultado.get("documents") or [[]])[0]
+        documentos = list((resultado.get("documents") or [[]])[0])
+        documentos = self._rescatar_por_palabra(intencion, consulta, documentos,
+                                                n_results, tipo)
         return "\n---\n".join(documentos) if documentos else None
+
+    def _rescatar_por_palabra(self, intencion: Intencion, consulta: str,
+                              documentos: list[str], n_results: int,
+                              tipo: str | None) -> list[str]:
+        """Mete las piezas que llevan literalmente una palabra rara de la pregunta.
+
+        SUSTITUYE en vez de anadir: entra la rescatada y sale la peor de las
+        semanticas. Asi el numero de fragmentos no cambia y el presupuesto de
+        contexto sigue siendo el que se verifica al arrancar. El precio es
+        apostar a que una coincidencia literal en una palabra rara vale mas que
+        el sexto vecino semantico, y eso se mide con `pruebas/recuperacion.py`.
+        """
+        if not documentos:
+            return documentos
+        cupo = max(1, n_results // 3)
+        rescatadas = self._lexico(intencion).rescatar(
+            consulta, ya_recuperado=set(documentos), maximo=cupo, tipo=tipo
+        )
+        if not rescatadas:
+            return documentos
+        self._log.info("Rescate lexico en %s: %s", intencion.value,
+                       ", ".join(p.titulo or "(sin titulo)" for p in rescatadas))
+        conservadas = documentos[: max(0, len(documentos) - len(rescatadas))]
+        return conservadas + [p.texto for p in rescatadas]

@@ -13,6 +13,7 @@ from collections.abc import Callable
 
 from .config import AppConfig
 from .memory import HacuMemoryDB
+from .cuidado import AVISO_OPERADOR, Cuidado
 from .routing import Intencion
 from .session import HacuSession
 from .voz import ServicioDeVoz
@@ -215,6 +216,10 @@ class HacuConsole:
             locutor.cerrar()
             self._esperar_a_que_calle()
 
+        if resultado.cuidado is Cuidado.CRISIS:
+            print("\n" + "!" * 58)
+            print("  " + AVISO_OPERADOR)
+            print("!" * 58)
         if resultado.migrado and self._cfg.debug_console:
             print(f"[i] 👤 Perfil migrado: {resultado.usuario_anterior} -> {resultado.usuario}")
         print(
@@ -276,9 +281,9 @@ class HacuConsole:
         if self._leer("Escribe CONFIRMAR para continuar: ") != "CONFIRMAR":
             print("Operacion cancelada.\n")
             return
-        borrados = self._db.purge_all()
-        self._sesion.identidad.reiniciar()
-        self._sesion.estado.trivia = False
+        borrados = self._sesion.olvidar_todo()
+        if self._voz is not None:
+            self._voz.olvidar_hablante()
         print(f"☢️  Purga completada: {borrados} perfiles eliminados. Perfil activo: "
               f"'{self._sesion.identidad.usuario_activo}'.\n")
 

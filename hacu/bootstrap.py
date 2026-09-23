@@ -89,12 +89,13 @@ def construir(
     if podados:
         avisar(f"Retencion: {podados} mensajes con mas de {config.memory.retencion_horas}h eliminados.")
 
-    rag = LocalRAGEngine(config.rag, logger)
+    rag = LocalRAGEngine(config.rag, logger, progreso=avisar)
     if config.rag.multilingual_embeddings and not rag.embeddings_multilingues:
         mensaje = (
-            "El embedding multilingue no esta disponible (falta sentence-transformers "
-            "o fallo la descarga del modelo). Con el embedding por defecto la "
-            "recuperacion sobre el corpus en espanol baja de 36/36 a 27/36 consultas: "
+            "El embedding multilingue no esta disponible (falta sentence-transformers, "
+            "o no esta descargado y no hay conexion para bajarlo). Con el embedding por defecto la "
+            "recuperacion sobre el corpus en espanol baja de 36/36 a 35/36 consultas en la "
+            "bateria, y bastante mas en las preguntas que no nombran lo que buscan: "
             "HACU diria no conocer proyectos que si estan documentados."
         )
         if config.rag.exigir_multilingue:
@@ -125,7 +126,7 @@ def construir(
     sesion = HacuSession(
         llm=llm, db=db, router=router, identity=identity, extractor=extractor,
         context_builder=ContextBuilder(db, rag, config.rag, config.memory, config.default_user),
-        logger=logger,
+        logger=logger, recursos_de_ayuda=config.recursos_de_ayuda,
     )
 
     avisar("Precalentando el modelo...")

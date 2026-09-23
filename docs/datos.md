@@ -18,6 +18,39 @@ dónde, cuánto tiempo y quién decide.
 
 ---
 
+## Cuando alguien lo está pasando mal
+
+Pasa, y ya pasó en la primera prueba: un visitante contó que había perdido a sus
+padres, que se sentía solo, y acabó diciendo que se iba a suicidar.
+
+HACU tiene una capa **determinista** para eso (`hacu/cuidado.py`). Ante una
+mención de suicidio o de hacerse daño, **el modelo no interviene**: responde un
+texto fijo, escrito y revisable, que remite a la persona que atiende el stand y no
+ofrece proyectos ni inventa teléfonos. Ante malestar declarado —tristeza,
+soledad, ansiedad— sí responde el modelo, pero con la instrucción explícita de
+reconocer lo que le han contado y de **no** reconducir a la exhibición.
+
+Lo que eso significa para los datos:
+
+- **Lo que dijo el visitante no se escribe.** En el historial queda
+  `[mensaje sensible, no registrado]`. Es información de salud mental de alguien
+  que pasaba por una exhibición y no tiene por qué acabar en un SQLite.
+- **No entra en la memoria episódica.** Ni el turno de crisis ni el de malestar
+  se encolan para extraer hechos del perfil.
+- **El operador se entera en el momento**, con un aviso en la pantalla y en el
+  log. Esa es la parte que importa: la respuesta correcta es una persona.
+
+Los recursos de ayuda concretos —teléfonos, Bienestar Universitario— **están
+vacíos por defecto** y los rellena el centro con `HACU_AYUDA` o
+`AppConfig.recursos_de_ayuda`. Un número de crisis inventado es peor que ninguno,
+y en esa primera prueba el modelo ofreció, por su cuenta, un servicio de ayuda
+**en Venezuela** estando el montaje en Barranquilla.
+
+> Esto es una red de seguridad, no un protocolo. Antes de abrir al público, el
+> centro tiene que decidir qué hace el personal del stand cuando esto ocurra, y
+> quién de Bienestar Universitario está localizable ese día. El software avisa;
+> atender es de las personas.
+
 ## Qué NO se guarda
 
 - **Ninguna huella de voz en disco.** El detector de cambio de hablante compara el

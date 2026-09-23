@@ -12,12 +12,18 @@ import os
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from .prompts import SALUDO_INICIAL
+from .prompts import MODO_TRIVIA, PERFILES_AUDIENCIA, SALUDO_INICIAL, SYSTEM_PROMPT_BASE
 
 PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent
 
-# Tamano aproximado del system prompt mas la directriz de audiencia, en caracteres.
-_CARACTERES_SISTEMA = 3400
+# El system prompt se MIDE, no se estima. Estaba fijado en 3400 caracteres y las
+# reglas fueron creciendo hasta 9000: el presupuesto de contexto se calculaba con
+# 5600 caracteres de menos, que es justo el error que este calculo existe para
+# evitar. La directriz de audiencia mas larga y el modo trivia se suman aparte
+# porque solo uno de ellos esta activo a la vez.
+def _caracteres_sistema() -> int:
+    mayor_audiencia = max((len(d) for d in PERFILES_AUDIENCIA.values()), default=0)
+    return len(SYSTEM_PROMPT_BASE) + mayor_audiencia + len(MODO_TRIVIA) + 40
 
 
 def _bandera(nombre: str) -> bool:
@@ -49,12 +55,31 @@ class ModelConfig:
     n_batch: int = 512
     n_threads: int = 8
     verbose: bool = False
+    # Cache KV a 8 bits en vez de fp16. Es la palanca que decide si cabe mas
+    # contexto: la cache crece LINEALMENTE con n_ctx y con esto ocupa la mitad.
+    # Medido en aritmetica (`python -m herramientas.presupuesto_vram`): con el
+    # modelo actual, n_ctx 32768 pasa de 9,68 a 7,68 GiB. La perdida de calidad
+    # de q8_0 sobre la cache es la mas pequena de todas las cuantizaciones.
+    # Requiere flash_attn en las versiones recientes de llama.cpp.
+    kv_8bits: bool = False
+    flash_attn: bool = True
 
     # Generacion conversacional (escena). La regla 3 pide 2-4 frases y el modelo
     # la ignoraba soltando monologos de nueve segundos; el tope lo fuerza por
     # hardware. 384 tokens son unas seis frases largas, suficiente para una
     # explicacion tecnica y demasiado poco para un discurso.
     chat_max_tokens: int = 384
+    # Turnos que no piden desarrollo —un cierre, una negativa, una pregunta de un
+    # solo dato—. Con 384 el modelo llenaba el hueco: cuatro parrafos recitando
+    # el catalogo ante un "gracias", 954 caracteres para decir "de acuerdo, te
+    # cuento otra cosa". El retenedor descarta la frase incompleta al llegar al
+    # tope, asi que el corte nunca se oye.
+    #
+    # El numero sale de una medida, no de un redondeo: en la corrida del 21/09 un
+    # turno se corto en 384 tokens y entrego 1379 caracteres, o sea 3,59
+    # caracteres por token. El guion exige 420 caracteres en los turnos breves
+    # —unos 25 segundos hablados, que en una sala ya es largo—, y 420/3,59 = 117.
+    chat_max_tokens_breve: int = 116
     # Tope para las preguntas que piden desarrollo de verdad ("explicame
     # detalladamente cada proyecto"). Con 384 la respuesta se cortaba a mitad de
     # palabra en la cuarta frase; AudacIA tiene seis proyectos y describirlos en
@@ -99,8 +124,12 @@ class RagConfig:
     fragmentos_centro: int = 6
 
     # Embeddings multilingues. El modelo por defecto de Chroma (all-MiniLM-L6-v2)
-    # esta entrenado en ingles y sobre este corpus en espanol recupera 27/36
-    # consultas con verdad documentada, frente a 36/36 del multilingue.
+    # esta entrenado en ingles y sobre este corpus en espanol recupera 35/36
+    # consultas con verdad documentada, frente a 36/36 del multilingue. La brecha
+    # era 24/36 contra 35/36 antes del rescate lexico, que no depende del idioma
+    # del embedding. OJO: esas 36 consultas casi siempre nombran lo que buscan
+    # ("¿que es Neupeek?"), que es donde el rescate lexico brilla; una pregunta
+    # vaga de tarima sigue dependiendo del embedding.
     # (Medido con `python -m pruebas.recuperacion --n 6`.)
     # Requiere `pip install sentence-transformers`. Usa colecciones propias, asi
     # que al activarlo el corpus se reindexa una sola vez.
@@ -186,10 +215,30 @@ class VozConfig:
     maximo_grabacion_ms: int = 20000
 
     # --- Reconocimiento ----------------------------------------------------
-    # `small` en int8_float16 ocupa ~0.5 GB de VRAM y deja sitio al Llama 8B
-    # (~5.5 GB) dentro de los 12 GB de la portatil. `medium` sube a ~1.5 GB y
-    # mejora poco en espanol con audio de cerca.
-    modelo_stt: str = "small"
+    # `small` era el modelo por defecto y el comentario de aqui decia que
+    # `medium` "mejora poco en espanol con audio de cerca". El log de la sesion
+    # en vivo del 21/09 dice lo contrario, y con tres intentos seguidos sobre la
+    # misma frase:
+    #
+    #   'Explicame como es la creatividad general de este'
+    #   'explicame la de la actividad general de Einstein'
+    #   'Explicame sobre la Relatividad General de Einstein.'
+    #
+    # Tres veces para una frase. En una sala con ruido y con visitantes que no
+    # van a repetirse tres veces, eso es la exhibicion entera.
+    #
+    # `large-v3-turbo` tiene el MISMO codificador que large-v3 —que es de donde
+    # sale la precision— con un decodificador de cuatro capas en vez de treinta
+    # y dos. 809M parametros frente a los 244M de `small` y los 1550M de
+    # large-v3: la precision del grande casi al coste del mediano.
+    #
+    # VRAM: `small` en int8_float16 ocupa ~0.5 GiB medidos. Escalando por
+    # parametros sobre ese ancla, turbo ronda 1.1 GiB —un giga mas—, y el
+    # presupuesto a 16k tiene 2,8 GiB de holgura. `herramientas.presupuesto_vram
+    # --stt large-v3-turbo` hace la cuenta; `nvidia-smi` da la de verdad.
+    #
+    # HACU_STT=small vuelve al anterior sin tocar codigo.
+    modelo_stt: str = "large-v3-turbo"
     dispositivo_stt: str = "cuda"
     computo_stt: str = "int8_float16"
     idioma: str = "es"
@@ -231,6 +280,10 @@ class VozConfig:
     piper_exe: Path | None = None
     velocidad_tts: float = 1.0
     volumen_tts: float = 0.9
+    # Tope del silencio *interno* de una frase, en milisegundos. El modelo de voz
+    # mete huecos de 250 a 450 ms en los limites prosodicos y en una sala suenan
+    # a duda. 0 desactiva el recorte y deja el audio de Piper tal cual.
+    pausa_maxima_ms: int = 120
     # Al hablar por frases, el visitante oye la primera mientras el modelo genera
     # la segunda. Por debajo de este minimo la frase se acumula con la siguiente:
     # trocear "Si." de su continuacion suena entrecortado.
@@ -271,6 +324,13 @@ class AppConfig:
     # Lo primero que dice HACU al arrancar, antes de que nadie le pregunte nada.
     # Vacio = no saluda (util en el harness de pruebas, que mide turnos limpios).
     saludo_inicial: str = SALUDO_INICIAL
+    # Adonde mandar a un visitante que lo esta pasando mal. VACIO A PROPOSITO:
+    # un telefono de crisis inventado es peor que ninguno, y en la primera prueba
+    # real el modelo ofrecio, por su cuenta, un servicio de ayuda *en Venezuela*
+    # estando el montaje en Barranquilla. Lo rellena el centro con lo que diga
+    # Bienestar Universitario. Mientras este vacio, HACU remite a la persona que
+    # atiende el stand, que es la respuesta correcta en cualquier caso.
+    recursos_de_ayuda: str = ""
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -278,10 +338,15 @@ class AppConfig:
 
         HACU_DEBUG=1          diagnostico en consola
         HACU_RETENCION=8      horas de historial que se conservan (0 = sin poda)
+        HACU_HISTORIAL=24     mensajes de conversacion que viajan en cada turno
+                              (subir n_ctx sin subir esto no cambia NADA: agranda
+                               el envase y deja la holgura sin usar)
+        HACU_DB=/datos/hacu.db  donde vive la memoria (en contenedor, un volumen)
         HACU_FRAGMENTOS=4     fragmentos recuperados por consulta normal
         HACU_MULTILINGUE=0    fuerza el embedding por defecto de Chroma
         HACU_MODELO=ruta.gguf modelo alternativo, para comparar sin tocar codigo
         HACU_CTX=8192         ventana de contexto (un modelo mas grande deja menos VRAM)
+        HACU_KV8=1            cache KV a 8 bits: la mitad de VRAM por token de contexto
         HACU_VOZ=1            activa microfono y altavoz
         HACU_VOZ_SALIDA=1     solo altavoz: HACU habla pero no escucha
         HACU_HABLANTES=0      no distinguir cuando cambia la persona que habla
@@ -292,8 +357,10 @@ class AppConfig:
         HACU_VOZ_MODELO=es_ES-davefx-medium  voz de Piper
         HACU_ENTRADA=3        indice del microfono (ver --diagnostico)
         HACU_SALIDA=5         indice del altavoz
+        HACU_PAUSA_MS=120     tope del silencio interno de una frase (0 = sin recorte)
         HACU_PANTALLA_COMPLETA=1  la ventana arranca a pantalla completa
         HACU_SALUDO="..."     otra frase de apertura ("" = arrancar sin saludo)
+        HACU_AYUDA="..."      recursos de ayuda del centro, para el modo cuidado
         """
         base = cls(debug_console=_bandera("HACU_DEBUG"))
         memoria = base.memory
@@ -311,10 +378,23 @@ class AppConfig:
         ctx = _entero("HACU_CTX")
         if ctx is not None:
             modelo = replace(modelo, n_ctx=ctx)
+        if _bandera("HACU_KV8"):
+            modelo = replace(modelo, kv_8bits=True)
 
         retencion = _entero("HACU_RETENCION")
         if retencion is not None:
             memoria = replace(memoria, retencion_horas=retencion)
+        # En contenedor la memoria tiene que caer en un volumen montado: dentro de
+        # la imagen se pierde en cada `docker run --rm`.
+        ruta_db = _texto("HACU_DB")
+        if ruta_db:
+            memoria = replace(memoria, db_path=Path(ruta_db))
+        # La palanca que de verdad gasta el contexto. `verificar_presupuesto`
+        # aborta el arranque si la combinacion no cabe, asi que pasarse se nota
+        # al instante y no en mitad de una visita.
+        historial = _entero("HACU_HISTORIAL")
+        if historial is not None and historial > 0:
+            memoria = replace(memoria, history_messages=historial)
         fragmentos = _entero("HACU_FRAGMENTOS")
         if fragmentos is not None:
             rag = replace(rag, default_results=fragmentos)
@@ -347,6 +427,9 @@ class AppConfig:
         salida = _entero("HACU_SALIDA")
         if salida is not None:
             voz = replace(voz, dispositivo_salida=salida)
+        pausa = _entero("HACU_PAUSA_MS")
+        if pausa is not None:
+            voz = replace(voz, pausa_maxima_ms=max(0, pausa))
         if _bandera("HACU_PANTALLA_COMPLETA"):
             interfaz = replace(interfaz, pantalla_completa=True)
 
@@ -355,6 +438,9 @@ class AppConfig:
         saludo = os.getenv("HACU_SALUDO")
         if saludo is not None:
             base = replace(base, saludo_inicial=saludo.strip())
+        ayuda = _texto("HACU_AYUDA")
+        if ayuda:
+            base = replace(base, recursos_de_ayuda=ayuda)
 
         return replace(base, memory=memoria, rag=rag, model=modelo, voz=voz, interfaz=interfaz)
 
@@ -369,6 +455,6 @@ class AppConfig:
         fragmentos = self.rag.broad_results_audacia * self.rag.chunk_max_seccion
         hechos = self.memory.max_facts_per_profile * 80
         historial = self.memory.history_messages * self.model.chat_max_tokens_extenso * 4 // 2
-        caracteres = _CARACTERES_SISTEMA + fragmentos + hechos + historial + 400
+        caracteres = _caracteres_sistema() + fragmentos + hechos + historial + 400
         prompt = int(caracteres / 3.5)
         return prompt, self.model.n_ctx - self.model.chat_max_tokens_extenso

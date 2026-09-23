@@ -14,13 +14,18 @@ from __future__ import annotations
 
 import math
 from datetime import datetime
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QRadialGradient
 from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QPlainTextEdit,
     QPushButton,
     QSizePolicy,
     QVBoxLayout,
@@ -215,6 +220,11 @@ class BurbujaMensaje(QFrame):
         super().__init__(parent)
         self.setObjectName("burbujaHacu" if es_hacu else "burbujaVisitante")
         self._texto = texto
+        # Autor y hora se guardan, no solo se pintan: son lo que necesita la
+        # transcripcion para reconstruir la conversacion tal como se vio.
+        self.autor = autor
+        self.es_hacu = es_hacu
+        self.hora = datetime.now().strftime("%H:%M")
 
         disposicion = QVBoxLayout(self)
         disposicion.setContentsMargins(18, 13, 18, 14)
@@ -224,7 +234,7 @@ class BurbujaMensaje(QFrame):
         cabecera.setSpacing(10)
         etiqueta = QLabel(autor.upper())
         etiqueta.setObjectName("autorHacu" if es_hacu else "autorVisitante")
-        sello = QLabel(datetime.now().strftime("%H:%M"))
+        sello = QLabel(self.hora)
         sello.setObjectName("sello")
         cabecera.addWidget(etiqueta)
         cabecera.addStretch(1)
@@ -282,5 +292,78 @@ def titulo_panel(texto: str) -> QLabel:
     return etiqueta
 
 
-__all__ = ["BotonHablar", "BurbujaMensaje", "MedidorNivel", "Metrica", "NucleoHacu",
+def etiqueta_campo(texto: str) -> QLabel:
+    """Rotulo pequeno encima de un control, para no adivinar que hace."""
+    etiqueta = QLabel(texto)
+    etiqueta.setObjectName("pista")
+    return etiqueta
+
+
+class DialogoTranscripcion(QDialog):
+    """La conversacion entera en texto plano, lista para copiar de una vez.
+
+    Existe porque la alternativa era una captura de pantalla por mensaje. Al
+    abrirse deja el texto ya seleccionado: Ctrl+C basta, y el boton de copiar
+    esta para quien no lo sepa. La ventana no es modal a proposito —se puede
+    dejar abierta mientras sigue la visita— y no toca la conversacion.
+    """
+
+    def __init__(self, transcripcion: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Transcripción de la conversación")
+        self.setMinimumSize(760, 560)
+        self._texto = transcripcion
+
+        disposicion = QVBoxLayout(self)
+        disposicion.setContentsMargins(18, 18, 18, 18)
+        disposicion.setSpacing(12)
+
+        self._area = QPlainTextEdit(transcripcion)
+        self._area.setReadOnly(True)
+        self._area.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
+        fuente = QFont("Consolas")
+        fuente.setStyleHint(QFont.StyleHint.Monospace)
+        self._area.setFont(fuente)
+        disposicion.addWidget(self._area, 1)
+
+        self._aviso = QLabel("")
+        self._aviso.setObjectName("pista")
+        botones = QHBoxLayout()
+        botones.addWidget(self._aviso, 1)
+        copiar = QPushButton("Copiar todo")
+        copiar.clicked.connect(self._copiar)
+        guardar = QPushButton("Guardar como .txt")
+        guardar.clicked.connect(self._guardar)
+        cerrar = QPushButton("Cerrar")
+        cerrar.clicked.connect(self.close)
+        for boton in (copiar, guardar, cerrar):
+            botones.addWidget(boton)
+        disposicion.addLayout(botones)
+
+        self._area.selectAll()
+        self._area.setFocus()
+
+    def _copiar(self) -> None:
+        portapapeles = QApplication.clipboard()
+        if portapapeles is None:          # sin gestor de portapapeles (CI, offscreen)
+            self._aviso.setText("No hay portapapeles disponible.")
+            return
+        portapapeles.setText(self._texto)
+        self._aviso.setText(f"Copiado: {len(self._texto.splitlines())} líneas.")
+
+    def _guardar(self) -> None:
+        sugerido = f"conversacion-{datetime.now().strftime('%Y%m%d-%H%M')}.txt"
+        ruta, _ = QFileDialog.getSaveFileName(self, "Guardar transcripción", sugerido,
+                                              "Texto (*.txt)")
+        if not ruta:
+            return
+        try:
+            Path(ruta).write_text(self._texto, encoding="utf-8")
+        except OSError as error:
+            self._aviso.setText(f"No se pudo guardar: {error}")
+            return
+        self._aviso.setText(f"Guardado en {Path(ruta).name}.")
+
+
+__all__ = ["BotonHablar", "BurbujaMensaje", "DialogoTranscripcion", "MedidorNivel", "Metrica", "NucleoHacu",
            "TEXTO_SUAVE", "ACENTO", "separador", "titulo_panel"]

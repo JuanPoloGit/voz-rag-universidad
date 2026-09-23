@@ -22,13 +22,13 @@ from pathlib import Path
 from dataclasses import replace
 
 from ..config import AppConfig
-from . import ServicioDeVoz
+from . import ServicioDeVoz, comprobar_dependencias
 from .dispositivos import comprobar, listar_dispositivos
 from .microfono import AudioNoDisponible, Microfono, _sounddevice
 from .sintetizador import (
-    _ruta_de_voz,
     crear_sintetizador,
     localizar_piper,
+    ruta_de_voz,
     sintetizar_a_archivo,
 )
 
@@ -103,7 +103,7 @@ def _hablar(config: AppConfig, texto: str, guardar: Path | None) -> int:
     log = logging.getLogger("hacu")
     logging.basicConfig(level=logging.INFO, format="   %(message)s")
     piper = localizar_piper(config.voz)
-    local = _ruta_de_voz(config.voz)
+    local = ruta_de_voz(config.voz)
     print(f"\n   Piper            : {' '.join(piper.base) if piper else 'no encontrado'}")
     print(f"   voz de Piper     : {config.voz.piper_voz} "
           f"({local if local else 'no esta en la carpeta del proyecto'})")
@@ -267,7 +267,7 @@ def main(argv: list[str]) -> int:
         return codigo
     codigo = 0
 
-    problemas = comprobar(config.voz)
+    problemas = comprobar(config.voz) + comprobar_dependencias(config.voz)
     if problemas:
         print("\n⚠️  Problemas detectados:")
         for problema in problemas:

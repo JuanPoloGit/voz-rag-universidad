@@ -22,10 +22,17 @@ python -m hacu.voz --transcribir grabacion.wav
 python -m hacu.voz --autoprueba           # circuito completo sin micrófono
 ```
 
+El diagnóstico sin argumentos, además de los dispositivos, avisa de lo que falta
+sin impedir el arranque: la voz de Piper sin descargar y `resemblyzer` sin
+instalar. Las dos degradan la exhibición en silencio, y por eso salen aquí y en el
+arranque de HACU en vez de en un traceback a mitad de conversación.
+
 Se corre **antes de levantar el modelo**. En una portátil con webcam, base de
 conexiones y auriculares llega a haber cinco entradas de audio, y el sistema no
 siempre elige la que uno cree. Los índices se fijan con `HACU_ENTRADA` y
-`HACU_SALIDA`.
+`HACU_SALIDA` para el arranque, o **a mano desde el panel de operador** de la
+ventana, que es lo cómodo cuando la diadema se conecta con HACU ya en marcha
+(ver [interfaz.md](interfaz.md)).
 
 `--guardar` vuelca la síntesis a un WAV sin reproducirla y `--transcribir` hace el
 camino inverso. Sirven para separar dos fallos que suenan igual: que HACU corte la
@@ -41,8 +48,58 @@ funciona en una máquina donde todavía no hay micrófono.
 
 ## Reconocimiento
 
-faster-whisper `small` en int8, ~0,5 GB de VRAM: convive con el Llama de 8B dentro
-de los 12 GB de la portátil.
+faster-whisper `large-v3-turbo` en int8, ~1,0 GiB de VRAM: convive con el Llama de
+8B dentro de los 12 GB de la portátil (8,20 GiB de los 10,5 disponibles a 16k,
+según `herramientas.presupuesto_vram --stt large-v3-turbo`).
+
+### Por qué ya no es `small`
+
+Era `small` y el comentario del código decía que subir «mejora poco en español con
+audio de cerca». El log de la primera sesión en vivo con voz dice lo contrario:
+
+```
+17:57:19  'Explícame cómo es la creatividad general de este'
+17:57:31  'explícame la de la actividad general de Einstein'
+17:57:48  'Explícame sobre la Relatividad General de Einstein.'
+```
+
+Tres intentos para una frase, con el vocabulario ya sembrado y `beam_size=5`. En
+una sala con ruido, y con visitantes que no van a repetirse tres veces, eso es la
+exhibición entera: HACU contesta con aplomo a algo que nadie dijo.
+
+`large-v3-turbo` lleva el **mismo codificador** que `large-v3` —que es de donde
+sale la precisión— con un decodificador de cuatro capas en vez de treinta y dos.
+809M parámetros frente a los 244M de `small` y los 1550M de `large-v3`.
+
+`HACU_STT=small` vuelve al anterior sin tocar código, y `HACU_STT=tiny` es la
+salida si algún día no cabe.
+
+### La confianza del reconocedor, registrada
+
+`faster-whisper` calcula tres cifras en cada segmento y hasta ahora se tiraban a
+la basura. Ahora van al log en cada transcripción:
+
+```
+Transcrito (83520 muestras) [logprob -0.87 · sin_voz 0.04 · compresion 1.62]: '...'
+```
+
+- `logprob`: probabilidad media de los tokens elegidos, en logaritmo. Cerca de 0
+  es seguro. Es la señal principal.
+- `sin_voz`: probabilidad de que el audio no fuera habla.
+- `compresion`: muy alta significa texto repetitivo, que es como se ve una
+  alucinación de Whisper.
+
+Manda el segmento **peor**: basta una parte mal oída para dudar de la frase.
+
+**No hay ningún umbral todavía, y es deliberado.** Para que HACU pida «¿me lo
+repites?» cuando no entiende hace falta un corte, y ese corte tiene que salir de
+medir sesiones reales —frases bien oídas contra frases mal oídas— y no de un
+número elegido a ojo. Un umbral mal puesto interrumpe al visitante cada tres
+preguntas, que es peor que el problema que arregla. Hay una prueba en el bloque
+`confianza` que falla si alguien mete un umbral en la clase sin datos detrás.
+
+La alternativa —preguntarle al modelo de 8B si la frase «tiene sentido»— se
+descartó: acertaría a medias y cuesta una inferencia entera por turno.
 
 Los nombres propios de la exhibición van sembrados en el prompt inicial del
 reconocedor (`vocabulario` en `VozConfig`), y eso no es una precaución teórica.
@@ -108,6 +165,50 @@ El léxico se amplía sin tocar código con `VozConfig.pronunciaciones`. Si se d
 **sustituye** al léxico medido: hay que incluir también las entradas que se quieran
 conservar.
 
+### La pausa que parecía de las tildes
+
+En escena se oía una pausa marcada en las palabras acentuadas, como si el acento
+partiera la palabra. **No era el acento.** Medido sobre la voz y la versión de
+Piper de esta máquina:
+
+| Qué se comprobó | Resultado |
+|---|---|
+| El texto que llega a Piper | NFC limpio, sin acentos descompuestos, sin caracteres de más |
+| La fonemización de espeak-ng (`es-419`) | Correcta: `esta`→`ˈesta`, `está`→`estˈa`, `investigación`→`investˌiɣasjˈon` |
+| Huecos con tilde vs. sin tilde | **Sin** tilde salen *más* pausas, no menos: la grafía sin acento descoloca el acento tónico |
+| `noise_w` (variabilidad de duración) | Irrelevante: de 0.0 a 0.8 los huecos no cambian |
+
+Lo que sí existe es que el modelo mete **silencios internos de 250 a 450 ms** en
+los límites prosódicos —«Claro, con gusto.» traía 450 ms en la coma—. En
+castellano esos límites caen justo detrás de la sílaba tónica, y de ahí la
+impresión de que la culpa era de la tilde.
+
+`hacu/voz/audio.py` recorta esos huecos a un tope (`pausa_maxima_ms`, 120 ms por
+defecto, `HACU_PAUSA_MS=0` lo desactiva). Solo toca el aire: recorta el silencio
+*interno*, deja el del principio y el del final, y **no altera ni una muestra de
+voz**, así que la acentuación sale idéntica. Medido sobre las mismas frases: el
+hueco mayor baja de 450 ms a 120 ms y la duración total solo cae un 2,4 %, que es
+lo que se espera de quitar aire y no de hablar más rápido.
+
+### El volumen que subía y bajaba
+
+Piper normaliza **por pico y por frase**, y igualar picos no es igualar sonoridad.
+Medido sobre nueve frases del mismo audio crudo:
+
+| Ajuste de nivel | RMS medio | Dispersión |
+|---|---|---|
+| Por pico (lo que hacía Piper) | 0.1635 | **16.8 %** |
+| Por RMS con techo de pico (`nivelar`) | 0.1677 | **13.9 %** |
+
+El caso que más se notaba eran las frases cortas: a un «Sí.» la normalización por
+pico le subía un 35 % la sonoridad respecto de una frase larga. Ahora HACU
+normaliza por RMS con techo en 0.95, que es lo que juzga el oído, y la sonoridad
+media se mantiene, así que al actualizar nadie tiene que tocar el volumen.
+
+> `python -m hacu.voz --guardar` sigue escribiendo el WAV **crudo de Piper**, sin
+> recorte ni nivelado: existe para aislar si el fallo es de la síntesis o de la
+> salida de audio, y para eso hace falta ver la síntesis sin retocar.
+
 ---
 
 ## Callar a mitad de frase
@@ -137,6 +238,35 @@ Lo que hace y lo que deliberadamente no hace:
 La distinción importa: un vector de voz almacenado es un dato biométrico, y esto es
 una exhibición abierta al público con menores entre el público. Guardarlo sería una
 decisión de la universidad, no de un commit. Ver [datos.md](datos.md).
+
+### Una frase rara no cambia de visitante
+
+Hacen falta **dos intervenciones seguidas** por debajo del umbral para declarar
+que hay otra persona. No es prudencia teórica. En la primera sesión en vivo con
+voz, la misma persona dio estas similitudes, en orden:
+
+```
+0.554   ← "Cambio de hablante"
+0.678   0.821   0.863   0.903
+```
+
+Ese 0.554 le partió el perfil en dos a mitad de conversación —HACU dejó de saber
+cómo se llamaba— y era un valor atípico contra un timbre construido con una sola
+frase de tres segundos. Las cuatro siguientes, la misma persona, suben sin parar.
+
+El precio es un turno: si de verdad se acerca otra persona, su primera frase se le
+atribuye todavía a la anterior. A cambio, una frase con ruido o dicha de lado ya
+no borra la identidad de quien sí está delante. El contador se reinicia en cuanto
+vuelve a reconocerse el timbre, así que dos dudas separadas por diez turnos no se
+suman.
+
+La similitud de cada intervención va al log para poder ajustar el umbral con datos
+de sala en vez de a ojo.
+
+Si falta `resemblyzer`, se dice **una vez, al arrancar**, y la función queda
+apagada para la sesión. Antes se reintentaba en cada intervención y escupía el
+traceback entero una vez por turno: en una exhibición eso es una pared de rojo en
+la consola del operador que no aporta nada después de la primera línea.
 
 Calibrado con dos voces distintas sintetizadas: **misma voz 0,844–0,947, voces
 distintas 0,314–0,448**, y el umbral por defecto (0,65) cae en medio de ese hueco.
@@ -182,6 +312,7 @@ operador escribe las preguntas.
 | `sintetizador.py` | Piper en proceso, Piper externo, voz del sistema y modo mudo |
 | `segmentador.py` | Trocea el stream de tokens en frases pronunciables |
 | `pronunciacion.py` | Léxico de «cómo se escribe / cómo se dice» |
+| `audio.py` | Recorte de huecos y nivelado por RMS. Aritmética pura, sin altavoz |
 | `hablantes.py` | Cambio de timbre, efímero y sin identificar |
 | `dispositivos.py` | Inventario y diagnóstico de audio |
 | `__init__.py` | `ServicioDeVoz`: los cuatro verbos que ven la consola y la ventana |
