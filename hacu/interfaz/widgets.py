@@ -16,6 +16,7 @@ Tres piezas que Qt no trae y que son las que hacen que se entienda de lejos:
 from __future__ import annotations
 
 import math
+import random
 from datetime import datetime
 from pathlib import Path
 
@@ -61,6 +62,55 @@ _SEGUNDOS_POR_VUELTA: dict[EstadoUI, float] = {
     EstadoUI.HABLANDO: 1.4,
     EstadoUI.ERROR: 2.6,
 }
+# Cada cuantos segundos nace una onda nueva (un anillo que se expande desde
+# el cerebro hasta el borde del widget), por estado: mas seguido cuanto mas
+# "activo" esta HACU. Es lo que mas aprovecha una pantalla ultrawide, porque
+# a diferencia del cerebro (limitado por la altura) una onda crece en las dos
+# direcciones hasta tocar los bordes izquierdo y derecho.
+_INTERVALO_ONDA: dict[EstadoUI, float] = {
+    EstadoUI.REPOSO: 2.6,
+    EstadoUI.ESCUCHANDO: 1.7,
+    EstadoUI.PENSANDO: 0.9,
+    EstadoUI.HABLANDO: 1.1,
+    EstadoUI.ERROR: 1.3,
+}
+_DURACION_ONDA = 2.2  # segundos que tarda una onda en apagarse del todo
+# Probabilidad por segundo de que nazca un destello (chispazo breve en un
+# punto interior del cerebro), por estado.
+_TASA_DESTELLO: dict[EstadoUI, float] = {
+    EstadoUI.REPOSO: 0.15,
+    EstadoUI.ESCUCHANDO: 0.45,
+    EstadoUI.PENSANDO: 0.95,
+    EstadoUI.HABLANDO: 0.65,
+    EstadoUI.ERROR: 0.35,
+}
+_DURACION_DESTELLO = 0.5
+# Puntos ambiente repartidos por TODO el widget (no solo cerca del cerebro),
+# para que una pantalla ultrawide no deje franjas vacias a los lados.
+_PUNTOS_FONDO = 70
+
+
+def _construir_triangulos(aristas: tuple[tuple[int, int], ...]) -> tuple[tuple[int, int, int], ...]:
+    """Deriva las caras (tripletas de nodos) de la malla a partir de sus aristas.
+
+    En una triangulacion como `_ARISTAS` (de Delaunay, restringida al contorno
+    del cerebro) tres nodos mutuamente conectados son, salvo casos raros, una
+    cara real de la malla: no hace falta guardar una lista de caras aparte,
+    alcanza con buscar triangulos en el grafo. El resultado son regiones
+    interiores repartidas por todo el cerebro, y es lo que deja poner
+    "neuronas" y destellos DENTRO del volumen en vez de solo sobre su
+    contorno o sus conexiones. Se calcula una sola vez, al importar el modulo.
+    """
+    vecinos: dict[int, set[int]] = {}
+    for i, j in aristas:
+        vecinos.setdefault(i, set()).add(j)
+        vecinos.setdefault(j, set()).add(i)
+    caras: list[tuple[int, int, int]] = []
+    for i, j in aristas:
+        for k in vecinos.get(i, set()) & vecinos.get(j, set()):
+            if k > j:  # cada triangulo (i<j<k) se cuenta una sola vez
+                caras.append((i, j, k))
+    return tuple(caras)
 
 
 class NucleoHacu(QWidget):
@@ -158,6 +208,12 @@ class NucleoHacu(QWidget):
     )
     _MARGEN = 18  # deja sitio al halo, que se dibuja mas grande que el cerebro
 
+    # Caras interiores de la malla, para las "neuronas" y los destellos. De
+    # todas ellas se anima una de cada tres: con todas se veia amontonado, y
+    # una de cada tres ya cubre el cerebro entero sin saturar el dibujo.
+    _TRIANGULOS: tuple[tuple[int, int, int], ...] = _construir_triangulos(_ARISTAS)
+    _INDICES_NEURONAS: tuple[int, ...] = tuple(range(0, len(_TRIANGULOS), 3))
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setMinimumSize(240, 240)
@@ -166,8 +222,14 @@ class NucleoHacu(QWidget):
         self._nivel = 0.0
         self._nivel_suave = 0.0
         self._fase = 0.0
+        self._tiempo = 0.0
         self._radio = 0.0
         self._nodos: list[QPointF] = []
+        self._centros: list[QPointF] = []
+        self._radios_centro: list[float] = []
+        self._ondas: list[float] = []
+        self._prox_onda = 0.0
+        self._destellos: list[tuple[QPointF, float]] = []
         self._reconstruir_geometria()
         self._reloj = QTimer(self)
         self._reloj.timeout.connect(self._latir)
@@ -183,8 +245,25 @@ class NucleoHacu(QWidget):
         self._radio = max(0.0, r)
         if r <= 0:
             self._nodos = []
+            self._centros = []
+            self._radios_centro = []
             return
         self._nodos = [centro + QPointF(x * r, y * r) for x, y in self._NODOS_REL]
+        self._centros = []
+        self._radios_centro = []
+        for i, j, k in self._TRIANGULOS:
+            p, q, s = self._nodos[i], self._nodos[j], self._nodos[k]
+            c = QPointF((p.x() + q.x() + s.x()) / 3, (p.y() + q.y() + s.y()) / 3)
+            # Radio de deriva: la menor distancia del centroide a sus tres
+            # vertices, para que la "neurona" nunca cruce el borde de su
+            # propio triangulo por mucho que se mueva.
+            radio_cara = min(
+                math.hypot(p.x() - c.x(), p.y() - c.y()),
+                math.hypot(q.x() - c.x(), q.y() - c.y()),
+                math.hypot(s.x() - c.x(), s.y() - c.y()),
+            )
+            self._centros.append(c)
+            self._radios_centro.append(radio_cara)
 
     def set_estado(self, estado: EstadoUI) -> None:
         self._estado = estado
@@ -208,9 +287,28 @@ class NucleoHacu(QWidget):
             EstadoUI.ERROR: 1.2,
         }[self._estado]
         self._fase = (self._fase + velocidad / _FPS) % (2 * math.pi)
+        self._tiempo += 1.0 / _FPS
         if self._estado is not EstadoUI.ESCUCHANDO:
             self._nivel_suave *= 0.90
+        self._avanzar_ondas()
+        self._avanzar_destellos()
         self.update()
+
+    def _avanzar_ondas(self) -> None:
+        if self._tiempo >= self._prox_onda:
+            self._ondas.append(self._tiempo)
+            self._prox_onda = self._tiempo + _INTERVALO_ONDA[self._estado]
+        limite = self._tiempo - _DURACION_ONDA
+        self._ondas = [t0 for t0 in self._ondas if t0 > limite]
+
+    def _avanzar_destellos(self) -> None:
+        if self._centros and random.random() < _TASA_DESTELLO[self._estado] / _FPS:
+            indice = random.choice(self._INDICES_NEURONAS)
+            self._destellos.append((self._centros[indice], self._tiempo))
+        limite = self._tiempo - _DURACION_DESTELLO
+        self._destellos = [(p, t0) for p, t0 in self._destellos if t0 > limite]
+
+    # -------------------------------------------------------------- pintura
 
     def paintEvent(self, evento) -> None:  # noqa: N802 (API de Qt)
         del evento
@@ -222,23 +320,83 @@ class NucleoHacu(QWidget):
 
         color = QColor(COLOR_ESTADO[self._estado])
         centro = QPointF(self.width() / 2, self.height() / 2)
-        radio_base = self._radio
-
         respiracion = (math.sin(self._fase) + 1) / 2
         energia = self._nivel_suave if self._estado is EstadoUI.ESCUCHANDO else respiracion
 
-        # Halo: es lo que se lee desde el fondo de la sala.
-        halo = QRadialGradient(centro, radio_base + self._MARGEN)
+        # El orden importa: de atras hacia adelante, del fondo mas tenue al
+        # destello mas brillante.
+        self._pintar_fondo_ambiente(pintor, color, centro)
+        self._pintar_ondas(pintor, color, centro)
+        self._pintar_halo(pintor, color, centro, energia)
+        self._pintar_malla(pintor, color, energia)
+        self._pintar_nodos(pintor, color, respiracion)
+        self._pintar_energia_bordes(pintor, color)
+        self._pintar_neuronas_internas(pintor, color)
+        self._pintar_destellos(pintor, color)
+        pintor.end()
+
+    def _pintar_fondo_ambiente(self, pintor: QPainter, color: QColor, centro: QPointF) -> None:
+        """Un tinte tenue de todo el widget, mas un enjambre de puntos lejanos.
+
+        En una pantalla ultrawide el cerebro (dibujado a un tamano limitado
+        por la ALTURA del widget) deja franjas vacias a los lados; este tinte
+        y estos puntos evitan que esas franjas se vean como espacio muerto en
+        vez de parte del mismo fondo.
+        """
+        alcance = max(self.width(), self.height()) * 0.8
+        halo_fondo = QRadialGradient(centro, alcance)
+        halo_fondo.setColorAt(0.0, QColor(color.red(), color.green(), color.blue(), 16))
+        halo_fondo.setColorAt(1.0, QColor(color.red(), color.green(), color.blue(), 0))
+        pintor.setPen(Qt.PenStyle.NoPen)
+        pintor.setBrush(halo_fondo)
+        pintor.drawRect(self.rect())
+
+        # Reparto por razon aurea: cubre el rectangulo entero sin patron
+        # visible y sin necesidad de guardar posiciones aleatorias fijas.
+        ancho, alto = self.width(), self.height()
+        aureo = 0.6180339887
+        for indice in range(_PUNTOS_FONDO):
+            punto = QPointF((indice * aureo % 1.0) * ancho, (indice * aureo * aureo % 1.0) * alto)
+            parpadeo = (math.sin(self._tiempo * (0.4 + (indice % 5) * 0.07) + indice) + 1) / 2
+            pintor.setBrush(QColor(color.red(), color.green(), color.blue(), int(18 + 40 * parpadeo)))
+            pintor.drawEllipse(punto, 1.4, 1.4)
+
+    def _pintar_ondas(self, pintor: QPainter, color: QColor, centro: QPointF) -> None:
+        """Anillos que nacen en el cerebro y se expanden hasta el borde del
+        widget. Son ELIPSES, no circulos: a diferencia del cerebro (limitado
+        por la altura) una onda crece en las dos direcciones hasta tocar los
+        bordes izquierdo y derecho, que es lo que mas aprovecha el ancho de
+        una pantalla ultrawide.
+        """
+        alcance_x = max(self.width() / 2 - 4, self._radio)
+        alcance_y = max(self.height() / 2 - 4, self._radio)
+        pintor.setBrush(Qt.BrushStyle.NoBrush)
+        for t0 in self._ondas:
+            progreso = (self._tiempo - t0) / _DURACION_ONDA
+            if not 0.0 <= progreso <= 1.0:
+                continue
+            avance = 1 - (1 - progreso) ** 2  # easeOutQuad: arranca rapido, frena al final
+            rx = self._radio + (alcance_x - self._radio) * avance
+            ry = self._radio + (alcance_y - self._radio) * avance
+            alfa = int(120 * (1 - progreso) ** 1.6)
+            pintor.setPen(QPen(QColor(color.red(), color.green(), color.blue(), alfa), 1.6))
+            pintor.drawEllipse(centro, rx, ry)
+
+    def _pintar_halo(self, pintor: QPainter, color: QColor, centro: QPointF, energia: float) -> None:
+        """Es lo que se lee desde el fondo de la sala."""
+        halo = QRadialGradient(centro, self._radio + self._MARGEN)
         halo.setColorAt(0.0, QColor(color.red(), color.green(), color.blue(), int(40 + 60 * energia)))
         halo.setColorAt(1.0, QColor(color.red(), color.green(), color.blue(), 0))
         pintor.setPen(Qt.PenStyle.NoPen)
         pintor.setBrush(halo)
-        pintor.drawEllipse(centro, radio_base + self._MARGEN, radio_base + self._MARGEN)
+        pintor.drawEllipse(centro, self._radio + self._MARGEN, self._radio + self._MARGEN)
 
-        # La malla: dos pasadas por linea (una ancha y tenue debajo, una fina
-        # y brillante encima) para que se vea con un resplandor propio, no
-        # como un trazo plano. El borde de la malla ya es el contorno del
-        # cerebro — no hace falta dibujar una silueta aparte.
+    def _pintar_malla(self, pintor: QPainter, color: QColor, energia: float) -> None:
+        """Dos pasadas por linea (una ancha y tenue debajo, una fina y
+        brillante encima) para que se vea con un resplandor propio, no como
+        un trazo plano. El borde de la malla ya es el contorno del cerebro —
+        no hace falta dibujar una silueta aparte.
+        """
         tenue = QColor(color.red(), color.green(), color.blue(), int(35 + 25 * energia))
         nitida = QColor(color.red(), color.green(), color.blue(), int(150 + 60 * energia))
         pluma_ancha = QPen(tenue, 3.4)
@@ -250,9 +408,11 @@ class NucleoHacu(QWidget):
             pintor.setPen(pluma_fina)
             pintor.drawLine(self._nodos[i], self._nodos[j])
 
-        # Brillo ambiente en cada nodo (mas grande en los destacados): la
-        # malla entera se ve "con luz propia", como en la referencia, no solo
-        # cuando hay energia viajando.
+    def _pintar_nodos(self, pintor: QPainter, color: QColor, respiracion: float) -> None:
+        """Brillo ambiente en cada nodo (mas grande en los destacados): la
+        malla entera se ve "con luz propia", como en la referencia, no solo
+        cuando hay energia viajando.
+        """
         destacados = set(self._NODOS_DESTACADOS)
         for indice, punto in enumerate(self._nodos):
             radio_nodo = (5.5 if indice in destacados else 2.4) * (0.85 + 0.15 * respiracion)
@@ -266,30 +426,85 @@ class NucleoHacu(QWidget):
             pintor.setBrush(brillo)
             pintor.drawEllipse(punto, radio_nodo * 2.4, radio_nodo * 2.4)
 
-        # Energia: viaja por las conexiones activas solo cuando HACU esta
-        # activo, alternando de sentido por conexion (una red no dispara
-        # siempre del mismo nodo al mismo nodo). En reposo la malla se ve
-        # entera, pero quieta.
+    def _pintar_energia_bordes(self, pintor: QPainter, color: QColor) -> None:
+        """Viaja por las conexiones activas solo cuando HACU esta activo,
+        alternando de sentido por conexion (una red no dispara siempre del
+        mismo nodo al mismo nodo). En reposo la malla se ve entera, pero
+        quieta.
+        """
         segundos_vuelta = _SEGUNDOS_POR_VUELTA.get(self._estado)
-        if segundos_vuelta is not None and self._ARISTAS_ACTIVAS:
-            avance = self._fase / (2 * math.pi) * _SEGUNDOS_POR_VUELTA[EstadoUI.PENSANDO]
-            n = len(self._ARISTAS_ACTIVAS)
-            for orden, indice_arista in enumerate(self._ARISTAS_ACTIVAS):
-                i, j = self._ARISTAS[indice_arista]
-                origen, destino = (self._nodos[i], self._nodos[j]) if orden % 2 == 0 \
-                    else (self._nodos[j], self._nodos[i])
-                t = (avance / segundos_vuelta + orden / n) % 1.0
-                punto = QPointF(origen.x() + (destino.x() - origen.x()) * t,
-                                origen.y() + (destino.y() - origen.y()) * t)
-                brillo = QRadialGradient(punto, 8.5)
-                brillo.setColorAt(0.0, QColor(255, 255, 255, 245))
-                brillo.setColorAt(0.45, QColor(color.red(), color.green(), color.blue(), 205))
-                brillo.setColorAt(1.0, QColor(color.red(), color.green(), color.blue(), 0))
-                pintor.setPen(Qt.PenStyle.NoPen)
-                pintor.setBrush(brillo)
-                pintor.drawEllipse(punto, 5.0, 5.0)
+        if segundos_vuelta is None or not self._ARISTAS_ACTIVAS:
+            return
+        avance = self._fase / (2 * math.pi) * _SEGUNDOS_POR_VUELTA[EstadoUI.PENSANDO]
+        n = len(self._ARISTAS_ACTIVAS)
+        for orden, indice_arista in enumerate(self._ARISTAS_ACTIVAS):
+            i, j = self._ARISTAS[indice_arista]
+            origen, destino = (self._nodos[i], self._nodos[j]) if orden % 2 == 0 \
+                else (self._nodos[j], self._nodos[i])
+            t = (avance / segundos_vuelta + orden / n) % 1.0
+            punto = QPointF(origen.x() + (destino.x() - origen.x()) * t,
+                            origen.y() + (destino.y() - origen.y()) * t)
+            brillo = QRadialGradient(punto, 8.5)
+            brillo.setColorAt(0.0, QColor(255, 255, 255, 245))
+            brillo.setColorAt(0.45, QColor(color.red(), color.green(), color.blue(), 205))
+            brillo.setColorAt(1.0, QColor(color.red(), color.green(), color.blue(), 0))
+            pintor.setPen(Qt.PenStyle.NoPen)
+            pintor.setBrush(brillo)
+            pintor.drawEllipse(punto, 5.0, 5.0)
 
-        pintor.end()
+    def _pintar_neuronas_internas(self, pintor: QPainter, color: QColor) -> None:
+        """Puntos de luz que derivan DENTRO del volumen del cerebro (en el
+        interior de una cara de la malla, no sobre sus aristas): a
+        diferencia de `_pintar_energia_bordes`, que viaja por encima del
+        contorno, esto es lo que da la sensacion de neuronas moviendose
+        dentro del cerebro y no solo sobre su superficie. Cada una gira
+        alrededor del centro de su propio triangulo -sin salirse de el, por
+        construccion, ver `_reconstruir_geometria`- con una velocidad y una
+        fase propias (formula del angulo dorado) para que no se vean
+        sincronizadas entre si.
+        """
+        factor = {
+            EstadoUI.REPOSO: 0.55, EstadoUI.ESCUCHANDO: 1.0, EstadoUI.PENSANDO: 1.7,
+            EstadoUI.HABLANDO: 1.3, EstadoUI.ERROR: 0.7,
+        }[self._estado]
+        for orden, indice_cara in enumerate(self._INDICES_NEURONAS):
+            centro_cara = self._centros[indice_cara]
+            radio_deriva = self._radios_centro[indice_cara] * 0.55
+            angulo = self._tiempo * factor * (0.5 + (orden % 5) * 0.11) + orden * 2.399
+            punto = QPointF(
+                centro_cara.x() + math.cos(angulo) * radio_deriva,
+                centro_cara.y() + math.sin(angulo * 0.7 + orden) * radio_deriva,
+            )
+            parpadeo = (math.sin(self._tiempo * (1.3 + (orden % 4) * 0.2) + orden) + 1) / 2
+            radio_punto = 1.6 + 0.9 * parpadeo
+            alfa_pico = int(90 + 110 * parpadeo)
+            brillo = QRadialGradient(punto, radio_punto * 3.0)
+            brillo.setColorAt(0.0, QColor(255, 255, 255, alfa_pico))
+            brillo.setColorAt(0.5, QColor(color.red(), color.green(), color.blue(), int(alfa_pico * 0.6)))
+            brillo.setColorAt(1.0, QColor(color.red(), color.green(), color.blue(), 0))
+            pintor.setPen(Qt.PenStyle.NoPen)
+            pintor.setBrush(brillo)
+            pintor.drawEllipse(punto, radio_punto * 3.0, radio_punto * 3.0)
+
+    def _pintar_destellos(self, pintor: QPainter, color: QColor) -> None:
+        """Chispazos breves: nacen en un punto interior al azar (ver
+        `_avanzar_destellos`) y se apagan en `_DURACION_DESTELLO` segundos. A
+        diferencia de las neuronas (que laten todo el rato) un destello es un
+        evento puntual, para que la malla no se vea uniforme.
+        """
+        for punto, t0 in self._destellos:
+            progreso = (self._tiempo - t0) / _DURACION_DESTELLO
+            if not 0.0 <= progreso <= 1.0:
+                continue
+            radio = 3.0 + 20.0 * progreso
+            alfa = int(255 * (1 - progreso) ** 2)
+            brillo = QRadialGradient(punto, radio)
+            brillo.setColorAt(0.0, QColor(255, 255, 255, alfa))
+            brillo.setColorAt(0.5, QColor(color.red(), color.green(), color.blue(), int(alfa * 0.6)))
+            brillo.setColorAt(1.0, QColor(color.red(), color.green(), color.blue(), 0))
+            pintor.setPen(Qt.PenStyle.NoPen)
+            pintor.setBrush(brillo)
+            pintor.drawEllipse(punto, radio, radio)
 
 
 class MedidorNivel(QWidget):

@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QStackedLayout,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -172,9 +173,25 @@ class VentanaHacu(QMainWindow):
         necesita leer nada, solo ver que HACU esta despierto y en que estado. El
         boton "Vista Pro" es deliberadamente discreto (esquina, sin color de
         acento) porque es para quien atiende el stand, no para el publico.
+
+        El nucleo ocupa la ventana ENTERA -pensado para una pantalla ancha de
+        stand, incluida la ultrawide de 3840x1080- y los rotulos (marca, botón
+        "Vista Pro", alerta, estado, pista) flotan encima en una capa aparte,
+        con `QStackedLayout.StackAll`: las dos capas se ven a la vez en vez de
+        turnarse, y ninguna le quita area a la otra como pasaba cuando iban
+        apiladas una debajo de la otra en un solo `QVBoxLayout`.
         """
         raiz = QWidget()
-        vertical = QVBoxLayout(raiz)
+        capas = QStackedLayout(raiz)
+        capas.setContentsMargins(0, 0, 0, 0)
+        capas.setStackingMode(QStackedLayout.StackingMode.StackAll)
+
+        self._nucleo_simple = NucleoHacu()
+        capas.addWidget(self._nucleo_simple)
+
+        rotulos = QWidget()
+        rotulos.setObjectName("transparente")
+        vertical = QVBoxLayout(rotulos)
         vertical.setContentsMargins(0, 0, 0, 0)
         vertical.setSpacing(0)
 
@@ -206,8 +223,9 @@ class VentanaHacu(QMainWindow):
         margen.addWidget(self._alerta_simple)
         vertical.addLayout(margen)
 
-        self._nucleo_simple = NucleoHacu()
-        vertical.addWidget(self._nucleo_simple, 1)
+        # El nucleo se ve por debajo de todo este hueco: aqui no hace falta
+        # nada, es justo el espacio que antes ocupaba el widget del cerebro.
+        vertical.addStretch(1)
 
         self._texto_estado_simple = QLabel(ROTULO_ESTADO[EstadoUI.REPOSO])
         self._texto_estado_simple.setObjectName("estadoSimple")
@@ -224,6 +242,8 @@ class VentanaHacu(QMainWindow):
             self._pista_simple.setText("Sin micrófono: entra a Vista Pro para escribirle a HACU")
         vertical.addWidget(self._pista_simple)
         vertical.addSpacing(40)
+
+        capas.addWidget(rotulos)
         return raiz
 
     def _cabecera(self) -> QFrame:
