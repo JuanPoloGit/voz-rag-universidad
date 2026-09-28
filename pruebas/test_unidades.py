@@ -2035,7 +2035,7 @@ def probar_presupuesto_vram(v: Verificador) -> None:
             all(m.rol_sistema for m in MODELOS if not m.nombre.startswith("gemma")))
 
     # La config expone la palanca y el arranque la respeta.
-    v.check("por defecto la cache va en fp16", not ModelConfig().kv_8bits)
+    v.check("por defecto la cache ya va en 8 bits", ModelConfig().kv_8bits)
     v.check("flash attention viene activada", ModelConfig().flash_attn)
     previo = _os.environ.get("HACU_KV8")
     _os.environ["HACU_KV8"] = "1"

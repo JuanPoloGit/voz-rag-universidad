@@ -50,7 +50,12 @@ class ModelConfig:
     """Parametros de carga e inferencia de llama.cpp."""
 
     model_path: Path = PROJECT_ROOT / "models" / "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf"
-    n_ctx: int = 16384
+    # 32768 por defecto: era el valor de HACU_CTX=32768 que se probaba a mano
+    # antes de cada corrida. Se sube el default en vez de seguir dependiendo de
+    # la variable de entorno, que habia que recordar poner cada vez que se
+    # abria una terminal nueva. HACU_CTX sigue pudiendo forzar otro valor
+    # (por ejemplo, volver a 16384 para repetir la corrida base de comparacion).
+    n_ctx: int = 32768
     n_gpu_layers: int = -1
     n_batch: int = 512
     n_threads: int = 8
@@ -60,8 +65,10 @@ class ModelConfig:
     # Medido en aritmetica (`python -m herramientas.presupuesto_vram`): con el
     # modelo actual, n_ctx 32768 pasa de 9,68 a 7,68 GiB. La perdida de calidad
     # de q8_0 sobre la cache es la mas pequena de todas las cuantizaciones.
-    # Requiere flash_attn en las versiones recientes de llama.cpp.
-    kv_8bits: bool = False
+    # Requiere flash_attn en las versiones recientes de llama.cpp (activo abajo
+    # por defecto). Por defecto en True por la misma razon que n_ctx: sin esto,
+    # 32768 de contexto sale caro en VRAM en vez de gratis.
+    kv_8bits: bool = True
     flash_attn: bool = True
 
     # Generacion conversacional (escena). La regla 3 pide 2-4 frases y el modelo
@@ -377,8 +384,11 @@ class AppConfig:
         HACU_FRAGMENTOS=4     fragmentos recuperados por consulta normal
         HACU_MULTILINGUE=0    fuerza el embedding por defecto de Chroma
         HACU_MODELO=ruta.gguf modelo alternativo, para comparar sin tocar codigo
-        HACU_CTX=8192         ventana de contexto (un modelo mas grande deja menos VRAM)
-        HACU_KV8=1            cache KV a 8 bits: la mitad de VRAM por token de contexto
+        HACU_CTX=16384         ventana de contexto (por defecto 32768; baja esto
+                               para repetir la corrida base de comparacion o si
+                               un modelo mas grande deja poca VRAM libre)
+        HACU_KV8=1            cache KV a 8 bits (ya es el valor por defecto;
+                               esta variable no tiene forma de apagarlo)
         HACU_VOZ=1            activa microfono y altavoz
         HACU_VOZ_SALIDA=1     solo altavoz: HACU habla pero no escucha
         HACU_HABLANTES=0      no distinguir cuando cambia la persona que habla
