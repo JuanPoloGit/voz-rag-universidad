@@ -244,6 +244,12 @@ class VentanaHacu(QMainWindow):
         vertical.addSpacing(40)
 
         capas.addWidget(rotulos)
+        # `StackAll` pone "arriba" -en pintura Y en clicks- al widget
+        # CORRIENTE (`currentIndex`), no al ultimo anadido: sin esto el
+        # corriente se queda por defecto en el indice 0 (el nucleo), que no
+        # maneja mouse events y por eso se tragaba cualquier click antes de
+        # que llegara al boton "Vista Pro".
+        capas.setCurrentWidget(rotulos)
         return raiz
 
     def _cabecera(self) -> QFrame:
@@ -441,6 +447,12 @@ class VentanaHacu(QMainWindow):
         vertical.addWidget(purgar)
 
         vertical.addStretch(1)
+        vertical.addWidget(separador())
+        salir = QPushButton("Salir de HACU")
+        salir.setObjectName("peligro")
+        salir.setToolTip("Cierra la aplicación entera (pide confirmación)")
+        salir.clicked.connect(self._confirmar_salida)
+        vertical.addWidget(salir)
         ayuda = QLabel("F9 oculta este panel · F11 pantalla completa · Esc callar")
         ayuda.setObjectName("pista")
         ayuda.setWordWrap(True)
@@ -472,14 +484,34 @@ class VentanaHacu(QMainWindow):
         QShortcut(QKeySequence("Ctrl+M"), self, activated=self._alternar_vista)
         QShortcut(QKeySequence("Esc"), self, activated=self._callar)
         # A pantalla completa no hay barra de titulo que cerrar, y Alt+F4 no es
-        # algo que se le pida a quien atiende una exhibicion.
-        QShortcut(QKeySequence("Ctrl+Q"), self, activated=self.close)
+        # algo que se le pida a quien atiende una exhibicion. Pasa por la misma
+        # confirmacion que el boton "Salir de HACU": un Ctrl+Q sin querer en
+        # plena visita no deberia cerrar la aplicacion de una.
+        QShortcut(QKeySequence("Ctrl+Q"), self, activated=self._confirmar_salida)
 
     def _callar(self) -> None:
         """Esc: corta la voz y recupera el teclado si se habia quedado en el texto."""
         self._voz.silenciar()
         self._entrada.clearFocus()
         self.setFocus()
+
+    def _confirmar_salida(self) -> None:
+        """Cierra HACU, pero solo tras confirmar.
+
+        A diferencia del resto de atajos, cerrar la aplicacion en plena
+        exhibicion no tiene vuelta atras -corta a quien este hablando con
+        HACU en ese momento-, asi que pasa por el mismo patron de
+        confirmacion que `_purgar` en vez de actuar directo.
+        """
+        respuesta = QMessageBox.question(
+            self, "Cerrar HACU",
+            "Se va a cerrar la aplicación. Si hay alguien hablando con HACU "
+            "ahora mismo, se corta la conversación.\n\n¿Continuar?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if respuesta is QMessageBox.StandardButton.Yes:
+            self.close()
 
     # ------------------------------------------------------------------ eventos
 
