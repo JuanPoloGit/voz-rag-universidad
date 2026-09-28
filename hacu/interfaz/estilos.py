@@ -29,6 +29,12 @@ VISITANTE = "#7C8CF8"       # burbuja del visitante
 ALERTA = "#F2A33C"
 PELIGRO = "#F2545B"
 
+# Pareja azul/violeta para la cuadricula de fondo, la marca y el nucleo
+# evolucionado (corrientes y rayos): el mismo lenguaje frio-energetico de la
+# referencia del tutor, sin tocar los colores de estado ya en uso.
+AZUL = "#33BCFF"
+VIOLETA = "#B68BFF"
+
 # --- Estados ---------------------------------------------------------------
 
 
@@ -75,8 +81,11 @@ def hoja(tamano_texto: int) -> str:
     QLabel, QWidget#transparente {{
         background: transparent;
     }}
+    /* "Vidrio": semitransparente para que la cuadricula de FondoCuadricula se
+       note por debajo, sin blur real (Qt no lo tiene barato para widgets;
+       esta es la aproximacion practica). */
     QFrame#cabecera {{
-        background: {SUPERFICIE};
+        background: rgba(17, 24, 40, 0.72);
         border-bottom: 1px solid {BORDE};
     }}
     QLabel#marca {{
@@ -112,14 +121,14 @@ def hoja(tamano_texto: int) -> str:
 
     QFrame#burbujaHacu {{
         margin-right: 72px;
-        background: {SUPERFICIE_ALTA};
+        background: rgba(24, 32, 52, 0.72);
         border: 1px solid {BORDE};
         border-left: 3px solid {ACENTO};
         border-radius: 14px;
     }}
     QFrame#burbujaVisitante {{
         margin-left: 72px;
-        background: {SUPERFICIE};
+        background: rgba(17, 24, 40, 0.72);
         border: 1px solid {BORDE};
         border-left: 3px solid {VISITANTE};
         border-radius: 14px;
@@ -132,13 +141,38 @@ def hoja(tamano_texto: int) -> str:
     QLabel#sello {{ color: {TEXTO_TENUE}; font-size: {tamano_texto - 5}px; }}
 
     QFrame#panel {{
-        background: {SUPERFICIE};
+        background: rgba(17, 24, 40, 0.72);
         border-left: 1px solid {BORDE};
     }}
     QLabel#tituloPanel {{
         color: {TEXTO_SUAVE}; font-size: {tamano_texto - 4}px;
         font-weight: 700; letter-spacing: 2px;
     }}
+    QLabel#eyebrow {{
+        color: {AZUL}; font-size: {tamano_texto - 5}px;
+        font-weight: 700; letter-spacing: 3px;
+    }}
+    QFrame#tarjetaVidrio {{
+        background: rgba(24, 32, 52, 0.55);
+        border: 1px solid {BORDE};
+        border-radius: 12px;
+    }}
+    QLabel#introTitulo {{
+        font-size: {tamano_texto + 1}px; font-weight: 700;
+    }}
+    QLabel#introTexto {{
+        color: {TEXTO_SUAVE}; font-size: {tamano_texto - 3}px;
+    }}
+    QPushButton#modoPreview {{
+        background: rgba(24, 32, 52, 0.6);
+        border: 1px solid {BORDE};
+        border-radius: 10px;
+        padding: 8px 6px;
+        color: {TEXTO_SUAVE};
+        font-size: {tamano_texto - 3}px;
+        letter-spacing: 1px;
+    }}
+    QPushButton#modoPreview:hover {{ border-color: {AZUL}; color: {TEXTO}; }}
     QPushButton {{
         background: {SUPERFICIE_ALTA};
         border: 1px solid {BORDE};
@@ -177,6 +211,14 @@ def hoja(tamano_texto: int) -> str:
         selection-background-color: {ACENTO_OSCURO};
     }}
     QLineEdit:focus {{ border-color: {ACENTO}; }}
+    QPushButton#enviar {{
+        background: {ACENTO_OSCURO};
+        border: 1px solid {ACENTO};
+        border-radius: 10px;
+        padding: 10px 18px;
+        font-weight: 700;
+    }}
+    QPushButton#enviar:hover {{ background: {ACENTO}; color: {FONDO}; }}
     QCheckBox {{ color: {TEXTO_SUAVE}; spacing: 10px; background: transparent; }}
     QCheckBox::indicator {{
         width: 16px; height: 16px;
@@ -189,9 +231,35 @@ def hoja(tamano_texto: int) -> str:
     }}
     QCheckBox:disabled {{ color: {TEXTO_TENUE}; }}
     QFrame#separador {{ background: {BORDE}; max-height: 1px; border: none; }}
-    QFrame#piePagina {{ background: {SUPERFICIE}; border-top: 1px solid {BORDE}; }}
+    QFrame#piePagina {{
+        background: rgba(17, 24, 40, 0.78);
+        border-top: 1px solid {BORDE};
+    }}
     QLabel#metrica {{ color: {TEXTO_SUAVE}; font-size: {tamano_texto - 4}px; }}
     QLabel#metricaValor {{ color: {TEXTO}; font-size: {tamano_texto - 2}px; font-weight: 600; }}
+
+    QFrame#pildoraEstado {{
+        background: rgba(24, 32, 52, 0.75);
+        border: 1px solid {BORDE};
+        border-radius: 14px;
+    }}
+    QLabel#pildoraPunto {{ font-size: 11px; }}
+    QLabel#pildoraTexto {{
+        font-size: {tamano_texto - 4}px;
+        font-weight: 700;
+        letter-spacing: 2px;
+    }}
+
+    QLabel#pasoNumero {{
+        color: {TEXTO_TENUE}; font-size: {tamano_texto - 3}px;
+        font-weight: 700;
+    }}
+    QLabel#pasoNumeroActivo {{
+        color: {AZUL}; font-size: {tamano_texto - 3}px;
+        font-weight: 700;
+    }}
+    QLabel#pasoTexto {{ color: {TEXTO_TENUE}; font-size: {tamano_texto - 3}px; }}
+    QLabel#pasoTextoActivo {{ color: {TEXTO}; font-size: {tamano_texto - 3}px; font-weight: 600; }}
 
     QPushButton#cambioVista {{
         background: transparent;

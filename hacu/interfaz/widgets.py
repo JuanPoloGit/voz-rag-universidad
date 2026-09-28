@@ -1,12 +1,17 @@
 """Widgets a medida de la ventana de exhibicion.
 
-Tres piezas que Qt no trae y que son las que hacen que se entienda de lejos:
+Piezas que Qt no trae y que son las que hacen que se entienda de lejos:
 
 - `NucleoHacu`: un nucleo de particulas de colores en rotacion (nube libre,
   sin silueta fija -pedido explicito del stand, ver el docstring de la
-  clase-), coloreado por estado, que se agita y gira mas rapido cuanto mas
-  "activo" esta HACU. Es el unico indicador que se lee desde el fondo de la
-  sala, donde el texto de estado ya no se distingue.
+  clase-), coloreado por estado, con corrientes (curvas de energia) y rayos
+  (zigzags breves) ademas de la nube. Es el unico indicador que se lee desde
+  el fondo de la sala, donde el texto de estado ya no se distingue.
+- `FondoCuadricula`: la cuadricula+vineta que va detras de toda la ventana,
+  igual que el fondo de `.app` en la referencia del tutor.
+- `MarcaRombo`: la marca romboide de la cabecera.
+- `PildoraEstado`: el indicador de estado en capsula.
+- `SecuenciaFlujo`: los 4 pasos del turno (reposo/escucha/procesa/responde).
 - `MedidorNivel`: barras del nivel de entrada, para que el operador vea que el
   microfono capta antes de que el visitante se de cuenta de que no.
 - `BurbujaMensaje`: una intervencion de la conversacion, con soporte para crecer
@@ -22,10 +27,14 @@ from pathlib import Path
 
 from PySide6.QtCore import QPointF, Qt, QTimer, Signal
 from PySide6.QtGui import (
+    QBrush,
     QColor,
     QFont,
+    QLinearGradient,
     QPainter,
+    QPainterPath,
     QPen,
+    QPixmap,
     QRadialGradient,
 )
 from PySide6.QtWidgets import (
@@ -45,15 +54,208 @@ from PySide6.QtWidgets import (
 from .estilos import (
     ACENTO,
     ALERTA,
+    AZUL,
     BORDE,
     COLOR_ESTADO,
+    FONDO,
     PELIGRO,
+    ROTULO_ESTADO,
     SUPERFICIE,
     TEXTO_SUAVE,
     TEXTO_TENUE,
+    VIOLETA,
     VISITANTE,
     EstadoUI,
 )
+
+# --- Fondo compartido: cuadricula + vineta ---------------------------------
+# La misma imagen -pixmap cacheado, no se repinta a mano cada frame- la usan
+# `FondoCuadricula` (toda la ventana) y `NucleoHacu` (su propio fondo
+# ambiente), para que ambas vistas compartan un solo lenguaje visual en vez
+# de tener cada una su propio fondo por separado.
+_ESPACIADO_CUADRICULA = 54
+
+
+def _crear_cuadricula(ancho: int, alto: int) -> QPixmap:
+    """Renderiza cuadricula+vineta UNA vez a un pixmap con canal alfa.
+
+    Pintar esto a mano en cada `paintEvent` (30 fps, hasta ~90 lineas en una
+    ultrawide) es gasto de CPU que no hace falta si el patron no cambia salvo
+    al redimensionar: se cachea aqui y solo se reconstruye en el resize.
+    """
+    ancho, alto = max(1, ancho), max(1, alto)
+    pixmap = QPixmap(ancho, alto)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    pintor = QPainter(pixmap)
+    pintor.setRenderHint(QPainter.RenderHint.Antialiasing)
+    color = QColor(AZUL)
+    for x in range(0, ancho, _ESPACIADO_CUADRICULA):
+        degradado = QLinearGradient(x, 0, x, alto)
+        degradado.setColorAt(0.0, QColor(color.red(), color.green(), color.blue(), 0))
+        degradado.setColorAt(0.5, QColor(color.red(), color.green(), color.blue(), 26))
+        degradado.setColorAt(1.0, QColor(color.red(), color.green(), color.blue(), 0))
+        pintor.setPen(QPen(QBrush(degradado), 1.0))
+        pintor.drawLine(x, 0, x, alto)
+    for y in range(0, alto, _ESPACIADO_CUADRICULA):
+        degradado = QLinearGradient(0, y, ancho, y)
+        degradado.setColorAt(0.0, QColor(color.red(), color.green(), color.blue(), 0))
+        degradado.setColorAt(0.5, QColor(color.red(), color.green(), color.blue(), 18))
+        degradado.setColorAt(1.0, QColor(color.red(), color.green(), color.blue(), 0))
+        pintor.setPen(QPen(QBrush(degradado), 1.0))
+        pintor.drawLine(0, y, ancho, y)
+    vineta = QRadialGradient(QPointF(ancho / 2, alto / 2), math.hypot(ancho, alto) / 2)
+    vineta.setColorAt(0.0, QColor(0, 0, 0, 0))
+    vineta.setColorAt(0.72, QColor(0, 0, 0, 0))
+    vineta.setColorAt(1.0, QColor(0, 0, 0, 130))
+    pintor.setPen(Qt.PenStyle.NoPen)
+    pintor.setBrush(vineta)
+    pintor.drawRect(0, 0, ancho, alto)
+    pintor.end()
+    return pixmap
+
+
+class FondoCuadricula(QWidget):
+    """La base de toda la ventana: relleno solido + cuadricula + vineta.
+
+    Va siempre en la capa de mas atras (indice 0 de un `QStackedLayout` en
+    modo `StackAll`, igual tecnica que ya usaba `_vista_simple`); todo lo que
+    se pinta encima usa fondos semitransparentes ("vidrio", ver
+    `estilos.hoja`) para que esta cuadricula se note por debajo -la
+    aproximacion practica al `backdrop-filter` de la referencia, que Qt no
+    tiene barato para widgets-.
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._cache = QPixmap()
+
+    def resizeEvent(self, evento) -> None:  # noqa: N802 (API de Qt)
+        super().resizeEvent(evento)
+        self._cache = _crear_cuadricula(self.width(), self.height())
+
+    def paintEvent(self, evento) -> None:  # noqa: N802
+        del evento
+        pintor = QPainter(self)
+        pintor.fillRect(self.rect(), QColor(FONDO))
+        pintor.drawPixmap(0, 0, self._cache)
+        pintor.end()
+
+
+class MarcaRombo(QWidget):
+    """Marca romboide: un cuadrado a 45° en degradado con una letra sin girar
+    en el centro -misma idea que el `.mark` de la referencia (rombo + letra
+    contrarrotada); reconstruida a mano porque QLabel no gira su contenido-.
+    """
+
+    def __init__(self, letra: str = "H", parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._letra = letra
+        self.setFixedSize(40, 40)
+
+    def paintEvent(self, evento) -> None:  # noqa: N802
+        del evento
+        pintor = QPainter(self)
+        pintor.setRenderHint(QPainter.RenderHint.Antialiasing)
+        lado = min(self.width(), self.height()) * 0.62
+
+        pintor.save()
+        pintor.translate(self.width() / 2, self.height() / 2)
+        pintor.rotate(45)
+        degradado = QLinearGradient(-lado / 2, -lado / 2, lado / 2, lado / 2)
+        degradado.setColorAt(0.0, QColor(AZUL))
+        degradado.setColorAt(1.0, QColor(VIOLETA))
+        pintor.setPen(QPen(QColor(255, 255, 255, 90), 1.2))
+        pintor.setBrush(degradado)
+        pintor.drawRoundedRect(int(-lado / 2), int(-lado / 2), int(lado), int(lado), 6, 6)
+        pintor.restore()
+
+        pintor.setPen(QColor(FONDO))
+        fuente = pintor.font()
+        fuente.setBold(True)
+        fuente.setPixelSize(int(lado * 0.42))
+        pintor.setFont(fuente)
+        pintor.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._letra)
+        pintor.end()
+
+
+class PildoraEstado(QFrame):
+    """Pastilla de estado: punto de color + rotulo en una capsula.
+
+    Reemplaza el punto y el texto sueltos que tenia la cabecera -mismo patron
+    que el `.status-pill` de la referencia-.
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("pildoraEstado")
+        fila = QHBoxLayout(self)
+        fila.setContentsMargins(14, 6, 16, 6)
+        fila.setSpacing(8)
+        self._punto = QLabel("●")
+        self._punto.setObjectName("pildoraPunto")
+        self._texto = QLabel(ROTULO_ESTADO[EstadoUI.REPOSO].upper())
+        self._texto.setObjectName("pildoraTexto")
+        fila.addWidget(self._punto)
+        fila.addWidget(self._texto)
+
+    def set_estado(self, estado: EstadoUI) -> None:
+        color = COLOR_ESTADO[estado]
+        self._punto.setStyleSheet(f"color: {color};")
+        self._texto.setStyleSheet(f"color: {color};")
+        self._texto.setText(ROTULO_ESTADO[estado].upper())
+
+
+# Los 4 pasos del turno. ERROR queda fuera a proposito: es una interrupcion,
+# no una fase por la que pasa todo turno, asi que no tiene puesto en la
+# secuencia -en ese estado no se resalta ninguno-.
+_PASOS_FLUJO: tuple[tuple[str, str, EstadoUI], ...] = (
+    ("01", "REPOSO", EstadoUI.REPOSO),
+    ("02", "ESCUCHA", EstadoUI.ESCUCHANDO),
+    ("03", "PROCESA", EstadoUI.PENSANDO),
+    ("04", "RESPONDE", EstadoUI.HABLANDO),
+)
+
+
+class SecuenciaFlujo(QWidget):
+    """Los cuatro pasos del turno, con el paso actual resaltado.
+
+    Referencia: el `.flow` de interfaz-agente-audacia.html (pasos numerados,
+    uno activo a la vez).
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        vertical = QVBoxLayout(self)
+        vertical.setContentsMargins(0, 0, 0, 0)
+        vertical.setSpacing(9)
+        self._numeros: dict[EstadoUI, QLabel] = {}
+        self._textos: dict[EstadoUI, QLabel] = {}
+        for numero, texto, estado in _PASOS_FLUJO:
+            fila = QHBoxLayout()
+            fila.setSpacing(10)
+            n = QLabel(numero)
+            n.setObjectName("pasoNumero")
+            n.setFixedWidth(24)
+            t = QLabel(texto)
+            t.setObjectName("pasoTexto")
+            fila.addWidget(n)
+            fila.addWidget(t)
+            fila.addStretch(1)
+            vertical.addLayout(fila)
+            self._numeros[estado] = n
+            self._textos[estado] = t
+
+    def set_estado(self, estado: EstadoUI) -> None:
+        for paso_estado, numero in self._numeros.items():
+            activo = paso_estado is estado
+            texto = self._textos[paso_estado]
+            numero.setObjectName("pasoNumeroActivo" if activo else "pasoNumero")
+            texto.setObjectName("pasoTextoActivo" if activo else "pasoTexto")
+            # Cambiar objectName no repinta solo: hay que forzar a Qt a
+            # releer la hoja de estilos para ese widget.
+            for etiqueta in (numero, texto):
+                etiqueta.style().unpolish(etiqueta)
+                etiqueta.style().polish(etiqueta)
 
 _FPS = 30
 # Cada cuantos segundos nace una onda nueva (un anillo que se expande desde
@@ -120,6 +322,22 @@ _PALETA_ESTADO: dict[EstadoUI, tuple[str, str, str]] = {
     EstadoUI.ERROR: (PELIGRO, ALERTA, "#FF8A80"),
 }
 
+# --- Corrientes y rayos (evolucion del nucleo, referencia del tutor) -------
+# Cuantas corrientes salen del nucleo hacia el borde: curvas bezier con un
+# punto de luz viajando encima, igual idea que los `streams` de la
+# referencia (sin copiar su codigo: aqui es QPainterPath.cubicTo).
+_N_CORRIENTES = 6
+# Probabilidad por segundo de que nazca un rayo (zigzag breve entre dos
+# puntos de la superficie), por estado -mas frecuente cuanto mas "activo".
+_TASA_RAYO: dict[EstadoUI, float] = {
+    EstadoUI.REPOSO: 0.03,
+    EstadoUI.ESCUCHANDO: 0.10,
+    EstadoUI.PENSANDO: 0.35,
+    EstadoUI.HABLANDO: 0.18,
+    EstadoUI.ERROR: 0.12,
+}
+_DURACION_RAYO = 0.35
+
 
 class NucleoHacu(QWidget):
     """Un nucleo de particulas de colores en rotacion, SIN silueta fija.
@@ -145,6 +363,13 @@ class NucleoHacu(QWidget):
     adelante por su profundidad, para que la que esta "de frente" tape a la
     que esta detras -el truco habitual para que una nube de puntos plana se
     lea como una esfera en vez de un circulo relleno-.
+
+    Evolucion (pedido del tutor, `interfaz-agente-audacia.html`): ademas de
+    la nube, el nucleo tiene corrientes (curvas de energia con un punto
+    viajando, `_pintar_corrientes`) y rayos (zigzags breves,
+    `_pintar_rayos`) -la misma idea de "nube + rayos + corrientes" de la
+    referencia, reconstruida con QPainterPath y mezcla aditiva en vez de
+    copiar su canvas-.
     """
 
     _MARGEN = 18  # deja sitio al halo, que se dibuja mas grande que el nucleo
@@ -166,6 +391,11 @@ class NucleoHacu(QWidget):
         # cualquier particula, asi que gira con el nucleo en vez de quedarse
         # clavado en un punto de la pantalla.
         self._destellos: list[tuple[float, float, float, float]] = []
+        # Cada rayo guarda sus dos extremos FIJOS sobre la esfera unitaria
+        # mas una semilla propia (para el zigzag, ver `_pintar_rayos`): igual
+        # patron que los destellos, gira con el nucleo en vez de temblar.
+        self._rayos: list[tuple[tuple[float, float, float], tuple[float, float, float], float, int]] = []
+        self._cuadricula = QPixmap()
         self._reconstruir_geometria()
         self._reloj = QTimer(self)
         self._reloj.timeout.connect(self._latir)
@@ -177,6 +407,7 @@ class NucleoHacu(QWidget):
 
     def _reconstruir_geometria(self) -> None:
         self._radio = max(0.0, min(self.width(), self.height()) / 2 - self._MARGEN)
+        self._cuadricula = _crear_cuadricula(self.width(), self.height())
 
     def set_estado(self, estado: EstadoUI) -> None:
         self._estado = estado
@@ -205,6 +436,7 @@ class NucleoHacu(QWidget):
             self._nivel_suave *= 0.90
         self._avanzar_ondas()
         self._avanzar_destellos()
+        self._avanzar_rayos()
         self.update()
 
     def _avanzar_ondas(self) -> None:
@@ -227,6 +459,20 @@ class NucleoHacu(QWidget):
         limite = self._tiempo - _DURACION_DESTELLO
         self._destellos = [d for d in self._destellos if d[3] > limite]
 
+    def _avanzar_rayos(self) -> None:
+        if random.random() < _TASA_RAYO[self._estado] / _FPS:
+            y1 = random.uniform(-0.6, 0.9)
+            theta1 = random.uniform(0.0, 2 * math.pi)
+            radio1 = math.sqrt(max(0.0, 1 - y1 * y1))
+            y2 = max(-1.0, min(1.0, y1 + random.uniform(-0.5, 0.5)))
+            theta2 = theta1 + random.uniform(-0.6, 0.6)
+            radio2 = math.sqrt(max(0.0, 1 - y2 * y2))
+            p1 = (math.cos(theta1) * radio1, y1, math.sin(theta1) * radio1)
+            p2 = (math.cos(theta2) * radio2, y2, math.sin(theta2) * radio2)
+            self._rayos.append((p1, p2, self._tiempo, random.randint(0, 999_999)))
+        limite = self._tiempo - _DURACION_RAYO
+        self._rayos = [r for r in self._rayos if r[2] > limite]
+
     # -------------------------------------------------------------- pintura
 
     def paintEvent(self, evento) -> None:  # noqa: N802 (API de Qt)
@@ -243,21 +489,31 @@ class NucleoHacu(QWidget):
         energia = self._nivel_suave if self._estado is EstadoUI.ESCUCHANDO else respiracion
 
         # El orden importa: de atras hacia adelante, del fondo mas tenue al
-        # nucleo de particulas encima de todo.
+        # nucleo de particulas encima de todo, con los rayos -el flash mas
+        # brillante- al final.
         self._pintar_fondo_ambiente(pintor, color, centro)
         self._pintar_ondas(pintor, color, centro)
         self._pintar_halo(pintor, color, centro, energia)
-        self._pintar_nucleo_particulas(pintor, centro, energia)
+        radio_nucleo = self._radio * (0.82 + 0.22 * energia)
+        achatado = 0.92 + 0.04 * math.sin(self._tiempo * 0.3)
+        rotacion = self._tiempo * _ROTACION_POR_ESTADO[self._estado]
+        coseno_rot, seno_rot = math.cos(rotacion), math.sin(rotacion)
+        self._pintar_corrientes(pintor, centro, energia)
+        self._pintar_nucleo_particulas(pintor, centro, energia, radio_nucleo, achatado,
+                                       coseno_rot, seno_rot)
+        self._pintar_rayos(pintor, centro, radio_nucleo, achatado, coseno_rot, seno_rot)
         pintor.end()
 
     def _pintar_fondo_ambiente(self, pintor: QPainter, color: QColor, centro: QPointF) -> None:
-        """Un tinte tenue de todo el widget, mas un enjambre de puntos lejanos.
+        """La cuadricula compartida, mas un tinte tenue y un enjambre de
+        puntos lejanos propios de este widget.
 
         En una pantalla ultrawide el nucleo (dibujado a un tamano limitado
-        por la ALTURA del widget) deja franjas vacias a los lados; este tinte
-        y estos puntos evitan que esas franjas se vean como espacio muerto en
-        vez de parte del mismo fondo.
+        por la ALTURA del widget) deja franjas vacias a los lados; la
+        cuadricula, el tinte y estos puntos evitan que esas franjas se vean
+        como espacio muerto en vez de parte del mismo fondo.
         """
+        pintor.drawPixmap(0, 0, self._cuadricula)
         alcance = max(self.width(), self.height()) * 0.8
         halo_fondo = QRadialGradient(centro, alcance)
         halo_fondo.setColorAt(0.0, QColor(color.red(), color.green(), color.blue(), 16))
@@ -306,7 +562,47 @@ class NucleoHacu(QWidget):
         pintor.setBrush(halo)
         pintor.drawEllipse(centro, self._radio + self._MARGEN, self._radio + self._MARGEN)
 
-    def _pintar_nucleo_particulas(self, pintor: QPainter, centro: QPointF, energia: float) -> None:
+    def _pintar_corrientes(self, pintor: QPainter, centro: QPointF, energia: float) -> None:
+        """Corrientes: curvas que salen del nucleo hacia el borde, con un
+        punto de luz viajando por cada una.
+
+        Misma idea que los `streams` de la referencia (curva + particula
+        viajera) reconstruida con `QPainterPath.cubicTo` y mezcla aditiva
+        (`CompositionMode_Plus`, el mismo truco de brillo que ya usaban los
+        destellos) -no hay canvas ni JS que copiar, solo la tecnica-.
+        """
+        pintor.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
+        paleta = [QColor(c) for c in (AZUL, VIOLETA, ACENTO)]
+        alcance = max(self.width(), self.height()) * 0.62
+        for i in range(_N_CORRIENTES):
+            angulo = (i / _N_CORRIENTES) * 2 * math.pi + self._tiempo * 0.06
+            destino = QPointF(centro.x() + math.cos(angulo) * alcance,
+                              centro.y() + math.sin(angulo) * alcance * 0.55)
+            control1 = QPointF(centro.x() + math.cos(angulo + 0.4) * alcance * 0.35,
+                               centro.y() + math.sin(angulo + 0.4) * alcance * 0.35)
+            control2 = QPointF(centro.x() + math.cos(angulo - 0.2) * alcance * 0.75,
+                               centro.y() + math.sin(angulo - 0.2) * alcance * 0.75)
+            camino = QPainterPath(centro)
+            camino.cubicTo(control1, control2, destino)
+            color = paleta[i % len(paleta)]
+            pintor.setPen(QPen(QColor(color.red(), color.green(), color.blue(),
+                                      int(28 + 42 * energia)), 1.3))
+            pintor.setBrush(Qt.BrushStyle.NoBrush)
+            pintor.drawPath(camino)
+
+            avance = (self._tiempo * (0.25 + 0.1 * (i % 3)) + i * 0.37) % 1.0
+            punto = camino.pointAtPercent(avance)
+            brillo = QRadialGradient(punto, 6.0)
+            brillo.setColorAt(0.0, QColor(255, 255, 255, 200))
+            brillo.setColorAt(1.0, QColor(255, 255, 255, 0))
+            pintor.setPen(Qt.PenStyle.NoPen)
+            pintor.setBrush(brillo)
+            pintor.drawEllipse(punto, 5.0, 5.0)
+        pintor.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+
+    def _pintar_nucleo_particulas(self, pintor: QPainter, centro: QPointF, energia: float,
+                                  radio_nucleo: float, achatado: float,
+                                  coseno_rot: float, seno_rot: float) -> None:
         """La nube de particulas: el nucleo en si.
 
         `factor` combina dos cosas por particula: una capa fija (que tan
@@ -317,14 +613,13 @@ class NucleoHacu(QWidget):
         ven grandes y casi blancas -como el nucleo caliente del centro-, las
         de atras quedan chicas y tenues, que es lo que hace leer la nube como
         una esfera en vez de un disco plano.
+
+        `radio_nucleo`, `achatado` y la rotacion los calcula `paintEvent` una
+        sola vez por frame -las corrientes y los rayos necesitan los mismos
+        valores para proyectar sobre la misma esfera-.
         """
         paleta = [QColor(c) for c in _PALETA_ESTADO[self._estado]]
-        rotacion = self._tiempo * _ROTACION_POR_ESTADO[self._estado]
         turbulencia = _TURBULENCIA_POR_ESTADO[self._estado]
-        radio_nucleo = self._radio * (0.82 + 0.22 * energia)
-        # Achatado sutil y oscilante: un aliento lento, no un giro mecanico.
-        achatado = 0.92 + 0.04 * math.sin(self._tiempo * 0.3)
-        coseno_rot, seno_rot = math.cos(rotacion), math.sin(rotacion)
 
         proyectadas: list[tuple[float, float, float, int]] = []
         for i in range(_N_PARTICULAS):
@@ -397,6 +692,45 @@ class NucleoHacu(QWidget):
             pintor.setPen(Qt.PenStyle.NoPen)
             pintor.setBrush(brillo)
             pintor.drawEllipse(punto, radio, radio)
+
+    def _pintar_rayos(self, pintor: QPainter, centro: QPointF, radio_nucleo: float,
+                      achatado: float, coseno_rot: float, seno_rot: float) -> None:
+        """Rayos: zigzags breves entre dos puntos de la esfera.
+
+        Misma idea que los `lightning()` de la referencia (bolt quebrado por
+        ruido), con un desplazamiento pseudoaleatorio FIJO por rayo (semilla
+        propia guardada al nacer) para que el trazo no tiemble entre frames.
+        """
+        if not self._rayos:
+            return
+        pintor.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
+        for p1, p2, t0, semilla in self._rayos:
+            progreso = (self._tiempo - t0) / _DURACION_RAYO
+            if not 0.0 <= progreso <= 1.0:
+                continue
+
+            def proyectar(punto: tuple[float, float, float]) -> QPointF:
+                x, y, z = punto
+                xr = x * coseno_rot - z * seno_rot
+                return QPointF(centro.x() + xr * radio_nucleo, centro.y() + y * radio_nucleo * achatado)
+
+            a, b = proyectar(p1), proyectar(p2)
+            dx, dy = b.x() - a.x(), b.y() - a.y()
+            largo = math.hypot(dx, dy) or 1.0
+            azar = random.Random(semilla)
+            camino = QPainterPath(a)
+            segmentos = 5
+            for paso in range(1, segmentos):
+                t = paso / segmentos
+                jitter = azar.uniform(-0.14, 0.14) * largo
+                camino.lineTo(a.x() + dx * t - dy / largo * jitter,
+                              a.y() + dy * t + dx / largo * jitter)
+            camino.lineTo(b)
+
+            alfa = int(230 * (1 - progreso) ** 1.4)
+            pintor.setPen(QPen(QColor(220, 233, 255, alfa), 2.0))
+            pintor.drawPath(camino)
+        pintor.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
 
 
 class MedidorNivel(QWidget):
@@ -632,5 +966,6 @@ class DialogoTranscripcion(QDialog):
         self._aviso.setText(f"Guardado en {Path(ruta).name}.")
 
 
-__all__ = ["BotonHablar", "BurbujaMensaje", "DialogoTranscripcion", "MedidorNivel", "Metrica", "NucleoHacu",
+__all__ = ["BotonHablar", "BurbujaMensaje", "DialogoTranscripcion", "FondoCuadricula", "MarcaRombo",
+           "MedidorNivel", "Metrica", "NucleoHacu", "PildoraEstado", "SecuenciaFlujo",
            "TEXTO_SUAVE", "ACENTO", "separador", "titulo_panel"]

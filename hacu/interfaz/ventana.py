@@ -55,9 +55,13 @@ from .widgets import (
     BotonHablar,
     BurbujaMensaje,
     DialogoTranscripcion,
+    FondoCuadricula,
+    MarcaRombo,
     MedidorNivel,
     Metrica,
     NucleoHacu,
+    PildoraEstado,
+    SecuenciaFlujo,
     etiqueta_campo,
     separador,
     titulo_panel,
@@ -146,8 +150,23 @@ class VentanaHacu(QMainWindow):
         self.setFocus()
 
     def _vista_pro(self) -> QWidget:
+        """La vista de siempre, ahora sobre `FondoCuadricula` en vez de un
+        relleno solido: mismo truco de capas que `_vista_simple`
+        (`QStackedLayout.StackAll` con `FondoCuadricula` debajo y el
+        contenido real -objectName "transparente"- encima), para que la
+        cuadricula se note por los bordes translucidos de la cabecera, el
+        panel y el pie -las tres zonas ya pasaron a fondos "de vidrio" en
+        `estilos.hoja`-.
+        """
         raiz = QWidget()
-        vertical = QVBoxLayout(raiz)
+        capas = QStackedLayout(raiz)
+        capas.setContentsMargins(0, 0, 0, 0)
+        capas.setStackingMode(QStackedLayout.StackingMode.StackAll)
+        capas.addWidget(FondoCuadricula())
+
+        contenido = QWidget()
+        contenido.setObjectName("transparente")
+        vertical = QVBoxLayout(contenido)
         vertical.setContentsMargins(0, 0, 0, 0)
         vertical.setSpacing(0)
 
@@ -164,6 +183,12 @@ class VentanaHacu(QMainWindow):
 
         vertical.addWidget(self._pie())
         self._panel.setVisible(self._cfg.interfaz.mostrar_panel_operador)
+
+        capas.addWidget(contenido)
+        # Mismo motivo que en `_vista_simple`: en StackAll el widget que pinta
+        # Y recibe el mouse ARRIBA es el CORRIENTE (currentIndex), no el
+        # ultimo anadido -por defecto se habria quedado en el fondo.
+        capas.setCurrentWidget(contenido)
         return raiz
 
     def _vista_simple(self) -> QWidget:
@@ -260,6 +285,8 @@ class VentanaHacu(QMainWindow):
         fila.setContentsMargins(24, 12, 24, 12)
         fila.setSpacing(16)
 
+        fila.addWidget(MarcaRombo())
+
         titulos = QVBoxLayout()
         titulos.setSpacing(0)
         marca = QLabel("HACU")
@@ -278,37 +305,56 @@ class VentanaHacu(QMainWindow):
         a_vista_simple.clicked.connect(lambda: self._vistas.setCurrentIndex(self._INDICE_SIMPLE))
         fila.addWidget(a_vista_simple)
 
-        # El indicador va en su propio bloque de ancho fijo y alineado a la
-        # derecha: si se deja al layout, "Escuchando" es mas ancho que "En espera"
-        # y el rotulo se recorta contra el borde de la ventana.
-        indicador = QWidget()
-        indicador.setObjectName("transparente")
-        indicador.setFixedWidth(190)
-        derecha = QHBoxLayout(indicador)
-        derecha.setContentsMargins(0, 0, 0, 0)
-        derecha.setSpacing(9)
-        derecha.addStretch(1)
-        self._punto_estado = QLabel("●")
-        self._texto_estado = QLabel(ROTULO_ESTADO[EstadoUI.REPOSO])
-        self._texto_estado.setObjectName("estadoTexto")
-        self._texto_estado.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        derecha.addWidget(self._punto_estado)
-        derecha.addWidget(self._texto_estado)
-        fila.addWidget(indicador)
+        # Capsula punto+rotulo, reemplaza el punto y el texto sueltos de
+        # antes -mismo patron que el `.status-pill` de la referencia del
+        # tutor-.
+        self._pildora_estado = PildoraEstado()
+        fila.addWidget(self._pildora_estado)
         return marco
 
     def _columna_voz(self) -> QWidget:
         columna = QWidget()
+        columna.setObjectName("transparente")  # deja ver FondoCuadricula en los margenes
         columna.setFixedWidth(348)
         vertical = QVBoxLayout(columna)
         vertical.setContentsMargins(22, 22, 22, 22)
         vertical.setSpacing(14)
 
+        # Tarjeta de vidrio con el nombre del agente -equivalente al panel
+        # de intro (eyebrow + titulo + descripcion) de la referencia-.
+        intro = QFrame()
+        intro.setObjectName("tarjetaVidrio")
+        intro_v = QVBoxLayout(intro)
+        intro_v.setContentsMargins(14, 11, 14, 12)
+        intro_v.setSpacing(3)
+        ojo_intro = QLabel("AUDACIA · AGENTE")
+        ojo_intro.setObjectName("eyebrow")
+        intro_v.addWidget(ojo_intro)
+        titulo_intro = QLabel("HACU")
+        titulo_intro.setObjectName("introTitulo")
+        intro_v.addWidget(titulo_intro)
+        descripcion_intro = QLabel("Asistente conversacional del stand, cien por ciento local.")
+        descripcion_intro.setObjectName("introTexto")
+        descripcion_intro.setWordWrap(True)
+        intro_v.addWidget(descripcion_intro)
+        vertical.addWidget(intro)
+
         self._nucleo = NucleoHacu()
         vertical.addWidget(self._nucleo, 1)
 
+        # Misma tarjeta de vidrio para el medidor: la "actividad" de la
+        # referencia, con su propio rotulo eyebrow.
+        actividad = QFrame()
+        actividad.setObjectName("tarjetaVidrio")
+        actividad_v = QVBoxLayout(actividad)
+        actividad_v.setContentsMargins(14, 10, 14, 12)
+        actividad_v.setSpacing(7)
+        ojo_actividad = QLabel("ACTIVIDAD")
+        ojo_actividad.setObjectName("eyebrow")
+        actividad_v.addWidget(ojo_actividad)
         self._medidor = MedidorNivel()
-        vertical.addWidget(self._medidor)
+        actividad_v.addWidget(self._medidor)
+        vertical.addWidget(actividad)
 
         self._boton = BotonHablar()
         # El boton nunca toma el foco de teclado: si lo tuviera, Qt se quedaria
@@ -362,6 +408,8 @@ class VentanaHacu(QMainWindow):
         self._entrada.setPlaceholderText("…o escribe aquí y pulsa Enter")
         self._entrada.returnPressed.connect(self._enviar_escrito)
         enviar = QPushButton("Enviar")
+        enviar.setObjectName("enviar")
+        enviar.setCursor(Qt.CursorShape.PointingHandCursor)
         enviar.clicked.connect(self._enviar_escrito)
         fila.addWidget(self._entrada, 1)
         fila.addWidget(enviar)
@@ -375,6 +423,31 @@ class VentanaHacu(QMainWindow):
         vertical = QVBoxLayout(panel)
         vertical.setContentsMargins(18, 20, 18, 20)
         vertical.setSpacing(11)
+
+        vertical.addWidget(titulo_panel("Flujo"))
+        self._secuencia_flujo = SecuenciaFlujo()
+        vertical.addWidget(self._secuencia_flujo)
+        vertical.addWidget(separador())
+
+        # Botones de previsualizacion: cambian solo el color/animacion del
+        # nucleo (ver `_previsualizar_estado`), para que el operador vea como
+        # se ve cada estado sin esperar a que ocurra de verdad. No tocan
+        # `self._estado`: la pastilla y el flujo siguen mostrando el estado
+        # real, y el proximo evento real vuelve a mandar en el nucleo.
+        vertical.addWidget(titulo_panel("Vista previa del núcleo"))
+        # El panel es angosto (272px fijos): una cuadricula 2x2 dejaba cada
+        # boton en ~114px, demasiado estrecho para "Escuchando" a este tamano
+        # de letra. Una lista de una columna, igual que el resto de botones
+        # del panel, usa el ancho completo y queda consistente con ellos.
+        for estado in EstadoUI:
+            boton = QPushButton(ROTULO_ESTADO[estado])
+            boton.setObjectName("modoPreview")
+            boton.setCursor(Qt.CursorShape.PointingHandCursor)
+            boton.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            boton.setToolTip("Solo cambia el color del núcleo, no el estado real")
+            boton.clicked.connect(lambda _checked=False, e=estado: self._previsualizar_estado(e))
+            vertical.addWidget(boton)
+        vertical.addWidget(separador())
 
         vertical.addWidget(titulo_panel("Visitante"))
         self._etiqueta_perfil = QLabel("—")
@@ -541,12 +614,20 @@ class VentanaHacu(QMainWindow):
         self._estado = estado
         self._nucleo.set_estado(estado)
         self._nucleo_simple.set_estado(estado)
-        self._texto_estado.setText(ROTULO_ESTADO[estado])
+        self._pildora_estado.set_estado(estado)
+        self._secuencia_flujo.set_estado(estado)
         color = COLOR_ESTADO[estado]
-        self._punto_estado.setStyleSheet(f"color: {color}; font-size: 20px;")
-        self._texto_estado.setStyleSheet(f"color: {color};")
         self._texto_estado_simple.setText(ROTULO_ESTADO[estado])
         self._texto_estado_simple.setStyleSheet(f"color: {color};")
+
+    def _previsualizar_estado(self, estado: EstadoUI) -> None:
+        """Boton de "Vista previa del núcleo": solo cambia como se ve el
+        nucleo, para que el operador lo muestre sin esperar a que el estado
+        ocurra de verdad. No toca `self._estado` ni la pastilla/el flujo -el
+        proximo evento real (`_cambiar_estado`) vuelve a mandar-.
+        """
+        self._nucleo.set_estado(estado)
+        self._nucleo_simple.set_estado(estado)
 
     def _refrescar_nivel(self) -> None:
         escuchando = self._estado is EstadoUI.ESCUCHANDO
