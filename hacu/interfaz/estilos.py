@@ -192,4 +192,26 @@ def hoja(tamano_texto: int) -> str:
     QFrame#piePagina {{ background: {SUPERFICIE}; border-top: 1px solid {BORDE}; }}
     QLabel#metrica {{ color: {TEXTO_SUAVE}; font-size: {tamano_texto - 4}px; }}
     QLabel#metricaValor {{ color: {TEXTO}; font-size: {tamano_texto - 2}px; font-weight: 600; }}
+
+    QPushButton#cambioVista {{
+        background: transparent;
+        border: 1px solid {BORDE};
+        color: {TEXTO_TENUE};
+        font-size: {tamano_texto - 4}px;
+        padding: 7px 14px;
+    }}
+    QPushButton#cambioVista:hover {{ border-color: {ACENTO}; color: {TEXTO}; }}
+    QLabel#estadoSimple {{
+        font-size: {tamano_texto + 4}px;
+        font-weight: 600;
+        letter-spacing: 2px;
+    }}
+    QLabel#alertaSimple {{
+        background: rgba(242, 84, 91, 0.14);
+        border: 1px solid {PELIGRO};
+        border-radius: 10px;
+        color: {PELIGRO};
+        font-weight: 600;
+        padding: 10px 18px;
+    }}
     """

@@ -2,8 +2,11 @@
 
 Tres piezas que Qt no trae y que son las que hacen que se entienda de lejos:
 
-- `NucleoHacu`: anillos concentricos que respiran. Es el unico indicador que se
-  lee desde el fondo de la sala, donde el texto de estado ya no se distingue.
+- `NucleoHacu`: un cerebro de perfil hecho de una malla low-poly (nodos y
+  aristas, como la referencia de AudacIA), coloreado por estado, con energia
+  que viaja por sus conexiones cuando HACU escucha, piensa o habla. Es el
+  unico indicador que se lee desde el fondo de la sala, donde el texto de
+  estado ya no se distingue.
 - `MedidorNivel`: barras del nivel de entrada, para que el operador vea que el
   microfono capta antes de que el visitante se de cuenta de que no.
 - `BurbujaMensaje`: una intervencion de la conversacion, con soporte para crecer
@@ -16,8 +19,14 @@ import math
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QRadialGradient
+from PySide6.QtCore import QPointF, Qt, QTimer, Signal
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QPainter,
+    QPen,
+    QRadialGradient,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -43,14 +52,111 @@ from .estilos import (
 )
 
 _FPS = 30
+# Cuanto tarda una particula de energia en cruzar una conexion activa, en
+# segundos, por estado. HABLANDO/PENSANDO corren rapido; REPOSO no aparece
+# aqui a proposito: en reposo la red se ve, pero no dispara ninguna neurona.
+_SEGUNDOS_POR_VUELTA: dict[EstadoUI, float] = {
+    EstadoUI.ESCUCHANDO: 1.9,
+    EstadoUI.PENSANDO: 1.1,
+    EstadoUI.HABLANDO: 1.4,
+    EstadoUI.ERROR: 2.6,
+}
 
 
 class NucleoHacu(QWidget):
-    """Indicador circular animado: color por estado, amplitud por nivel de voz."""
+    """Un cerebro de perfil hecho de una malla low-poly: nodos y aristas
+    rectas, como la segunda referencia que dio AudacIA (una red de
+    triangulos que brilla, no una placa de circuito impresa).
 
-    # Cuantos anillos y cuanto se separan. Tres es el maximo que sigue leyendose
-    # como una sola figura; con cuatro parece una diana.
-    _ANILLOS = 3
+    La malla no esta inventada a mano ni es un grafo aleatorio: `_NODOS_REL`
+    y `_ARISTAS` salen de una triangulacion de Delaunay restringida (libreria
+    `triangle`, la misma que usan los generadores de arte low-poly) sobre el
+    contorno real del cerebro — por eso los triangulos quedan parejos y el
+    borde de la malla es, el mismo, el contorno del cerebro: no hace falta
+    dibujar una linea de silueta aparte (eso fue justamente lo que se veia
+    "hecho a mano" en el intento anterior).
+
+    `_NODOS_DESTACADOS` son los nodos con el brillo ambiente mas grande
+    (dispersos por todo el perfil, como los puntos mas luminosos de la
+    referencia); `_ARISTAS_ACTIVAS` son las conexiones por las que viaja una
+    particula de energia cuando HACU escucha, piensa o habla — tambien
+    elegidas por dispersion, para que se vea movimiento por todo el cerebro y
+    no solo en una esquina. En reposo la malla se ve entera pero quieta.
+    """
+
+    # Nodos de la malla (vertices de la triangulacion), en coordenadas
+    # relativas al radio del cerebro (-1..1).
+    _NODOS_REL: tuple[tuple[float, float], ...] = (
+        (-0.6361, -0.7187), (-0.9052, -0.4495), (-0.9083, -0.3639), (-0.9817, -0.2844),
+        (-0.9817, -0.0703), (-0.9174, 0.0), (-0.9205, 0.055), (-0.7829, 0.1774),
+        (-0.7768, 0.2294), (-0.6636, 0.3364), (-0.3486, 0.3364), (-0.208, 0.4832),
+        (-0.104, 0.4648), (-0.0673, 0.4924), (0.1621, 0.4924), (0.1927, 0.5168),
+        (0.2844, 0.5168), (0.3578, 0.6086), (0.3639, 0.8226), (0.5627, 0.841),
+        (0.5749, 0.7064), (0.7339, 0.5474), (0.737, 0.4434), (0.7706, 0.4251),
+        (0.7798, 0.4526), (0.841, 0.4557), (0.8532, 0.3884), (0.9327, 0.3028),
+        (0.9327, 0.159), (0.9786, 0.1101), (0.9786, -0.1193), (0.8777, -0.2599),
+        (0.8716, -0.3884), (0.5291, -0.737), (0.4037, -0.7492), (0.315, -0.8318),
+        (-0.3089, -0.8502), (-0.3945, -0.7737), (-0.4709, -0.7737), (-0.526, -0.7217),
+        (0.8118, 0.4266), (0.2297, 0.439), (0.7146, 0.3623), (0.7934, 0.3652),
+        (-0.6684, 0.1903), (-0.0265, 0.4), (-0.8011, 0.0341), (0.8509, 0.0362),
+        (0.8507, 0.3064), (-0.7233, -0.4001), (-0.4327, -0.678), (0.5519, 0.4508),
+        (0.1109, 0.3581), (0.7573, 0.2727), (-0.1745, 0.3019), (-0.8051, -0.1672),
+        (-0.5623, -0.5226), (-0.2086, -0.644), (0.3931, 0.3822), (0.5448, 0.2262),
+        (0.003, -0.841), (-0.5061, 0.2581), (-0.0085, 0.2123), (0.2609, 0.2656),
+        (0.4403, -0.4744), (0.6322, -0.3126), (-0.4533, -0.0968), (-0.3306, 0.1028),
+        (0.1824, -0.6005), (-0.0445, -0.2105), (-0.2326, -0.095), (-0.3408, -0.3525),
+        (0.7004, -0.5627), (0.3576, -0.0807), (0.2074, -0.3249), (-0.5429, -0.2889),
+        (0.3845, 0.1134), (0.1586, 0.0458), (0.5944, -0.0146), (-0.1219, -0.429),
+    )
+    # Conexiones entre nodos: indices sobre `_NODOS_REL`.
+    _ARISTAS: tuple[tuple[int, int], ...] = (
+        (0, 1), (0, 39), (0, 49), (0, 56), (1, 2), (1, 49),
+        (2, 3), (2, 49), (2, 55), (3, 4), (3, 55), (4, 5),
+        (4, 55), (5, 6), (5, 46), (5, 55), (6, 7), (6, 46),
+        (7, 8), (7, 44), (7, 46), (8, 9), (8, 44), (9, 10),
+        (9, 44), (9, 61), (10, 11), (10, 54), (10, 61), (10, 67),
+        (11, 12), (11, 54), (12, 13), (12, 45), (12, 54), (13, 14),
+        (13, 45), (14, 15), (14, 41), (14, 45), (14, 52), (15, 16),
+        (15, 41), (16, 17), (16, 41), (16, 58), (17, 18), (17, 20),
+        (17, 51), (17, 58), (18, 19), (18, 20), (19, 20), (20, 21),
+        (20, 51), (21, 22), (21, 51), (22, 23), (22, 42), (22, 51),
+        (23, 24), (23, 40), (23, 42), (23, 43), (24, 25), (24, 40),
+        (25, 26), (25, 40), (26, 27), (26, 40), (26, 43), (26, 48),
+        (27, 28), (27, 48), (28, 29), (28, 47), (28, 48), (28, 53),
+        (29, 30), (29, 47), (30, 31), (30, 47), (31, 32), (31, 47),
+        (31, 65), (31, 78), (32, 65), (32, 72), (33, 34), (33, 64),
+        (33, 72), (34, 35), (34, 64), (34, 68), (35, 60), (35, 68),
+        (36, 37), (36, 57), (36, 60), (37, 38), (37, 50), (37, 57),
+        (38, 39), (38, 50), (39, 50), (39, 56), (40, 43), (41, 52),
+        (41, 58), (41, 63), (42, 43), (42, 51), (42, 53), (42, 59),
+        (43, 48), (43, 53), (44, 46), (44, 61), (44, 66), (45, 52),
+        (45, 54), (45, 62), (46, 55), (46, 66), (47, 53), (47, 78),
+        (48, 53), (49, 55), (49, 56), (49, 75), (50, 56), (50, 57),
+        (50, 71), (51, 58), (51, 59), (52, 62), (52, 63), (53, 59),
+        (53, 78), (54, 62), (54, 67), (55, 66), (55, 75), (56, 71),
+        (56, 75), (57, 60), (57, 68), (57, 71), (57, 79), (58, 59),
+        (58, 63), (58, 76), (59, 76), (59, 78), (60, 68), (61, 66),
+        (61, 67), (62, 63), (62, 67), (62, 70), (62, 77), (63, 76),
+        (63, 77), (64, 65), (64, 68), (64, 72), (64, 73), (64, 74),
+        (65, 72), (65, 73), (65, 78), (66, 67), (66, 70), (66, 71),
+        (66, 75), (67, 70), (68, 74), (68, 79), (69, 70), (69, 71),
+        (69, 74), (69, 77), (69, 79), (70, 71), (70, 77), (71, 75),
+        (71, 79), (73, 74), (73, 76), (73, 77), (73, 78), (74, 77),
+        (74, 79), (76, 77), (76, 78),
+    )
+    # Nodos con brillo ambiente mas grande (siempre encendidos, elegidos por
+    # dispersion para cubrir todo el perfil).
+    _NODOS_DESTACADOS: tuple[int, ...] = (
+        0, 3, 8, 10, 19, 22, 29, 32, 33, 36, 41, 59, 60, 62,
+        68, 69, 73, 75,
+    )
+    # Que aristas llevan la particula de energia (indices sobre `_ARISTAS`).
+    _ARISTAS_ACTIVAS: tuple[int, ...] = (
+        0, 4, 9, 17, 21, 23, 27, 36, 38, 48, 50, 55, 77, 78,
+        85, 87, 88, 94, 98, 99, 132, 141, 146, 152, 160, 169, 171, 173,
+        176, 178, 191,
+    )
+    _MARGEN = 18  # deja sitio al halo, que se dibuja mas grande que el cerebro
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -60,9 +166,25 @@ class NucleoHacu(QWidget):
         self._nivel = 0.0
         self._nivel_suave = 0.0
         self._fase = 0.0
+        self._radio = 0.0
+        self._nodos: list[QPointF] = []
+        self._reconstruir_geometria()
         self._reloj = QTimer(self)
         self._reloj.timeout.connect(self._latir)
         self._reloj.start(1000 // _FPS)
+
+    def resizeEvent(self, evento) -> None:  # noqa: N802 (API de Qt)
+        super().resizeEvent(evento)
+        self._reconstruir_geometria()
+
+    def _reconstruir_geometria(self) -> None:
+        centro = QPointF(self.width() / 2, self.height() / 2)
+        r = min(self.width(), self.height()) / 2 - self._MARGEN
+        self._radio = max(0.0, r)
+        if r <= 0:
+            self._nodos = []
+            return
+        self._nodos = [centro + QPointF(x * r, y * r) for x, y in self._NODOS_REL]
 
     def set_estado(self, estado: EstadoUI) -> None:
         self._estado = estado
@@ -94,41 +216,79 @@ class NucleoHacu(QWidget):
         del evento
         pintor = QPainter(self)
         pintor.setRenderHint(QPainter.RenderHint.Antialiasing)
+        if self._radio <= 0 or not self._nodos:
+            pintor.end()
+            return
+
         color = QColor(COLOR_ESTADO[self._estado])
-        centro = self.rect().center()
-        radio_base = min(self.width(), self.height()) / 2 - 14
+        centro = QPointF(self.width() / 2, self.height() / 2)
+        radio_base = self._radio
 
         respiracion = (math.sin(self._fase) + 1) / 2
         energia = self._nivel_suave if self._estado is EstadoUI.ESCUCHANDO else respiracion
 
-        halo = QRadialGradient(centro, radio_base)
-        halo.setColorAt(0.0, QColor(color.red(), color.green(), color.blue(), int(46 + 70 * energia)))
+        # Halo: es lo que se lee desde el fondo de la sala.
+        halo = QRadialGradient(centro, radio_base + self._MARGEN)
+        halo.setColorAt(0.0, QColor(color.red(), color.green(), color.blue(), int(40 + 60 * energia)))
         halo.setColorAt(1.0, QColor(color.red(), color.green(), color.blue(), 0))
         pintor.setPen(Qt.PenStyle.NoPen)
         pintor.setBrush(halo)
-        pintor.drawEllipse(centro, radio_base, radio_base)
+        pintor.drawEllipse(centro, radio_base + self._MARGEN, radio_base + self._MARGEN)
 
-        for i in range(self._ANILLOS):
-            desfase = i / self._ANILLOS
-            pulso = (math.sin(self._fase - desfase * 1.8) + 1) / 2
-            radio = radio_base * (0.42 + 0.19 * i) * (1 + 0.10 * energia * pulso)
-            opacidad = int(200 - i * 52 + 40 * pulso)
-            pintor.setBrush(Qt.BrushStyle.NoBrush)
-            pintor.setPen(QPen(QColor(color.red(), color.green(), color.blue(),
-                                      max(30, min(255, opacidad))), 2.2 - i * 0.4))
-            pintor.drawEllipse(centro, radio, radio)
+        # La malla: dos pasadas por linea (una ancha y tenue debajo, una fina
+        # y brillante encima) para que se vea con un resplandor propio, no
+        # como un trazo plano. El borde de la malla ya es el contorno del
+        # cerebro — no hace falta dibujar una silueta aparte.
+        tenue = QColor(color.red(), color.green(), color.blue(), int(35 + 25 * energia))
+        nitida = QColor(color.red(), color.green(), color.blue(), int(150 + 60 * energia))
+        pluma_ancha = QPen(tenue, 3.4)
+        pluma_fina = QPen(nitida, 1.2)
+        for i, j in self._ARISTAS:
+            pintor.setPen(pluma_ancha)
+            pintor.drawLine(self._nodos[i], self._nodos[j])
+        for i, j in self._ARISTAS:
+            pintor.setPen(pluma_fina)
+            pintor.drawLine(self._nodos[i], self._nodos[j])
 
-        nucleo = radio_base * (0.19 + 0.06 * energia)
-        pintor.setPen(Qt.PenStyle.NoPen)
-        pintor.setBrush(color)
-        pintor.drawEllipse(centro, nucleo, nucleo)
+        # Brillo ambiente en cada nodo (mas grande en los destacados): la
+        # malla entera se ve "con luz propia", como en la referencia, no solo
+        # cuando hay energia viajando.
+        destacados = set(self._NODOS_DESTACADOS)
+        for indice, punto in enumerate(self._nodos):
+            radio_nodo = (5.5 if indice in destacados else 2.4) * (0.85 + 0.15 * respiracion)
+            brillo = QRadialGradient(punto, radio_nodo * 2.4)
+            pico = 235 if indice in destacados else 170
+            brillo.setColorAt(0.0, QColor(255, 255, 255, int(pico * (0.55 + 0.45 * respiracion))))
+            brillo.setColorAt(0.4, QColor(color.red(), color.green(), color.blue(),
+                                           int(pico * 0.75 * (0.55 + 0.45 * respiracion))))
+            brillo.setColorAt(1.0, QColor(color.red(), color.green(), color.blue(), 0))
+            pintor.setPen(Qt.PenStyle.NoPen)
+            pintor.setBrush(brillo)
+            pintor.drawEllipse(punto, radio_nodo * 2.4, radio_nodo * 2.4)
 
-        pintor.setPen(QColor("#080C16"))
-        fuente = QFont(self.font())
-        fuente.setPointSizeF(max(9.0, nucleo * 0.52))
-        fuente.setBold(True)
-        pintor.setFont(fuente)
-        pintor.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "H")
+        # Energia: viaja por las conexiones activas solo cuando HACU esta
+        # activo, alternando de sentido por conexion (una red no dispara
+        # siempre del mismo nodo al mismo nodo). En reposo la malla se ve
+        # entera, pero quieta.
+        segundos_vuelta = _SEGUNDOS_POR_VUELTA.get(self._estado)
+        if segundos_vuelta is not None and self._ARISTAS_ACTIVAS:
+            avance = self._fase / (2 * math.pi) * _SEGUNDOS_POR_VUELTA[EstadoUI.PENSANDO]
+            n = len(self._ARISTAS_ACTIVAS)
+            for orden, indice_arista in enumerate(self._ARISTAS_ACTIVAS):
+                i, j = self._ARISTAS[indice_arista]
+                origen, destino = (self._nodos[i], self._nodos[j]) if orden % 2 == 0 \
+                    else (self._nodos[j], self._nodos[i])
+                t = (avance / segundos_vuelta + orden / n) % 1.0
+                punto = QPointF(origen.x() + (destino.x() - origen.x()) * t,
+                                origen.y() + (destino.y() - origen.y()) * t)
+                brillo = QRadialGradient(punto, 8.5)
+                brillo.setColorAt(0.0, QColor(255, 255, 255, 245))
+                brillo.setColorAt(0.45, QColor(color.red(), color.green(), color.blue(), 205))
+                brillo.setColorAt(1.0, QColor(color.red(), color.green(), color.blue(), 0))
+                pintor.setPen(Qt.PenStyle.NoPen)
+                pintor.setBrush(brillo)
+                pintor.drawEllipse(punto, 5.0, 5.0)
+
         pintor.end()
 
 

@@ -191,6 +191,9 @@ class LlmService:
                 messages=list(mensajes),
                 max_tokens=self._tope(aliento, extenso),
                 temperature=self._cfg.chat_temperature,
+                repeat_penalty=self._cfg.chat_repeat_penalty,
+                frequency_penalty=self._cfg.chat_frequency_penalty,
+                presence_penalty=self._cfg.chat_presence_penalty,
                 stream=True,
             )
             for chunk in stream:

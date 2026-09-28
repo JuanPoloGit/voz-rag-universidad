@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -72,7 +73,22 @@ _TOOLTIP = Qt.ItemDataRole.ToolTipRole
 
 
 class VentanaHacu(QMainWindow):
-    """La ventana completa: conversacion, voz y mandos."""
+    """La ventana completa: conversacion, voz y mandos.
+
+    Vive en dos vistas apiladas (`QStackedWidget`), no en dos ventanas: comparten
+    el mismo `_boton`, el mismo hilo de turno y la misma sesion, y solo una de las
+    dos puede tocar `llama_cpp.Llama` a la vez (ver `LlmService`). Dos ventanas
+    independientes habrian duplicado esa maquinaria y arriesgado que ambas
+    dispararan un turno a la vez.
+
+    - Simple: lo que ve el publico. Solo el nucleo animado y un boton discreto
+      "Vista Pro" para el operador. Nada de conversacion en pantalla, nada de
+      panel: si el nucleo respira, HACU esta ahi.
+    - Pro: la ventana de siempre, intacta.
+    """
+
+    _INDICE_PRO = 0
+    _INDICE_SIMPLE = 1
 
     def __init__(self, componentes: Componentes, config: AppConfig, voz: ServicioDeVoz) -> None:
         super().__init__()
@@ -116,8 +132,20 @@ class VentanaHacu(QMainWindow):
     # ------------------------------------------------------------------ montaje
 
     def _montar(self) -> None:
+        self._vistas = QStackedWidget()
+        self.setCentralWidget(self._vistas)
+        self._vistas.addWidget(self._vista_pro())       # _INDICE_PRO
+        self._vistas.addWidget(self._vista_simple())    # _INDICE_SIMPLE
+        inicio = (self._INDICE_SIMPLE if self._cfg.interfaz.vista_simple_al_arrancar
+                  else self._INDICE_PRO)
+        self._vistas.setCurrentIndex(inicio)
+        # La ventana se queda el teclado: es quien atiende la barra espaciadora,
+        # tanto si se ve la vista simple como la Pro.
+        self._vistas.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setFocus()
+
+    def _vista_pro(self) -> QWidget:
         raiz = QWidget()
-        self.setCentralWidget(raiz)
         vertical = QVBoxLayout(raiz)
         vertical.setContentsMargins(0, 0, 0, 0)
         vertical.setSpacing(0)
@@ -135,9 +163,68 @@ class VentanaHacu(QMainWindow):
 
         vertical.addWidget(self._pie())
         self._panel.setVisible(self._cfg.interfaz.mostrar_panel_operador)
-        # La ventana se queda el teclado: es quien atiende la barra espaciadora.
-        raiz.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setFocus()
+        return raiz
+
+    def _vista_simple(self) -> QWidget:
+        """Lo que ve el publico: el nucleo pensando y nada mas.
+
+        Sin burbujas, sin panel de operador: el visitante que mira de lejos no
+        necesita leer nada, solo ver que HACU esta despierto y en que estado. El
+        boton "Vista Pro" es deliberadamente discreto (esquina, sin color de
+        acento) porque es para quien atiende el stand, no para el publico.
+        """
+        raiz = QWidget()
+        vertical = QVBoxLayout(raiz)
+        vertical.setContentsMargins(0, 0, 0, 0)
+        vertical.setSpacing(0)
+
+        esquina = QHBoxLayout()
+        esquina.setContentsMargins(26, 20, 18, 0)
+        esquina.setSpacing(12)
+        marca = QLabel("HACU")
+        marca.setObjectName("marca")
+        esquina.addWidget(marca)
+        esquina.addStretch(1)
+        a_vista_pro = QPushButton("Vista Pro")
+        a_vista_pro.setObjectName("cambioVista")
+        a_vista_pro.setCursor(Qt.CursorShape.PointingHandCursor)
+        a_vista_pro.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        a_vista_pro.clicked.connect(lambda: self._vistas.setCurrentIndex(self._INDICE_PRO))
+        esquina.addWidget(a_vista_pro)
+        vertical.addLayout(esquina)
+
+        # Oculta hasta que haga falta: el aviso de cuidado (Cuidado.CRISIS) tenia
+        # que verse en pantalla segun docs/operacion.md, y con la vista simple de
+        # por medio el operador podia no estar mirando la Pro para notarlo.
+        self._alerta_simple = QLabel()
+        self._alerta_simple.setObjectName("alertaSimple")
+        self._alerta_simple.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._alerta_simple.setWordWrap(True)
+        self._alerta_simple.setVisible(False)
+        margen = QHBoxLayout()
+        margen.setContentsMargins(40, 16, 40, 0)
+        margen.addWidget(self._alerta_simple)
+        vertical.addLayout(margen)
+
+        self._nucleo_simple = NucleoHacu()
+        vertical.addWidget(self._nucleo_simple, 1)
+
+        self._texto_estado_simple = QLabel(ROTULO_ESTADO[EstadoUI.REPOSO])
+        self._texto_estado_simple.setObjectName("estadoSimple")
+        self._texto_estado_simple.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        vertical.addWidget(self._texto_estado_simple)
+
+        self._pista_simple = QLabel()
+        self._pista_simple.setObjectName("pista")
+        self._pista_simple.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._pista_simple.setWordWrap(True)
+        if self._voz.disponible:
+            self._pista_simple.setText("Mantén pulsada la barra espaciadora para hablarle a HACU")
+        else:
+            self._pista_simple.setText("Sin micrófono: entra a Vista Pro para escribirle a HACU")
+        vertical.addWidget(self._pista_simple)
+        vertical.addSpacing(40)
+        return raiz
 
     def _cabecera(self) -> QFrame:
         marco = QFrame()
@@ -157,6 +244,13 @@ class VentanaHacu(QMainWindow):
         titulos.addWidget(submarca)
         fila.addLayout(titulos)
         fila.addStretch(1)
+
+        a_vista_simple = QPushButton("‹ Vista simple")
+        a_vista_simple.setObjectName("cambioVista")
+        a_vista_simple.setCursor(Qt.CursorShape.PointingHandCursor)
+        a_vista_simple.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        a_vista_simple.clicked.connect(lambda: self._vistas.setCurrentIndex(self._INDICE_SIMPLE))
+        fila.addWidget(a_vista_simple)
 
         # El indicador va en su propio bloque de ancho fijo y alineado a la
         # derecha: si se deja al layout, "Escuchando" es mas ancho que "En espera"
@@ -355,6 +449,7 @@ class VentanaHacu(QMainWindow):
         QShortcut(QKeySequence("F9"), self, activated=self._alternar_panel)
         QShortcut(QKeySequence("Ctrl+T"), self, activated=self._mostrar_transcripcion)
         QShortcut(QKeySequence("F11"), self, activated=self._alternar_pantalla)
+        QShortcut(QKeySequence("Ctrl+M"), self, activated=self._alternar_vista)
         QShortcut(QKeySequence("Esc"), self, activated=self._callar)
         # A pantalla completa no hay barra de titulo que cerrar, y Alt+F4 no es
         # algo que se le pida a quien atiende una exhibicion.
@@ -393,15 +488,19 @@ class VentanaHacu(QMainWindow):
     def _cambiar_estado(self, estado: EstadoUI) -> None:
         self._estado = estado
         self._nucleo.set_estado(estado)
+        self._nucleo_simple.set_estado(estado)
         self._texto_estado.setText(ROTULO_ESTADO[estado])
         color = COLOR_ESTADO[estado]
         self._punto_estado.setStyleSheet(f"color: {color}; font-size: 20px;")
         self._texto_estado.setStyleSheet(f"color: {color};")
+        self._texto_estado_simple.setText(ROTULO_ESTADO[estado])
+        self._texto_estado_simple.setStyleSheet(f"color: {color};")
 
     def _refrescar_nivel(self) -> None:
         escuchando = self._estado is EstadoUI.ESCUCHANDO
         nivel = self._voz.nivel
         self._nucleo.set_nivel(nivel)
+        self._nucleo_simple.set_nivel(nivel)
         self._medidor.set_nivel(nivel, escuchando)
         if self._estado is EstadoUI.HABLANDO and not self._voz.hablando:
             self._cambiar_estado(EstadoUI.REPOSO)
@@ -432,6 +531,7 @@ class VentanaHacu(QMainWindow):
         self._voz.iniciar_escucha()
         self._cambiar_estado(EstadoUI.ESCUCHANDO)
         self._pista.setText("Suelta cuando termines")
+        self._pista_simple.setText("Suelta cuando termines")
 
     @Slot()
     def _dejar_de_escuchar(self) -> None:
@@ -439,6 +539,7 @@ class VentanaHacu(QMainWindow):
             return
         self._cambiar_estado(EstadoUI.PENSANDO)
         self._pista.setText("Transcribiendo…")
+        self._pista_simple.setText("Transcribiendo…")
         self._transcripcion = TrabajadorTranscripcion(self._voz, self._log, self)
         self._transcripcion.transcrito.connect(self._con_transcripcion)
         self._transcripcion.fallo.connect(self._con_fallo)
@@ -448,6 +549,8 @@ class VentanaHacu(QMainWindow):
     def _con_transcripcion(self, texto: str, otro_hablante: bool, similitud: float) -> None:
         self._transcripcion = None
         self._pista.setText("Mantén pulsada la barra espaciadora")
+        if self._voz.disponible:
+            self._pista_simple.setText("Mantén pulsada la barra espaciadora para hablarle a HACU")
         if not texto.strip():
             self._cambiar_estado(EstadoUI.REPOSO)
             self._anotar("No se entendió nada. Acércate al micrófono e inténtalo otra vez.")
@@ -520,6 +623,8 @@ class VentanaHacu(QMainWindow):
             # Un dialogo modal delante del visitante seria peor: esto se queda en
             # el hilo, destacado, y en el rotulo del pie.
             self._anotar("⚠  " + AVISO_OPERADOR)
+            self._alerta_simple.setText("⚠  " + AVISO_OPERADOR)
+            self._alerta_simple.setVisible(True)
             self._log.warning("Turno de cuidado atendido con el texto fijo")
         if resultado.migrado:
             self._anotar(f"Perfil migrado a {resultado.usuario}.")
@@ -649,6 +754,7 @@ class VentanaHacu(QMainWindow):
         self._etiqueta_perfil.setText(self._descripcion_perfil())
         self._m_perfil.set(self._comp.sesion.usuario_activo)
         self._limpiar_conversacion()
+        self._alerta_simple.setVisible(False)
         self._dar_la_bienvenida()
 
     def _cambiar_audiencia(self, perfil: str) -> None:
@@ -738,12 +844,20 @@ class VentanaHacu(QMainWindow):
         borrados = self._comp.sesion.olvidar_todo()
         self._voz.olvidar_hablante()
         self._limpiar_conversacion()
+        self._alerta_simple.setVisible(False)
         self._anotar(f"Memoria borrada: {borrados} perfiles.")
         self._m_perfil.set(self._comp.sesion.usuario_activo)
         self._etiqueta_perfil.setText(self._descripcion_perfil())
         self._audiencia.setCurrentText(self._comp.sesion.estado.perfil_audiencia)
         self._trivia.setChecked(self._comp.sesion.estado.trivia)
         self._dar_la_bienvenida()
+
+    def _alternar_vista(self) -> None:
+        """Ctrl+M: salta entre la vista simple y la Pro sin buscar el boton."""
+        actual = self._vistas.currentIndex()
+        self._vistas.setCurrentIndex(
+            self._INDICE_PRO if actual == self._INDICE_SIMPLE else self._INDICE_SIMPLE
+        )
 
     def _alternar_panel(self) -> None:
         self._panel.setVisible(not self._panel.isVisible())

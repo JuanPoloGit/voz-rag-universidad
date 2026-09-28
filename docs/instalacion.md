@@ -33,6 +33,39 @@ La esquina superior derecha de esa tabla dice la **versión de CUDA que soporta 
 controlador**. Apúntala: decide qué rueda de `llama-cpp-python` instalar en el
 paso 3.
 
+### Si la máquina no tiene Python
+
+```powershell
+python --version        # Linux/macOS: python3 --version
+```
+
+Si eso falla o marca 2.x, hay que instalarlo antes de seguir.
+
+**Windows** — con `winget` (viene ya en Windows 10/11):
+
+```powershell
+winget install Python.Python.3.11
+```
+
+Cierra y vuelve a abrir la terminal después: `winget` no actualiza el PATH de una
+sesión ya abierta, así que `python` sigue "sin reconocerse" aunque la instalación
+haya ido bien. Si en vez de esto se instala a mano desde
+<https://www.python.org/downloads>, hay que marcar la casilla **"Add python.exe
+to PATH"** del instalador — sin eso pasa lo mismo.
+
+**Linux (Debian/Ubuntu):**
+
+```bash
+sudo apt update && sudo apt install python3.11 python3.11-venv python3-pip
+```
+
+No instales la version mas nueva "porque si": PySide6 y PyTorch (este ultimo
+detras de `sentence-transformers`) tardan en publicar rueda para un Python
+recien salido, y sin rueda `pip` intenta compilar desde el fuente y falla a
+medio instalar. Quedate en el rango de la tabla de arriba (3.10-3.12; con 3.11
+es con lo que esta desarrollado) hasta confirmar que las demas dependencias ya
+soportan una version mas nueva.
+
 ---
 
 ## 2. Entorno de Python
@@ -61,6 +94,49 @@ que no sea de la biblioteca estándar.
 `requirements.txt` instala el núcleo: ChromaDB, los embeddings multilingües y el
 troceador de texto. **No** instala `llama-cpp-python` con CUDA — eso es el paso
 siguiente, porque depende de tu tarjeta.
+
+### Alternativa con Anaconda Navigator
+
+En laboratorios de universidad es habitual que el equipo traiga Anaconda
+preinstalado y no dé permisos para instalar Python aparte — si es tu caso, esto
+reemplaza el `venv` de arriba, no se hace ademas de.
+
+**Por la interfaz:**
+
+1. Pestaña **Environments** → **Create** → nombre `hacu`, Python **3.11** → Create.
+   (Si Anaconda no está siquiera instalado, hace falta que alguien con permisos
+   en esa máquina lo instale primero — Navigator no se instala a sí mismo.)
+2. En la fila de `hacu`, la flecha ▶ → **Open Terminal**. Abre una consola con
+   ese entorno ya activo: no hace falta `conda activate` a mano ni recordar
+   activarlo en cada terminal nueva, como sí pasa con `venv`.
+3. Desde esa terminal, exactamente los mismos comandos de siempre:
+
+```powershell
+cd D:\ruta\a\voz-rag-universidad
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+**Por línea de órdenes** (Anaconda Prompt, si Navigator no está a mano):
+
+```powershell
+conda create -n hacu python=3.11 pip -y
+conda activate hacu
+cd D:\ruta\a\voz-rag-universidad
+pip install -r requirements.txt
+```
+
+Todo lo que sigue en esta página —`llama-cpp-python`, `requirements-voz.txt`,
+`requirements-ui.txt`, `python run_hacu.py`— es idéntico: `pip` funciona igual
+dentro de un entorno de conda que dentro de un `venv`. La única regla real es
+**no instalar nada de esto en el entorno `base`**: ese lo comparten todos los
+proyectos que usen esa instalación de Anaconda, y una versión concreta que pide
+HACU (de ChromaDB, de PyTorch...) puede chocar con lo que ya tenga otra cosa.
+
+Si `git` tampoco está reconocido en esa terminal: `conda install -c anaconda git
+-y` lo agrega al entorno, o, si es solo para bajar el código una vez y no hace
+falta actualizarlo después con `git pull`, el botón verde **Code → Download
+ZIP** de GitHub evita instalar git del todo.
 
 ---
 
