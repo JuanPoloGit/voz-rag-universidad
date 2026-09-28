@@ -14,6 +14,7 @@ from enum import Enum
 
 from .config import MemoryConfig, RagConfig
 from .cuidado import NOTA_MALESTAR, Cuidado, evaluar
+from .idioma import detectar_idioma
 from .memory import HacuMemoryDB
 from .prompts import MODO_TRIVIA, PERFILES_AUDIENCIA, SYSTEM_PROMPT_BASE
 from .rag import LocalRAGEngine
@@ -333,7 +334,10 @@ class ContextBuilder:
         # detectar que le estan presionando para que se retracte.
         recientes = self._db.get_recent_history(usuario_activo, self._mem_cfg.history_messages)
 
-        notas: list[str] = [f"Hablas con {usuario_activo}."]
+        notas: list[str] = [
+            f"Hablas con {usuario_activo}.",
+            self._recordatorio_de_idioma(mensaje_usuario),
+        ]
         ancla = self._ancla_conversacional(usuario_activo, mensaje_usuario)
         if ancla:
             notas.append(ancla)
@@ -459,6 +463,27 @@ class ContextBuilder:
             "Su comentario se apoya en lo ultimo que le dijiste, que fue: "
             f'"{recorte}". Respondele sobre ESO, no cambies de tema.'
         )
+
+    def _recordatorio_de_idioma(self, mensaje: str) -> str:
+        """Instruccion explicita del idioma de respuesta: la regla 21 sola no basta.
+
+        Es la misma deteccion que ya usa `voz/__init__.py` para elegir con que
+        voz de Piper leer cada frase (`hacu.idioma.detectar_idioma`), aplicada
+        aqui al mensaje de ENTRADA. Medido en vivo el 25/09: un visitante
+        pregunto dos veces seguidas en ingles y las dos respuestas salieron en
+        espanol, pese a que la regla 21 se lo pide en prosa. Un 8B no obedece
+        una regla mas entre otras veinte con la fiabilidad que hace falta para
+        que el visitante SIENTA que le entendiste el idioma; decirselo aparte,
+        en cada turno, es lo que ya se hace con el nombre y con el hilo de la
+        conversacion y aqui funciona igual de bien.
+        """
+        idioma = detectar_idioma(mensaje)
+        if idioma == "en":
+            return (
+                "El visitante te acaba de hablar en INGLES. Responde este turno "
+                "ENTERAMENTE en ingles, de principio a fin, sin mezclar espanol."
+            )
+        return "El visitante te acaba de hablar en espanol. Responde en espanol."
 
     def _recordatorio_de_nombre(self, usuario: str, mensaje: str) -> str | None:
         """Instruccion explicita cuando preguntan por su propio nombre."""

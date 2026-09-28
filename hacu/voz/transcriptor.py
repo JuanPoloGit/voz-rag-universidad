@@ -18,6 +18,7 @@ from typing import Protocol
 import numpy as np
 
 from ..config import VozConfig
+from .rescate_nombres import corregir_vocabulario
 
 
 @dataclass(frozen=True)
@@ -91,6 +92,10 @@ class TranscriptorWhisper:
         self._modelo = None
         self._prompt = ", ".join(config.vocabulario)
         self.ultima_confianza: Confianza | None = None
+        # Idioma que Whisper detecto en la ultima frase ("es", "en", ...), o None
+        # si config.idioma lo fuerza y por tanto no hay deteccion que registrar.
+        self.ultimo_idioma: str | None = None
+        self.ultima_probabilidad_idioma: float | None = None
 
     @property
     def cargado(self) -> bool:
@@ -105,9 +110,13 @@ class TranscriptorWhisper:
         if audio.size < self._cfg.frecuencia * self._MINIMO_SEGUNDOS:
             return ""
         modelo = self._asegurar_modelo()
-        segmentos, _ = modelo.transcribe(
+        segmentos, info = modelo.transcribe(
             audio.astype(np.float32),
-            language=self._cfg.idioma,
+            # None deja que Whisper detecte el idioma el mismo, frase a frase:
+            # es lo que permite el comportamiento bilingue. config.idioma sigue
+            # pudiendo forzarlo (HACU_IDIOMA=es) para una sala sin publico en
+            # ingles, donde detectar de mas cuesta mas de lo que aporta.
+            language=self._cfg.idioma or None,
             task="transcribe",
             # Siembra los nombres propios de la exhibicion. Sin esto "Holosand"
             # se transcribe "olo san" y el router no reconoce el dominio.
@@ -118,9 +127,24 @@ class TranscriptorWhisper:
         )
         trozos = list(segmentos)
         texto = " ".join(s.text.strip() for s in trozos).strip()
+        # `initial_prompt` ya sesga a Whisper hacia el vocabulario de la
+        # exhibicion, pero es una sugerencia blanda: "Holosand" salio
+        # "Colosand" en vivo el 25/09, una sola letra distinta. Esta correccion
+        # es la red que falta detras, sobre el texto ya transcrito.
+        texto = corregir_vocabulario(texto, self._cfg.vocabulario)
         self.ultima_confianza = _confianza(trozos)
-        self._log.debug("Transcrito (%d muestras) [%s]: %r",
-                        audio.size, self.ultima_confianza, texto[:120])
+        # `info` solo trae deteccion de verdad cuando no se forzo el idioma; con
+        # idioma forzado repite ese mismo valor con probabilidad 1.0, que no dice
+        # nada y no vale la pena registrar aparte.
+        if self._cfg.idioma:
+            self.ultimo_idioma = None
+            self.ultima_probabilidad_idioma = None
+        else:
+            self.ultimo_idioma = getattr(info, "language", None)
+            self.ultima_probabilidad_idioma = getattr(info, "language_probability", None)
+        self._log.debug("Transcrito (%d muestras) [%s] idioma=%s (%.2f): %r",
+                        audio.size, self.ultima_confianza, self.ultimo_idioma,
+                        self.ultima_probabilidad_idioma or 0.0, texto[:120])
         return texto
 
     def cerrar(self) -> None:
