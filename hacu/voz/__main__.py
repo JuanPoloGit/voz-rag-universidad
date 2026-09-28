@@ -79,9 +79,16 @@ def _calibrar(config: AppConfig) -> int:
     return 0
 
 
-def _descargar(config: AppConfig) -> int:
+def _descargar(config: AppConfig, idioma: str) -> int:
     """Baja la voz de Piper con el descargador del propio paquete."""
-    voz = config.voz.piper_voz
+    if idioma == "en":
+        if not config.voz.piper_voz_en:
+            print("❌ No hay voz en ingles configurada. Fija HACU_VOZ_MODELO_EN=<nombre> "
+                  "primero (por ejemplo en_US-hfc_female-medium) y repite la descarga.")
+            return 1
+        voz = config.voz.piper_voz_en
+    else:
+        voz = config.voz.piper_voz
     destino = config.voz.carpeta_voces
     destino.mkdir(parents=True, exist_ok=True)
     print(f"\n⬇️  Descargando la voz {voz} en {destino}")
@@ -99,17 +106,18 @@ def _descargar(config: AppConfig) -> int:
     return 0
 
 
-def _hablar(config: AppConfig, texto: str, guardar: Path | None) -> int:
+def _hablar(config: AppConfig, texto: str, guardar: Path | None, idioma: str | None) -> int:
     log = logging.getLogger("hacu")
     logging.basicConfig(level=logging.INFO, format="   %(message)s")
     piper = localizar_piper(config.voz)
-    local = ruta_de_voz(config.voz)
+    nombre_voz = config.voz.piper_voz_en if (idioma == "en" and config.voz.piper_voz_en) else config.voz.piper_voz
+    local = ruta_de_voz(config.voz, nombre_voz)
     print(f"\n   Piper            : {' '.join(piper.base) if piper else 'no encontrado'}")
-    print(f"   voz de Piper     : {config.voz.piper_voz} "
+    print(f"   voz de Piper     : {nombre_voz} "
           f"({local if local else 'no esta en la carpeta del proyecto'})")
 
     if guardar is not None:
-        codigo = _guardar_wav(config, texto, guardar)
+        codigo = _guardar_wav(config, texto, guardar, idioma)
         if codigo:
             return codigo
 
@@ -117,7 +125,7 @@ def _hablar(config: AppConfig, texto: str, guardar: Path | None) -> int:
     print(f"   motor            : {getattr(tts, 'nombre', '?')}")
     print(f"🔊 Diciendo: {texto!r}")
     inicio = time.perf_counter()
-    tts.decir(texto)
+    tts.decir(texto, idioma=idioma)
     # `esperar` bloquea hasta que no queda nada pendiente. Sondear `hablando` en
     # un bucle dejaba una ventana en la que la frase ya habia salido de la cola
     # pero todavia no sonaba, y el cierre se comia la ultima silaba.
@@ -128,11 +136,11 @@ def _hablar(config: AppConfig, texto: str, guardar: Path | None) -> int:
     return 0
 
 
-def _guardar_wav(config: AppConfig, texto: str, destino: Path) -> int:
+def _guardar_wav(config: AppConfig, texto: str, destino: Path, idioma: str | None = None) -> int:
     """Sintetiza a fichero para comprobar si lo que se corta es la voz o la salida."""
     destino.parent.mkdir(parents=True, exist_ok=True)
     try:
-        escrito = sintetizar_a_archivo(config.voz, texto, destino)
+        escrito = sintetizar_a_archivo(config.voz, texto, destino, idioma)
     except Exception as error:
         print(f"❌ Piper no pudo generar el WAV: {error}")
         return 1
@@ -248,6 +256,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--segundos", type=float, default=3.0)
     parser.add_argument("--calibrar", action="store_true", help="mide el ruido de sala")
     parser.add_argument("--hablar", type=str, default="", help="frase de prueba del sintetizador")
+    parser.add_argument("--idioma", type=str, default=None, choices=("es", "en"),
+                        help="con --hablar o --descargar: usa la voz de ese idioma (por defecto es)")
     parser.add_argument("--descargar", action="store_true", help="baja la voz de Piper")
     parser.add_argument("--guardar", type=Path, default=None,
                         help="vuelca la frase a un WAV en vez de fiarse del altavoz")
@@ -274,13 +284,13 @@ def main(argv: list[str]) -> int:
             print(f"   - {problema}")
 
     if args.descargar:
-        codigo = max(codigo, _descargar(config))
+        codigo = max(codigo, _descargar(config, args.idioma or "es"))
     if args.calibrar:
         codigo = max(codigo, _calibrar(config))
     if args.probar:
         codigo = max(codigo, _probar(config, args.segundos))
     if args.hablar:
-        codigo = max(codigo, _hablar(config, args.hablar, args.guardar))
+        codigo = max(codigo, _hablar(config, args.hablar, args.guardar, args.idioma))
     if args.transcribir:
         codigo = max(codigo, _transcribir(config, args.transcribir))
     if args.autoprueba:

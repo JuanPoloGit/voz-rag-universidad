@@ -87,6 +87,21 @@ class ModelConfig:
     # un objetivo: la regla 3 del prompt manda brevedad por defecto.
     chat_max_tokens_extenso: int = 900
     chat_temperature: float = 0.3
+    # Sin penalizacion de repeticion, dos visitantes que hacen la MISMA pregunta
+    # reciben la respuesta calcada palabra por palabra, y dentro de una misma
+    # respuesta el modelo podia atascarse repitiendo una frase. No es la
+    # temperatura -a 0.3 ya es conservadora, y bajarla mas agrava el bucle en vez
+    # de curarlo-: es que `stream_chat` no pasaba ningun parametro de repeticion
+    # a llama.cpp. 1.15 es el valor recomendado de llama.cpp para chat; mas alto
+    # empieza a evitar palabras necesarias (nombres propios, "AudacIA").
+    chat_repeat_penalty: float = 1.15
+    # Penaliza tokens ya usados EN ESTE turno, proporcional a cuantas veces
+    # salieron. Es lo que corta de verdad un bucle ("...vision artificial, vision
+    # artificial..."), que repeat_penalty por si solo no siempre frena.
+    chat_frequency_penalty: float = 0.3
+    # Penaliza cualquier token que ya aparecio, sin importar cuantas veces: da
+    # variedad de vocabulario entre turnos consecutivos con la misma pregunta.
+    chat_presence_penalty: float = 0.2
 
     # Generacion de utilidad (extraccion / consolidacion de memoria)
     utility_max_tokens: int = 96
@@ -241,7 +256,13 @@ class VozConfig:
     modelo_stt: str = "large-v3-turbo"
     dispositivo_stt: str = "cuda"
     computo_stt: str = "int8_float16"
-    idioma: str = "es"
+    # None deja que Whisper detecte el idioma de cada frase por su cuenta -lo que
+    # pide el comportamiento bilingue: forzar "es" sobre audio en ingles no lo
+    # traduce, lo transcribe mal, tratando de encajar sonidos ingleses en
+    # ortografia espanola. HACU_IDIOMA="es" vuelve a fijarlo, para una sala donde
+    # se sepa de antemano que todo el publico habla espanol y se prefiera la
+    # robustez de no tener que adivinar sobre audios muy cortos.
+    idioma: str | None = None
     # Los nombres propios de la exhibicion son justo lo que peor transcribe un
     # modelo generico: "Holosand" sale "olo san", "AudacIA" sale "audacia" en
     # minuscula o "au da sia". Sembrar el vocabulario en el prompt inicial los
@@ -275,6 +296,13 @@ class VozConfig:
     # es lo que menos chirria en Barranquilla; es_ES-davefx-medium suena peninsular.
     # Se descarga con `python -m hacu.voz --descargar`.
     piper_voz: str = "es_MX-claude-high"
+    # Voz de Piper para cuando la frase esta en ingles (bilingue real: Piper es
+    # monolingue por modelo, no hay una sola voz que hable los dos idiomas).
+    # None = no hay voz en ingles montada todavia y HACU sigue hablando ingles
+    # con la voz en espanol -suena con acento, pero nunca se queda muda-. Se
+    # descarga igual que la de espanol: `python -m hacu.voz --descargar --idioma en`
+    # despues de fijar HACU_VOZ_MODELO_EN=<nombre-de-la-voz>.
+    piper_voz_en: str | None = None
     carpeta_voces: Path = PROJECT_ROOT / "models" / "voz"
     # Solo para el binario suelto de Piper (las versiones anteriores a piper-tts).
     piper_exe: Path | None = None
@@ -306,6 +334,10 @@ class InterfazConfig:
     # lejos, asi que el minimo util es bastante mayor que en una app de escritorio.
     tamano_texto: int = 17
     mostrar_panel_operador: bool = True
+    # La vista publica es solo el nucleo animado; el operador salta a la Pro con
+    # su boton, Ctrl+M o el atajo. HACU_VISTA_PRO=1 arranca ya en la Pro (para
+    # depurar en el sitio sin tener que cambiar de vista cada vez).
+    vista_simple_al_arrancar: bool = True
 
 
 @dataclass(frozen=True)
@@ -354,11 +386,14 @@ class AppConfig:
         HACU_STT=medium       tamano del modelo de reconocimiento
         HACU_TTS=sistema      motor de sintesis: auto | piper | sistema | mudo
         HACU_PIPER=ruta.exe   binario de Piper si no esta en el PATH
+        HACU_IDIOMA=es          fuerza el idioma del reconocimiento ("" = detectar solo)
         HACU_VOZ_MODELO=es_ES-davefx-medium  voz de Piper
+        HACU_VOZ_MODELO_EN=en_US-hfc_female-medium  voz de Piper para el ingles
         HACU_ENTRADA=3        indice del microfono (ver --diagnostico)
         HACU_SALIDA=5         indice del altavoz
         HACU_PAUSA_MS=120     tope del silencio interno de una frase (0 = sin recorte)
         HACU_PANTALLA_COMPLETA=1  la ventana arranca a pantalla completa
+        HACU_VISTA_PRO=1       arranca en la vista Pro en vez de la simple
         HACU_SALUDO="..."     otra frase de apertura ("" = arrancar sin saludo)
         HACU_AYUDA="..."      recursos de ayuda del centro, para el modo cuidado
         """
@@ -412,6 +447,11 @@ class AppConfig:
         stt = _texto("HACU_STT")
         if stt:
             voz = replace(voz, modelo_stt=stt)
+        # Cadena vacia es "detectar solo", que ya es el default: no hay que
+        # distinguirla de "no definida" como en el saludo, asi que _texto sirve tal cual.
+        idioma = _texto("HACU_IDIOMA")
+        if idioma:
+            voz = replace(voz, idioma=idioma)
         tts = _texto("HACU_TTS")
         if tts:
             voz = replace(voz, motor_tts=tts.lower())
@@ -421,6 +461,9 @@ class AppConfig:
         voz_modelo = _texto("HACU_VOZ_MODELO")
         if voz_modelo:
             voz = replace(voz, piper_voz=voz_modelo)
+        voz_modelo_en = _texto("HACU_VOZ_MODELO_EN")
+        if voz_modelo_en:
+            voz = replace(voz, piper_voz_en=voz_modelo_en)
         entrada = _entero("HACU_ENTRADA")
         if entrada is not None:
             voz = replace(voz, dispositivo_entrada=entrada)
@@ -432,6 +475,8 @@ class AppConfig:
             voz = replace(voz, pausa_maxima_ms=max(0, pausa))
         if _bandera("HACU_PANTALLA_COMPLETA"):
             interfaz = replace(interfaz, pantalla_completa=True)
+        if _bandera("HACU_VISTA_PRO"):
+            interfaz = replace(interfaz, vista_simple_al_arrancar=False)
 
         # Cadena vacia es una eleccion valida (arrancar callado), asi que aqui no
         # sirve `_texto`, que la confunde con "no definida".

@@ -48,8 +48,12 @@ class Sintetizador(Protocol):
 
     nombre: str
 
-    def decir(self, texto: str) -> None:
-        """Encola una frase. No bloquea."""
+    def decir(self, texto: str, idioma: str | None = None) -> None:
+        """Encola una frase. No bloquea.
+
+        `idioma` ("es"/"en"/None) es una pista para el motor bilingue: quien no
+        sepa aprovecharla la ignora sin romperse, por eso lleva valor por defecto.
+        """
 
     def silenciar(self) -> None:
         """Corta lo que se este diciendo y vacia la cola."""
@@ -74,7 +78,7 @@ class SintetizadorMudo:
     def __init__(self) -> None:
         self.dicho: list[str] = []
 
-    def decir(self, texto: str) -> None:
+    def decir(self, texto: str, idioma: str | None = None) -> None:  # noqa: ARG002
         if texto.strip():
             self.dicho.append(texto.strip())
 
@@ -119,7 +123,7 @@ class _SintetizadorEnCola:
         # ultimo paso antes del motor, para que la pantalla y la memoria guarden
         # la ortografia de verdad y solo cambie lo que sale por el altavoz.
         self._lexico = compilar(pronunciaciones or LEXICO)
-        self._cola: queue.Queue[str | None] = queue.Queue()
+        self._cola: queue.Queue[tuple[str, str | None] | None] = queue.Queue()
         self._cortar = threading.Event()
         self._vivo = True
         self._pendientes = 0
@@ -130,13 +134,13 @@ class _SintetizadorEnCola:
     def usar_salida(self, indice: int | None) -> None:  # noqa: ARG002
         """Por defecto no se puede cambiar de tarjeta; los motores que si, lo pisan."""
 
-    def decir(self, texto: str) -> None:
+    def decir(self, texto: str, idioma: str | None = None) -> None:
         if not texto.strip() or not self._vivo:
             return
         self._cortar.clear()
         with self._condicion:
             self._pendientes += 1
-        self._cola.put(texto.strip())
+        self._cola.put((texto.strip(), idioma))
 
     def silenciar(self) -> None:
         """Corta en seco: vacia la cola y aborta la reproduccion en curso."""
@@ -174,7 +178,7 @@ class _SintetizadorEnCola:
 
     # ------------------------------------------------------------ a implementar
 
-    def _pronunciar(self, texto: str) -> None:
+    def _pronunciar(self, texto: str, idioma: str | None = None) -> None:
         raise NotImplementedError
 
     def _detener_reproduccion(self) -> None:
@@ -189,12 +193,13 @@ class _SintetizadorEnCola:
 
     def _bucle(self) -> None:
         while True:
-            texto = self._cola.get()
-            if texto is None:
+            elemento = self._cola.get()
+            if elemento is None:
                 return
+            texto, idioma = elemento
             try:
                 if not self._cortar.is_set():
-                    self._pronunciar(para_voz(texto, self._lexico))
+                    self._pronunciar(para_voz(texto, self._lexico), idioma)
             except Exception:
                 self._log.error("Fallo al sintetizar %r", texto[:60], exc_info=True)
             finally:
@@ -255,25 +260,49 @@ class SintetizadorPiperEnProceso(_SintetizadorEnCola):
         self._voz = PiperVoice.load(str(ruta_voz))
         self._sintesis = _configuracion_de_sintesis(config)
         self._ruta = ruta_voz
-        super().__init__(logger.getChild("tts.piper"), config.pronunciaciones)
+        # Voz en ingles, si esta configurada Y descargada. Piper es monolingue
+        # por modelo -no hay una sola voz que hable los dos idiomas-, asi que el
+        # bilinguismo real de la boca de HACU depende de tener las dos cargadas.
+        # Sin ella, `_generar` recae en la voz en espanol para todo: HACU sigue
+        # hablando ingles, con acento, en vez de quedarse muda.
+        # `self._log` todavia no existe -lo crea `super().__init__()`, mas abajo-
+        # asi que este bloque usa directamente el logger hijo, no `self`.
+        registro = logger.getChild("tts.piper")
+        self._voz_en: object | None = None
+        if config.piper_voz_en:
+            ruta_en = ruta_de_voz(config, config.piper_voz_en)
+            if ruta_en is not None:
+                self._voz_en = PiperVoice.load(str(ruta_en))
+                registro.info("Voz en ingles cargada: %s", ruta_en.name)
+            else:
+                registro.warning(
+                    "La voz en ingles %s no esta en %s; se hablara ingles con la voz en "
+                    "espanol. Descargala con `python -m hacu.voz --descargar --idioma en`.",
+                    config.piper_voz_en, config.carpeta_voces,
+                )
+        super().__init__(registro, config.pronunciaciones)
         self._calentar()
 
     def _calentar(self) -> None:
         """Paga la primera inferencia al arrancar y no delante del visitante."""
         try:
-            for _ in self._generar("Hola."):
+            for _ in self._generar("Hola.", None):
                 break
         except Exception:
             self._log.debug("No se pudo precalentar Piper", exc_info=True)
 
-    def _generar(self, texto: str):
-        if self._sintesis is not None:
-            return self._voz.synthesize(texto, syn_config=self._sintesis)
-        return self._voz.synthesize(texto)
+    def _voz_para(self, idioma: str | None):
+        return self._voz_en if (idioma == "en" and self._voz_en is not None) else self._voz
 
-    def _pronunciar(self, texto: str) -> None:
+    def _generar(self, texto: str, idioma: str | None):
+        voz = self._voz_para(idioma)
+        if self._sintesis is not None:
+            return voz.synthesize(texto, syn_config=self._sintesis)
+        return voz.synthesize(texto)
+
+    def _pronunciar(self, texto: str, idioma: str | None = None) -> None:
         frecuencia = None
-        for trozo in self._generar(texto):
+        for trozo in self._generar(texto, idioma):
             if self._cortar.is_set():
                 return
             muestras = np.frombuffer(trozo.audio_int16_bytes, dtype=np.int16)
@@ -405,7 +434,12 @@ class SintetizadorPiper(_SintetizadorEnCola):
         self._sd = sounddevice
         super().__init__(logger.getChild("tts.piper"), config.pronunciaciones)
 
-    def _pronunciar(self, texto: str) -> None:
+    def _pronunciar(self, texto: str, idioma: str | None = None) -> None:  # noqa: ARG002
+        # No cambia de voz por idioma: es el respaldo de emergencia (14-16 s de
+        # arranque por frase) y anadirle una segunda voz que resolver en cada
+        # llamada no vale la complejidad para un motor que en escena no se usa.
+        # Habla ingles con la voz en espanol, igual que el motor en proceso sin
+        # `piper_voz_en` configurada.
         # --output-raw escribe PCM 16 bits mono en la salida estandar, sin
         # cabecera WAV y sin fichero temporal: se reproduce segun llega.
         escala = 1.0 / max(self._cfg.velocidad_tts, 0.1)
@@ -465,14 +499,24 @@ class SintetizadorSistema(_SintetizadorEnCola):
         self._cfg = config
         self._proceso: subprocess.Popen | None = None
         self._voz_windows = None
+        self._voces_sapi: dict[str, object] = {}
         if sys.platform == "win32":
-            self._voz_windows = _sapi()
+            self._voz_windows, self._voces_sapi = _sapi()
         elif not shutil.which("espeak-ng") and not shutil.which("espeak"):
             raise RuntimeError("No hay sintetizador del sistema (falta espeak-ng)")
         super().__init__(logger.getChild("tts.sistema"), config.pronunciaciones)
 
-    def _pronunciar(self, texto: str) -> None:
+    def _pronunciar(self, texto: str, idioma: str | None = None) -> None:
         if self._voz_windows is not None:
+            # SAPI5 si trae voces en los dos idiomas casi siempre -viene con el
+            # sistema operativo-, asi que aqui el bilinguismo no depende de
+            # descargar nada: se cambia de token antes de hablar cada frase.
+            token = self._voces_sapi.get(idioma or "es") or self._voces_sapi.get("es")
+            if token is not None:
+                try:
+                    self._voz_windows.Voice = token
+                except Exception:
+                    self._log.debug("No se pudo cambiar de voz SAPI", exc_info=True)
             # Asincrono y esperando a ratos: con SVSFDefault (sincrono) la
             # llamada no volvia hasta terminar la frase, asi que "callar" no
             # surtia efecto hasta el siguiente punto.
@@ -484,7 +528,8 @@ class SintetizadorSistema(_SintetizadorEnCola):
             return
         binario = shutil.which("espeak-ng") or shutil.which("espeak")
         self._proceso = subprocess.Popen(
-            [binario, "-v", "es", "-s", str(int(150 * self._cfg.velocidad_tts)), texto],
+            [binario, "-v", "en" if idioma == "en" else "es",
+             "-s", str(int(150 * self._cfg.velocidad_tts)), texto],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         self._proceso.wait()
@@ -563,17 +608,23 @@ def crear_sintetizador(config: VozConfig, logger: logging.Logger) -> Sintetizado
     return SintetizadorMudo()
 
 
-def sintetizar_a_archivo(config: VozConfig, texto: str, destino: Path) -> Path | None:
+def sintetizar_a_archivo(
+    config: VozConfig, texto: str, destino: Path, idioma: str | None = None,
+) -> Path | None:
     """Escribe la frase en un WAV sin reproducirla. Devuelve None si no hay Piper.
 
     Sirve para separar dos fallos que suenan igual: que la sintesis se corte, o
     que se corte la reproduccion. Si el WAV esta entero, el problema esta en la
     salida de audio (o en el escritorio remoto), no en HACU.
+
+    `idioma="en"` prueba la voz en ingles configurada (`piper_voz_en`); sin ella
+    configurada, o para cualquier otro idioma, usa la de espanol de siempre.
     """
     orden = localizar_piper(config)
     if orden is None:
         return None
-    voz = ruta_de_voz(config) or config.piper_voz
+    nombre_voz = config.piper_voz_en if (idioma == "en" and config.piper_voz_en) else config.piper_voz
+    voz = ruta_de_voz(config, nombre_voz) or nombre_voz
     escala = 1.0 / max(config.velocidad_tts, 0.1)
     texto = para_voz(texto, compilar(config.pronunciaciones or LEXICO))
     base = orden.para(str(voz), escala)
@@ -611,12 +662,17 @@ def localizar_piper(config: VozConfig) -> OrdenPiper | None:
     return OrdenPiper([str(junto_a_las_voces)], moderno=False) if junto_a_las_voces.exists() else None
 
 
-def ruta_de_voz(config: VozConfig) -> Path | None:
-    """El .onnx descargado, si esta en la carpeta de voces del proyecto."""
-    candidata = Path(config.piper_voz)
+def ruta_de_voz(config: VozConfig, nombre: str | None = None) -> Path | None:
+    """El .onnx descargado, si esta en la carpeta de voces del proyecto.
+
+    `nombre` permite resolver una voz distinta de `config.piper_voz` -la voz en
+    ingles, en concreto- sin duplicar esta funcion.
+    """
+    nombre = nombre or config.piper_voz
+    candidata = Path(nombre)
     if candidata.suffix == ".onnx" and candidata.exists():
         return candidata
-    local = config.carpeta_voces / f"{config.piper_voz}.onnx"
+    local = config.carpeta_voces / f"{nombre}.onnx"
     return local if local.exists() else None
 
 
@@ -643,15 +699,25 @@ def _frecuencia_de_voz(config: VozConfig, por_defecto: int = _FRECUENCIA_HABITUA
 
 
 def _sapi():
-    """Voz SAPI5 de Windows, en espanol si el sistema tiene una instalada."""
+    """Voz SAPI5 de Windows: localiza los tokens en espanol y en ingles.
+
+    Devuelve el objeto SpVoice (con el de espanol ya seleccionado, si hay) y un
+    diccionario {"es": token, "en": token} con lo que encontro instalado, para
+    poder cambiar de voz por frase sin volver a enumerar el sistema en cada una.
+    """
     import win32com.client  # noqa: PLC0415
 
     voz = win32com.client.Dispatch("SAPI.SpVoice")
+    tokens: dict[str, object] = {}
     for disponible in voz.GetVoices():
-        if "spanish" in disponible.GetDescription().lower() or "español" in disponible.GetDescription().lower():
-            voz.Voice = disponible
-            break
-    return voz
+        descripcion = disponible.GetDescription().lower()
+        if "es" not in tokens and ("spanish" in descripcion or "español" in descripcion):
+            tokens["es"] = disponible
+        elif "en" not in tokens and "english" in descripcion:
+            tokens["en"] = disponible
+    if "es" in tokens:
+        voz.Voice = tokens["es"]
+    return voz, tokens
 
 
 def _sin_consola() -> int:

@@ -18,6 +18,7 @@ from ..config import VozConfig
 from .deteccion import DetectorDeVoz, Estado, ParametrosVoz, nivel_rms, umbral_desde_ruido
 from .dispositivos import Dispositivo, comprobar, listar_dispositivos
 from .hablantes import Cambio, DetectorDeHablante, motivo_de_indisponibilidad
+from .idioma import detectar_idioma
 from .microfono import AudioNoDisponible, Microfono
 from .segmentador import SegmentadorDeFrases
 from .sintetizador import (
@@ -37,7 +38,7 @@ __all__ = [
     "Microfono", "ParametrosVoz", "SegmentadorDeFrases", "ServicioDeVoz",
     "Sintetizador", "SintetizadorMudo", "Transcriptor", "TranscriptorMudo",
     "TranscriptorWhisper", "cadena_de_motores", "comprobar", "crear_sintetizador",
-    "listar_dispositivos",
+    "detectar_idioma", "listar_dispositivos",
     "localizar_piper", "nivel_rms", "sintetizar_a_archivo", "umbral_desde_ruido",
 ]
 
@@ -61,6 +62,15 @@ def comprobar_dependencias(config: VozConfig) -> list[str]:
             f"La voz {config.piper_voz} no esta descargada en {config.carpeta_voces}. "
             "Piper arrancara un proceso por frase (~2.5 s frente a 0.2 s): habra "
             "pausas largas. Descargala con `python -m hacu.voz --descargar`."
+        )
+    # No bloquea -HACU sigue hablando ingles con la voz en espanol- pero conviene
+    # verlo en el arranque y no descubrirlo en plena visita con alguien de habla
+    # inglesa delante.
+    if config.piper_voz_en and ruta_de_voz(config, config.piper_voz_en) is None:
+        problemas.append(
+            f"La voz en ingles {config.piper_voz_en} no esta descargada en "
+            f"{config.carpeta_voces}. HACU hablara ingles con la voz en espanol "
+            "hasta que la bajes con `python -m hacu.voz --descargar --idioma en`."
         )
     return problemas
 
@@ -93,13 +103,13 @@ class Locutor:
     def alimentar(self, fragmento: str) -> None:
         for frase in self._segmentador.alimentar(fragmento):
             self.frases.append(frase)
-            self._tts.decir(frase)
+            self._tts.decir(frase, idioma=detectar_idioma(frase))
 
     def cerrar(self) -> None:
         resto = self._segmentador.cerrar()
         if resto:
             self.frases.append(resto)
-            self._tts.decir(resto)
+            self._tts.decir(resto, idioma=detectar_idioma(resto))
 
 
 class ServicioDeVoz:
@@ -257,7 +267,7 @@ class ServicioDeVoz:
         return Locutor(self._tts, self._cfg)
 
     def decir(self, texto: str) -> None:
-        self._tts.decir(texto)
+        self._tts.decir(texto, idioma=detectar_idioma(texto))
 
     def esperar_a_que_calle(self, timeout: float | None = None) -> bool:
         """Bloquea hasta que HACU termine de hablar."""
