@@ -41,7 +41,8 @@ Lo que se puede cambiar sin tocar código ni reinstalar nada.
 | `HACU_STT=medium` | Tamaño del modelo de reconocimiento: `tiny`, `base`, `small`, `medium` |
 | `HACU_TTS=sistema` | Motor de síntesis: `auto`, `piper`, `piper-proceso`, `piper-externo`, `sistema`, `mudo` |
 | `HACU_PIPER=ruta.exe` | Binario de Piper si no está en el PATH |
-| `HACU_VOZ_MODELO=es_ES-davefx-medium` | Otra voz de Piper |
+| `HACU_VOZ_MODELO=es_ES-davefx-medium` | Otra voz de Piper para español |
+| `HACU_VOZ_MODELO_EN=en_US-lessac-medium` | Otra voz de Piper para inglés (por defecto `en_US-hfc_female-medium`, ver [voz.md](voz.md)) |
 | `HACU_ENTRADA=3` | Índice del micrófono (ver `python -m hacu.voz`) |
 | `HACU_SALIDA=5` | Índice del altavoz |
 | `HACU_PAUSA_MS=120` | Tope del silencio interno de una frase, en ms (`0` deja el audio de Piper tal cual) |
@@ -129,6 +130,7 @@ Detalle completo en [voz.md](voz.md). Lo que más se toca:
 | `vocabulario` | AudacIA, Holosand, Orion… | Nombres propios sembrados en el reconocedor |
 | `motor_tts` | `auto` | Piper en proceso → Piper externo → voz del sistema → mudo |
 | `piper_voz` | `es_MX-claude-high` | Voz descargable con `python -m hacu.voz --descargar` |
+| `piper_voz_en` | `en_US-hfc_female-medium` | Voz para cuando la frase está en inglés. Descargable con `python -m hacu.voz --descargar --idioma en`; sin descargar, HACU sigue hablando inglés con la voz en español |
 | `pronunciaciones` | `()` | Léxico propio; vacío usa el medido de `pronunciacion.py` |
 | `detectar_cambio_de_hablante` | `True` | Nota cuándo se acerca otra persona, sin identificarla |
 | `umbral_hablante` | `0.65` | Misma voz 0,844–0,947; voces distintas 0,314–0,448 |

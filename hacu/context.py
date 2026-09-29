@@ -476,12 +476,26 @@ class ContextBuilder:
         que el visitante SIENTA que le entendiste el idioma; decirselo aparte,
         en cada turno, es lo que ya se hace con el nombre y con el hilo de la
         conversacion y aqui funciona igual de bien.
+
+        Daniel reporto en vivo que el ingles "suena como si lo leyera desde el
+        espanol, no se siente nativo": el corpus entero esta en espanol, asi
+        que un 8B forzado a responder en ingles tiende a traducir la frase
+        espanola palabra por palabra en vez de componerla de cero en ingles
+        -mismo sintoma que el idioma equivocado de arriba, misma cura: decirlo
+        aparte, cada turno, no confiar solo en la regla 21 del prompt base.
         """
         idioma = detectar_idioma(mensaje)
         if idioma == "en":
             return (
                 "El visitante te acaba de hablar en INGLES. Responde este turno "
-                "ENTERAMENTE en ingles, de principio a fin, sin mezclar espanol."
+                "ENTERAMENTE en ingles, de principio a fin, sin mezclar espanol. "
+                "Piensa y redacta la respuesta directamente en ingles -no traduzcas "
+                "mentalmente una frase en espanol palabra por palabra: eso se nota en "
+                "el orden de las palabras y en giros que un nativo no usaria, y suena "
+                "a que estas LEYENDO una traduccion en vez de hablando ingles de "
+                "verdad. Reformula la idea con el vocabulario y el orden natural del "
+                "ingles, aunque eso signifique decirla distinto a como la dirias en "
+                "espanol."
             )
         return "El visitante te acaba de hablar en espanol. Responde en espanol."
 

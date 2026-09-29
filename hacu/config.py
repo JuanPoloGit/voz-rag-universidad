@@ -305,11 +305,22 @@ class VozConfig:
     piper_voz: str = "es_MX-claude-high"
     # Voz de Piper para cuando la frase esta en ingles (bilingue real: Piper es
     # monolingue por modelo, no hay una sola voz que hable los dos idiomas).
-    # None = no hay voz en ingles montada todavia y HACU sigue hablando ingles
-    # con la voz en espanol -suena con acento, pero nunca se queda muda-. Se
-    # descarga igual que la de espanol: `python -m hacu.voz --descargar --idioma en`
-    # despues de fijar HACU_VOZ_MODELO_EN=<nombre-de-la-voz>.
-    piper_voz_en: str | None = None
+    # en_US-hfc_female-medium por defecto -no None- porque un default vacio es
+    # justo el bug que se detecto en escena: la voz en ingles SI estaba
+    # descargada en la maquina, pero como nada la fijaba por defecto y
+    # HACU_VOZ_MODELO_EN nunca se llego a poner en el lanzador, el .onnx se
+    # quedaba sin usar y cada frase en ingles salia con la voz en espanol
+    # -literalmente el motor de espanol leyendo grafia inglesa, no una cuestion
+    # de acento sino de que sonaba a "leido desde el espanol"-. Con un nombre
+    # de voz por defecto, `ruta_de_voz` la encuentra sola en cuanto esta
+    # descargada, sin depender de una variable de entorno que nadie recuerda
+    # fijar en cada arranque. Si en otra maquina el .onnx no esta descargado,
+    # el arranque sigue avisando (ver `comprobar_dependencias`) y HACU cae al
+    # mismo respaldo de siempre -habla ingles con la voz en espanol antes que
+    # quedarse muda-, asi que este default no puede romper una maquina nueva.
+    # Se descarga con `python -m hacu.voz --descargar --idioma en`, o con otro
+    # nombre fijando antes HACU_VOZ_MODELO_EN=<nombre-de-la-voz>.
+    piper_voz_en: str | None = "en_US-hfc_female-medium"
     carpeta_voces: Path = PROJECT_ROOT / "models" / "voz"
     # Solo para el binario suelto de Piper (las versiones anteriores a piper-tts).
     piper_exe: Path | None = None

@@ -190,6 +190,39 @@ voz**, así que la acentuación sale idéntica. Medido sobre las mismas frases: 
 hueco mayor baja de 450 ms a 120 ms y la duración total solo cae un 2,4 %, que es
 lo que se espera de quitar aire y no de hablar más rápido.
 
+### Bilingüe: dos voces, una por idioma
+
+Piper es monolingüe por modelo -no hay una sola voz que hable español e inglés-,
+así que hablar los dos de verdad depende de tener las dos cargadas.
+`hacu/idioma.py` detecta el idioma de cada frase (léxico funcional + tildes, sin
+modelo de por medio) y `Locutor` elige con esa pista qué voz usar, frase a
+frase.
+
+`piper_voz_en` trae **por defecto** `en_US-hfc_female-medium` -no vacío-. Antes
+sí lo estaba, y ese vacío era el bug real detrás de "el inglés suena como si lo
+leyera desde el español": la voz en inglés puede estar descargada en la
+máquina y aun así no usarse nunca, porque nada la fija sin
+`HACU_VOZ_MODELO_EN` puesta a mano en cada arranque, y esa variable es fácil de
+fijar una vez para probar y olvidar en el lanzador. Sin ella, cada frase en
+inglés salía con el motor de **español** leyendo grafía inglesa: no es una
+cuestión de acento, es el modelo de voz equivocado. Con un nombre por defecto,
+`ruta_de_voz` la encuentra sola en cuanto está descargada
+(`python -m hacu.voz --descargar --idioma en`); si no lo está, el arranque
+avisa (ver `comprobar_dependencias`) y HACU cae al mismo respaldo de
+siempre -hablar inglés con la voz en español antes que quedarse muda-, así que
+el default no puede romper una máquina nueva que aún no descargó nada.
+
+La detección de idioma también decide, turno a turno, en qué idioma responde
+el modelo (`ContextBuilder._recordatorio_de_idioma` en `context.py`): la regla
+21 del prompt de sistema ya lo pide, pero medido en vivo un 8B no la obedece
+con fiabilidad entre otras veinte reglas, así que se refuerza aparte en cada
+turno, igual que el nombre del visitante o el hilo de la conversación.
+Como el corpus entero está en español, esa misma instrucción también le pide
+explícitamente redactar el inglés desde cero -no traducir la frase española
+palabra por palabra-, que es la otra mitad de "no se siente nativo": una
+traducción literal se nota en el orden de las palabras aunque la voz sea la
+correcta.
+
 ### El volumen que subía y bajaba
 
 Piper normaliza **por pico y por frase**, y igualar picos no es igualar sonoridad.
