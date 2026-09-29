@@ -8,13 +8,22 @@ Google Patents y la Superintendencia de Industria y Comercio (SIC) de Colombia, 
 donde el texto de una y otra coincide, se anota la relación; donde no hay una ficha de proyecto
 que la mencione, se deja así, sin forzar el vínculo. Cada entrada trae su número de solicitud o
 publicación solo en la línea "Fuente" (para consultarlo por escrito o dar el enlace); no es parte
-del nombre de la invención ni algo que se diga de viva voz.
+del nombre de la invención ni algo que se diga de viva voz. La lista larga de inventores de cada
+entrada va al final, junto a la fuente, por el mismo motivo: es un dato de archivo para consultar
+por escrito, no el primer dato que alguien espera oír al preguntar por una invención.
+
+En conjunto: son 9 entradas. 8 siguen como solicitud en trámite y 1 ya es patente concedida (el
+sistema de sellado de botellas oceanográficas). La mayoría salió del mismo equipo de hardware y
+mecatrónica, y varias están relacionadas con el ROV Submarino: turbidez, fitoplancton, sujeción de
+muestras, alimentación eléctrica y ajuste de motores.
 
 ## Sensor de turbidez autónomo basado en dispersión de la luz láser
 
 Solicitud de patente colombiana, presentada por la Universidad Simón Bolívar el 28 de junio de
-2019 y publicada el 10 de julio de 2019. Inventores: Reynaldo Farid Villareal González, Nataly
-Galán Freyle, Andrés Felipe Quintero Parra y Leonardo Carlos Pacheco Londoño.
+2019 y publicada el 10 de julio de 2019.
+
+En pocas palabras: un sensor que mide qué tan turbia está el agua usando luz láser, sin necesitar
+un técnico especializado ni mucho tiempo.
 
 Resumen: dispositivo y método para medir la turbidez del agua de forma automática, sin personal
 especializado, en tiempos reducidos, de bajo costo y de forma simple. El sensor comprende un
@@ -24,13 +33,18 @@ aprovecha la retrodispersión de la luz emitida para detectar el nivel de turbid
 Relación con proyectos de AudacIA: coincide con el "sensado de turbidez" que la ficha de **ROV
 Submarino** (`audacia_proyectos_hardware.md`) atribuye a ese vehículo.
 
+Inventores: Reynaldo Farid Villareal González, Nataly Galán Freyle, Andrés Felipe Quintero Parra y
+Leonardo Carlos Pacheco Londoño.
+
 Fuente: https://patents.google.com/patent/CO2019007087A1
 
 ## Sistema autónomo de detección de material particulado orgánico e inorgánico en el aire
 
 Solicitud de patente colombiana, presentada por la Universidad Simón Bolívar el 4 de julio de
-2019 y publicada el 9 de agosto de 2019. Inventores: Leonardo Carlos Pacheco Londoño, Reynaldo
-Farid Villareal González y Nataly Julieth Galán Freyle.
+2019 y publicada el 9 de agosto de 2019.
+
+En pocas palabras: un sistema que detecta partículas en el aire, tanto orgánicas como inorgánicas,
+y envía los datos en tiempo real a una aplicación.
 
 Resumen: sistema de detección de material particulado presente en el aire que integra elementos y
 acoples ópticos de geometría particular, con configuración eléctrica que facilita la captura y el
@@ -41,16 +55,19 @@ Relación con proyectos de AudacIA: no se identifica una ficha de proyecto corre
 catálogo vigente de 32 proyectos (`audacia_indice_proyectos.md`); puede tratarse de un desarrollo
 sin ficha propia o retirado del catálogo actual.
 
+Inventores: Leonardo Carlos Pacheco Londoño, Reynaldo Farid Villareal González y Nataly Julieth
+Galán Freyle.
+
 Fuente: https://patents.google.com/patent/CO2019007235A1
 
 ## Métodos para la descripción de pruebas de campo visual
 
 Solicitud de patente colombiana, presentada el 24 de julio de 2020 por **Clínica Oftalmológica
 del Caribe S.A.S.** (no por la Universidad Simón Bolívar directamente), publicada el 28 de enero
-de 2022, con extensión internacional PCT/IB2021/056684. Inventores: Luis José Escaf Jaraba,
-Reynaldo Villarreal González, Juan Pablo Pestana Nobles, Carlos Andres Ochoa Pertuz, Andrés Felipe
-Quintero Parra, Silvia Carolina Moreno Trillos, Paola Andrea Amar Sepulveda, Jorge José Martínez
-Ramírez, José Luis Rodríguez Locarno y Patricia Amaris Oliver Antequera.
+de 2022, con extensión internacional bajo el Tratado de Cooperación en materia de Patentes (PCT).
+
+En pocas palabras: un método que interpreta automáticamente los resultados de un examen de campo
+visual, el mismo que se usa para detectar glaucoma a tiempo.
 
 Resumen: métodos para describir una imagen de campo visual (perimetría), a partir del resultado
 que entrega un analizador de campo visual automático: obtiene un mapa de probabilidad gráfico,
@@ -66,14 +83,20 @@ en `audacia_proyectos_salud.md` (p. ej. **Patrii**, glaucoma temprano en retinog
 ningún texto del corpus vincula esta solicitud a esa ficha de forma explícita, así que se deja
 como relación temática, no como identidad confirmada.
 
-Fuente: https://patents.google.com/patent/CO2020009156A1
+Inventores: Luis José Escaf Jaraba, Reynaldo Villarreal González, Juan Pablo Pestana Nobles,
+Carlos Andres Ochoa Pertuz, Andrés Felipe Quintero Parra, Silvia Carolina Moreno Trillos, Paola
+Andrea Amar Sepulveda, Jorge José Martínez Ramírez, José Luis Rodríguez Locarno y Patricia Amaris
+Oliver Antequera.
+
+Fuente: https://patents.google.com/patent/CO2020009156A1 (extensión internacional PCT/IB2021/056684)
 
 ## Dispositivo y método para la detección de fluorescencia y turbidez en el fondo marino asociadas a la concentración de fitoplancton
 
 Solicitud de patente colombiana, presentada el 18 de mayo de 2022 por la **Universidad Simón
-Bolívar y Sepia Rov S.A.S.**, publicada el 18 de noviembre de 2022. Inventores: Reynaldo
-Villarreal González, Nataly Galán Freyle, Juan Pablo Pestana Nobles, Carlos Andres Ochoa Pertuz,
-Leonardo Carlos Pacheco Londoño y Brandrey De Ávila Barraza.
+Bolívar y Sepia Rov S.A.S.**, publicada el 18 de noviembre de 2022.
+
+En pocas palabras: un dispositivo que se monta en un ROV submarino y mide cuánto fitoplancton hay
+en el fondo marino, incluso a profundidades donde no puede llegar un buzo.
 
 Resumen: dispositivo acoplable a vehículos operados remotamente (ROV) que permite estimar la
 concentración de fitoplancton en el fondo marino, a distintas profundidades, donde no puede
@@ -87,14 +110,18 @@ la ficha de **ROV Submarino** atribuye a ese vehículo. Además, que Sepia Rov S
 cosolicitante junto con la Universidad confirma, con un documento oficial, la alianza con "Sepia"
 que menciona esa misma ficha (`audacia_proyectos_hardware.md`: "nuestra empresa aliada Sepia").
 
+Inventores: Reynaldo Villarreal González, Nataly Galán Freyle, Juan Pablo Pestana Nobles, Carlos
+Andres Ochoa Pertuz, Leonardo Carlos Pacheco Londoño y Brandrey De Ávila Barraza.
+
 Fuente: https://patents.google.com/patent/CO2022006630A1
 
 ## Máquina dispensadora de alimentos para consumo inmediato con inteligencia artificial integral
 
 Solicitud de patente colombiana, presentada por la Universidad Simón Bolívar el 31 de mayo de
-2022, publicada el 30 de noviembre de 2023. Inventores: Reynaldo Villarreal González, Eugenio
-Yime Rodríguez, Jheifer Manuel Páez Almentero, Brandrey De Ávila Barraza y Carlos Alejandro Espejo
-Villarraga.
+2022, publicada el 30 de noviembre de 2023.
+
+En pocas palabras: una máquina que sirve comida lista para consumir de forma automática, con
+tolvas para los ingredientes y una banda transportadora.
 
 Resumen: dispensador de alimentos con soporte rígido en acero con recubrimiento apto para
 alimentos, tolvas extraíbles (acero inoxidable y politetrafluoroetileno/PTFE) para alimentos
@@ -105,14 +132,18 @@ modificadas para dispensar coberturas (toppings).
 Relación con proyectos de AudacIA: no se identifica una ficha de proyecto correspondiente en el
 catálogo vigente de 32 proyectos.
 
+Inventores: Reynaldo Villarreal González, Eugenio Yime Rodríguez, Jheifer Manuel Páez Almentero,
+Brandrey De Ávila Barraza y Carlos Alejandro Espejo Villarraga.
+
 Fuente: https://patents.google.com/patent/CO2022007666A1
 
 ## Aparato para sujeción de muestras submarinas
 
 Solicitud de patente colombiana, presentada por la Universidad Simón Bolívar el 14 de junio de
-2022, publicada el 20 de diciembre de 2023. Inventores: Reynaldo Villarreal González, Omar
-Santiago Howard Abril, Carlos Andres Ochoa Pertuz, Eugenio Yime Rodríguez, Jheifer Manuel Páez
-Almentero, Brandrey De Ávila Barraza y Eder Alexander Molina Viloria.
+2022, publicada el 20 de diciembre de 2023.
+
+En pocas palabras: una pieza que se acopla a un ROV submarino para sujetar y recoger muestras del
+fondo del mar.
 
 Resumen: aparato para la sujeción y toma de muestras submarinas, acoplable a un vehículo operado
 de manera remota (ROV). Estructura principal en materiales impresos en 3D y acero inoxidable, con
@@ -122,14 +153,19 @@ soporte, motores sin cepillo, y electrónica de control, comunicación y aliment
 Relación con proyectos de AudacIA: coincide con la "sujeción de muestras biológicas" que la ficha
 de **ROV Submarino** atribuye a ese vehículo.
 
+Inventores: Reynaldo Villarreal González, Omar Santiago Howard Abril, Carlos Andres Ochoa Pertuz,
+Eugenio Yime Rodríguez, Jheifer Manuel Páez Almentero, Brandrey De Ávila Barraza y Eder Alexander
+Molina Viloria.
+
 Fuente: https://patents.google.com/patent/CO2022007690A1
 
 ## Dispositivo de alimentación de corriente alterna para vehículos de operación remota
 
 Solicitud de patente colombiana, presentada por la Universidad Simón Bolívar el 31 de mayo de
-2022, publicada el 30 de noviembre de 2023. Inventores: Reynaldo Villarreal González, Carlos
-Andres Ochoa Pertuz, Eugenio Yime Rodríguez, Jheifer Manuel Páez Almentero, Eder Alexander Molina
-Viloria y Luis Andres Gaviria González.
+2022, publicada el 30 de noviembre de 2023.
+
+En pocas palabras: un sistema que le da energía externa casi ilimitada a un ROV submarino, para
+que pueda trabajar muchas horas seguidas sin quedarse sin batería.
 
 Resumen: resuelve la limitación de tiempo de uso de un ROV alimentándolo con energía externa
 prácticamente ilimitada, lo que le permite alcanzar mayores profundidades durante un periodo
@@ -142,15 +178,19 @@ patentes de sensado y sujeción de muestras de esta lista; se relaciona con **RO
 como parte de su infraestructura de operación, aunque la ficha de ese proyecto no menciona la
 alimentación eléctrica explícitamente.
 
+Inventores: Reynaldo Villarreal González, Carlos Andres Ochoa Pertuz, Eugenio Yime Rodríguez,
+Jheifer Manuel Páez Almentero, Eder Alexander Molina Viloria y Luis Andres Gaviria González.
+
 Fuente: https://patents.google.com/patent/CO2022007700A1
 
 ## Sistema de ajuste de motores para vehículos submarinos de operación remota para aprovechamiento de empuje de motores
 
 Solicitud internacional PCT (Organización Mundial de la Propiedad Intelectual), presentada por la
-Universidad Simón Bolívar el 7 de octubre de 2019 (PCT/IB2019/058530), con prioridad colombiana
-NC2019/0000191 del 10 de enero de 2019, publicada el 16 de julio de 2020. Inventores: Omar
-Santiago Abril Howard, Reynaldo Farid Villareal González, Juan Pablo Pestana Nobles, Carlos Andres
-Ochoa Pertuz y Eugenio Yime Rodríguez.
+Universidad Simón Bolívar el 7 de octubre de 2019, con prioridad colombiana del 10 de enero de
+2019, publicada el 16 de julio de 2020.
+
+En pocas palabras: un mecanismo que gira los motores de un ROV submarino para adaptar su empuje
+según si navega en río o en mar.
 
 Resumen: mecanismo de ajuste de motores para un ROV de seis motores (cuatro con empuje en el eje
 horizontal, dos con empuje en el eje vertical), en el que los cuatro motores horizontales pueden
@@ -165,7 +205,11 @@ Relación con proyectos de AudacIA: coincide con el "algoritmo de control de mot
 optimización de empuje" que la ficha de **ROV Submarino** atribuye a ese vehículo; por fecha de
 prioridad (enero de 2019) es la más antigua de este grupo de patentes del ROV.
 
-Fuente: https://patents.google.com/patent/WO2020144501A1
+Inventores: Omar Santiago Abril Howard, Reynaldo Farid Villareal González, Juan Pablo Pestana
+Nobles, Carlos Andres Ochoa Pertuz y Eugenio Yime Rodríguez.
+
+Fuente: https://patents.google.com/patent/WO2020144501A1 (solicitud PCT/IB2019/058530, prioridad
+colombiana NC2019/0000191)
 
 ## Sistema inteligente de sellado en botellas oceanográficas que garantiza el muestreo del agua a profundidades deseadas — PATENTE CONCEDIDA
 
@@ -174,10 +218,10 @@ invención concedida**. Solicitada el 18 de mayo de 2022 por la Universidad Sim�
 Escuela Naval de Suboficiales ARC Barranquilla; publicada sin oposiciones de terceros en la Gaceta
 de la Propiedad Industrial N.º 1015 el 20 de noviembre de 2023; concedida por resolución de la
 Superintendencia de Industria y Comercio, firmada el 27 de julio de 2026. Vigente del 18 de
-mayo de 2022 al 18 de mayo de 2042. Inventores: Reynaldo Farid Villarreal González, Nataly Galán
-Freyle, Juan Pablo Pestana Nobles, Carlos Andres Ochoa Pertuz, Eugenio Yime Rodríguez, Leonardo
-Carlos Pacheco Londoño, Cristian Eduardo Ayala Mantilla, Jheifer Manuel Páez Almentero, Brandrey
-Barraza De Ávila, Huber Andrés León Ascanio y Juan David Gómez Santamaría.
+mayo de 2022 al 18 de mayo de 2042.
+
+En pocas palabras: un sistema que abre y cierra botellas para tomar muestras de agua a la
+profundidad exacta que se necesite, y ya es una patente concedida, no solo una solicitud.
 
 Qué protege: un sistema de cierre y apertura de "conjuntos muestreadores" de agua mediante un
 tapón que sube y baja por el movimiento de un motor sin escobillas, transmitido por un tornillo
@@ -193,6 +237,11 @@ Relación con proyectos de AudacIA: guarda relación con la toma de muestras de 
 del **ROV Submarino**, aunque el ROV en sí no lo opera necesariamente (el mecanismo es una botella
 oceanográfica de muestreo, un instrumento separado, con la Escuela Naval de Suboficiales ARC
 Barranquilla como cotitular).
+
+Inventores: Reynaldo Farid Villarreal González, Nataly Galán Freyle, Juan Pablo Pestana Nobles,
+Carlos Andres Ochoa Pertuz, Eugenio Yime Rodríguez, Leonardo Carlos Pacheco Londoño, Cristian
+Eduardo Ayala Mantilla, Jheifer Manuel Páez Almentero, Brandrey Barraza De Ávila, Huber Andrés
+León Ascanio y Juan David Gómez Santamaría.
 
 Fuente: documento de la Superintendencia de Industria y Comercio, Resolución N.° 57541, expediente
 NC2022/0006616, aportado directamente por Daniel; no tiene URL pública de Google Patents al

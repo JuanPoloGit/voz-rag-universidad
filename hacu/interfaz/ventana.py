@@ -449,24 +449,21 @@ class VentanaHacu(QMainWindow):
         marco.setContentsMargins(0, 0, 0, 0)
         marco.setSpacing(0)
 
-        # Todo el contenido del panel (Flujo + vista previa + visitante +
-        # audiencia + voz + memoria + salir) suma mas alto que la ventana en
-        # resoluciones bajas o sin maximizar. Sin QScrollArea, Qt no recorta
-        # ni desborda: comprime cada widget por debajo de su alto minimo para
-        # que todo "quepa" -texto a medio pintar y, el peor caso, el boton
-        # "Salir de HACU" con tan poca altura real que el clic no le
-        # acertaba-. Con el scroll, el contenido se desplaza en vez de
-        # aplastarse.
+        # Todo el contenido del panel (Flujo + visitante + audiencia + voz +
+        # dispositivos + memoria + ayuda) puede sumar mas alto que la ventana
+        # en resoluciones bajas o sin maximizar. Sin QScrollArea, Qt no
+        # recorta ni desborda: comprime cada widget por debajo de su alto
+        # minimo para que todo "quepa" -texto a medio pintar-. Con el scroll,
+        # el contenido se desplaza en vez de aplastarse. Compactado el panel
+        # (ver estilos.py y los margenes/espaciado de mas abajo), ya cabe
+        # entero sin desplazarse en la resolucion por defecto de la app; el
+        # scroll queda como red de seguridad para ventanas mas bajas.
         scroll = QScrollArea()
         scroll.setObjectName("scrollPanel")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        # Factor de 1: el scroll se queda con TODO el alto sobrante y el pie
-        # fijo (ver mas abajo) con su alto natural nada mas -sin esto, un
-        # `QVBoxLayout` reparte el espacio segun el sizePolicy de cada widget,
-        # que no siempre le da al scroll el hueco que debe ceder al pie-.
-        marco.addWidget(scroll, 1)
+        marco.addWidget(scroll)
 
         contenido = QWidget()
         vertical = QVBoxLayout(contenido)
@@ -566,35 +563,21 @@ class VentanaHacu(QMainWindow):
 
         vertical.addStretch(1)
 
-        # "Salir de HACU" y la ayuda quedan FUERA del `QScrollArea`, en `marco`
-        # en vez de en `vertical`: son las dos cosas del panel que hay que
-        # poder tocar sin desplazarse. Si vivieran dentro del scroll, cerrar
-        # la aplicacion dependeria de haber bajado hasta el fondo -y en una
-        # ventana baja, con el desplazamiento a rueda ademas competido por los
-        # combos de arriba (ver `ComboBoxSinRueda`), el operador podia no
-        # llegar nunca al boton-. Como pie fijo, el "Salir" siempre esta a la
-        # vista, tanto si el resto del panel se desplazo como si no.
-        pie = QWidget()
-        # Sin nombre, un QWidget hereda el fondo SOLIDO generico de `hoja()`
-        # (ver estilos.py) y taparia el vidrio translucido de `QFrame#panel`
-        # con un rectangulo opaco pegado al fondo del panel -mismo problema
-        # que ya se resolvio para el `QScrollArea` de arriba, aqui con el
-        # nombre reservado "transparente" en vez de una regla nueva.
-        pie.setObjectName("transparente")
-        pie_v = QVBoxLayout(pie)
-        pie_v.setContentsMargins(18, 9, 18, 12)
-        pie_v.setSpacing(8)
-        pie_v.addWidget(separador())
-        salir = QPushButton("Salir de HACU")
-        salir.setObjectName("peligro")
-        salir.setToolTip("Cierra la aplicación entera (pide confirmación)")
-        salir.clicked.connect(self._confirmar_salida)
-        pie_v.addWidget(salir)
+        # El boton "Salir de HACU" se quito del panel: tres rondas de arreglo
+        # (alcanzable sin scroll, pie fijo, cuatro capas en el propio cierre)
+        # y seguia sin funcionar de forma confiable en la maquina real, asi
+        # que Daniel pidio quitarlo en vez de seguir persiguiendolo. Cerrar
+        # HACU en pantalla completa queda en manos de Ctrl+Q (atajo en
+        # `_atajos`, mismo `_confirmar_salida` de siempre) o de Ctrl+C en la
+        # terminal -el saludo inicial ya menciona ambos-; fuera de pantalla
+        # completa tambien sirve el control nativo de cerrar de la ventana.
+        # Sin el boton que proteger, ya no hace falta un pie FIJO fuera del
+        # `QScrollArea`: la ayuda vuelve a ser contenido normal del panel.
+        vertical.addWidget(separador())
         ayuda = QLabel("F9 oculta este panel · F11 pantalla completa · Esc callar")
         ayuda.setObjectName("pista")
         ayuda.setWordWrap(True)
-        pie_v.addWidget(ayuda)
-        marco.addWidget(pie)
+        vertical.addWidget(ayuda)
         return panel
 
     def _pie(self) -> QFrame:
@@ -622,9 +605,12 @@ class VentanaHacu(QMainWindow):
         QShortcut(QKeySequence("Ctrl+M"), self, activated=self._alternar_vista)
         QShortcut(QKeySequence("Esc"), self, activated=self._callar)
         # A pantalla completa no hay barra de titulo que cerrar, y Alt+F4 no es
-        # algo que se le pida a quien atiende una exhibicion. Pasa por la misma
-        # confirmacion que el boton "Salir de HACU": un Ctrl+Q sin querer en
-        # plena visita no deberia cerrar la aplicacion de una.
+        # algo que se le pida a quien atiende una exhibicion. Con el boton
+        # "Salir de HACU" ya quitado del panel (ver `_panel_operador`), esta es
+        # la unica forma de cerrar desde dentro de la ventana -junto con
+        # Ctrl+C en la terminal-, y pasa por la misma confirmacion de siempre:
+        # un Ctrl+Q sin querer en plena visita no deberia cerrar la aplicacion
+        # de una.
         QShortcut(QKeySequence("Ctrl+Q"), self, activated=self._confirmar_salida)
 
     def _callar(self) -> None:
