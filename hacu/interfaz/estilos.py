@@ -110,6 +110,15 @@ def hoja(tamano_texto: int) -> str:
         background: {FONDO};
         border: none;
     }}
+    /* El panel del operador (ver `scrollPanel` en ventana.py) vive dentro de
+       QFrame#panel, que ya pinta su propio vidrio translucido: si el scroll
+       heredara el fondo solido de la regla de arriba, taparia ese vidrio con
+       un rectangulo opaco. Mas especifico por nombre, gana sobre la regla
+       generica. */
+    QScrollArea#scrollPanel, QScrollArea#scrollPanel > QWidget > QWidget {{
+        background: transparent;
+        border: none;
+    }}
     QScrollBar:vertical {{
         background: transparent; width: 10px; margin: 4px 2px;
     }}
@@ -144,6 +153,24 @@ def hoja(tamano_texto: int) -> str:
         background: rgba(17, 24, 40, 0.72);
         border-left: 1px solid {BORDE};
     }}
+    /* El panel es angosto y apila muchos controles: la misma altura de
+       boton/combo/campo que el resto de la ventana sumaba de sobra para
+       que el contenido pareciera que se sale del espacio disponible. Mas
+       compacto SOLO aqui -el resto de la ventana (burbujas, barra de
+       entrada) conserva su tamano normal-. */
+    QFrame#panel QPushButton, QFrame#panel QComboBox, QFrame#panel QLineEdit,
+    QFrame#panel QCheckBox {{
+        font-size: {tamano_texto - 2}px;
+    }}
+    QFrame#panel QPushButton {{
+        padding: 6px 12px;
+    }}
+    QFrame#panel QComboBox {{
+        padding: 5px 8px;
+    }}
+    QFrame#panel QLineEdit {{
+        padding: 7px 12px;
+    }}
     QLabel#tituloPanel {{
         color: {TEXTO_SUAVE}; font-size: {tamano_texto - 4}px;
         font-weight: 700; letter-spacing: 2px;
@@ -163,16 +190,6 @@ def hoja(tamano_texto: int) -> str:
     QLabel#introTexto {{
         color: {TEXTO_SUAVE}; font-size: {tamano_texto - 3}px;
     }}
-    QPushButton#modoPreview {{
-        background: rgba(24, 32, 52, 0.6);
-        border: 1px solid {BORDE};
-        border-radius: 10px;
-        padding: 8px 6px;
-        color: {TEXTO_SUAVE};
-        font-size: {tamano_texto - 3}px;
-        letter-spacing: 1px;
-    }}
-    QPushButton#modoPreview:hover {{ border-color: {AZUL}; color: {TEXTO}; }}
     QPushButton {{
         background: {SUPERFICIE_ALTA};
         border: 1px solid {BORDE};

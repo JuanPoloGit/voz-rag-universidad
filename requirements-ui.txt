@@ -1,3 +1,10 @@
 # Interfaz grafica de exhibicion. Opcional: sin esto queda la consola.
 #   pip install -r requirements-ui.txt
+#
+# El nucleo animado (hacu/interfaz/vista_web.py) es una pagina HTML/CSS/canvas
+# embebida en QWebEngineView, no QPainter -asi se consigue blur y gradientes
+# reales, como en la referencia del tutor-. El paquete "PySide6" de PyPI ya
+# trae QtWebEngineWidgets como dependencia (PySide6-Addons): no hace falta
+# instalar nada aparte, solo confirmar que el pip install no se hizo con
+# --no-deps o contra un mirror que excluya los paquetes "Addons".
 PySide6>=6.6.0

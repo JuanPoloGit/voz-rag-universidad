@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HACU · Núcleo</title>
+<link rel="stylesheet" href="nucleo.css">
+</head>
+<body>
+<canvas id="lienzo"></canvas>
+<!--
+  qwebchannel.js solo existe bajo el esquema qrc:// que registra
+  QWebEngineView -en un navegador comun (o aqui, en las pruebas con
+  Playwright) esta etiqueta simplemente falla a cargar y nucleo.js cae solo
+  en "modo demo" (ver _conectarPuente en nucleo.js). No hace falta detectarlo
+  a mano.
+-->
+<script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+<script src="nucleo.js"></script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+/* Fondo: cuadricula + vineta con CSS real, en vez de un pixmap cacheado a
+   mano como hacia la version QPainter -- esta es la ventaja concreta de
+   pasar el nucleo a una vista web: el navegador ya sabe hacer esto solo,
+   corner-to-corner, sin volver a calcularlo en cada resize. */
+:root {
+  --fondo: #080c16;
+  --azul: #33bcff;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--fondo);
+  background-image:
+    repeating-linear-gradient(to right,
+      rgba(51, 188, 255, 0.05) 0, rgba(51, 188, 255, 0.05) 1px,
+      transparent 1px, transparent 54px),
+    repeating-linear-gradient(to bottom,
+      rgba(51, 188, 255, 0.04) 0, rgba(51, 188, 255, 0.04) 1px,
+      transparent 1px, transparent 54px),
+    radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 58%, rgba(0, 0, 0, 0.55) 100%);
+}
+
+#lienzo {
+  display: block;
+  width: 100%;
+  height: 100%;
+}

@@ -15,7 +15,9 @@ La ventana no sabe nada de llama.cpp, de ChromaDB ni de PortAudio: habla con
 from __future__ import annotations
 
 import logging
+import os
 import signal
+import threading
 from datetime import datetime
 
 from PySide6.QtCore import Qt, QTimer, Slot
@@ -23,7 +25,6 @@ from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
-    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -51,18 +52,18 @@ from .hilos import (
     TrabajadorTranscripcion,
     TrabajadorTurno,
 )
+from .vista_web import NucleoWebHacu
 from .widgets import (
     BotonHablar,
     BurbujaMensaje,
+    ComboBoxSinRueda,
     DialogoTranscripcion,
     FondoCuadricula,
     MarcaRombo,
     MedidorNivel,
     Metrica,
-    NucleoHacu,
     PildoraEstado,
     SecuenciaFlujo,
-    etiqueta_campo,
     separador,
     titulo_panel,
 )
@@ -137,6 +138,12 @@ class VentanaHacu(QMainWindow):
     # ------------------------------------------------------------------ montaje
 
     def _montar(self) -> None:
+        # UNA sola instancia del nucleo web (un solo proceso de Chromium
+        # detras), reenganchada al slot de la vista activa -ver
+        # `_reubicar_nucleo`- en vez de duplicada por vista como pasaba con
+        # el `NucleoHacu` de QPainter.
+        self._nucleo_web = NucleoWebHacu()
+
         self._vistas = QStackedWidget()
         self.setCentralWidget(self._vistas)
         self._vistas.addWidget(self._vista_pro())       # _INDICE_PRO
@@ -144,6 +151,12 @@ class VentanaHacu(QMainWindow):
         inicio = (self._INDICE_SIMPLE if self._cfg.interfaz.vista_simple_al_arrancar
                   else self._INDICE_PRO)
         self._vistas.setCurrentIndex(inicio)
+        # `setCurrentIndex` no emite `currentChanged` si `inicio` ya era el
+        # indice corriente (0, el que trae `QStackedWidget` por defecto tras
+        # el primer `addWidget`): coloca el nucleo a mano una vez, y de ahi
+        # en adelante la senal se encarga de cada cambio de vista.
+        self._vistas.currentChanged.connect(self._reubicar_nucleo)
+        self._reubicar_nucleo(inicio)
         # La ventana se queda el teclado: es quien atiende la barra espaciadora,
         # tanto si se ve la vista simple como la Pro.
         self._vistas.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -205,14 +218,21 @@ class VentanaHacu(QMainWindow):
         con `QStackedLayout.StackAll`: las dos capas se ven a la vez en vez de
         turnarse, y ninguna le quita area a la otra como pasaba cuando iban
         apiladas una debajo de la otra en un solo `QVBoxLayout`.
+
+        El primer nivel es un SLOT vacio, no el nucleo en si: `_reubicar_nucleo`
+        engancha ahi la unica instancia de `NucleoWebHacu` cuando esta vista
+        esta activa (y la saca de aqui cuando se pasa a la Pro), para no correr
+        dos `QWebEngineView` -dos procesos de Chromium- a la vez.
         """
         raiz = QWidget()
         capas = QStackedLayout(raiz)
         capas.setContentsMargins(0, 0, 0, 0)
         capas.setStackingMode(QStackedLayout.StackingMode.StackAll)
 
-        self._nucleo_simple = NucleoHacu()
-        capas.addWidget(self._nucleo_simple)
+        self._slot_nucleo_simple = QWidget()
+        slot_vertical = QVBoxLayout(self._slot_nucleo_simple)
+        slot_vertical.setContentsMargins(0, 0, 0, 0)
+        capas.addWidget(self._slot_nucleo_simple)
 
         rotulos = QWidget()
         rotulos.setObjectName("transparente")
@@ -339,8 +359,13 @@ class VentanaHacu(QMainWindow):
         intro_v.addWidget(descripcion_intro)
         vertical.addWidget(intro)
 
-        self._nucleo = NucleoHacu()
-        vertical.addWidget(self._nucleo, 1)
+        # Slot vacio: `_reubicar_nucleo` engancha aqui la unica instancia de
+        # `NucleoWebHacu` cuando la vista Pro esta activa (ver `_vista_simple`
+        # para el mismo patron del lado Simple).
+        self._slot_nucleo_pro = QWidget()
+        slot_vertical = QVBoxLayout(self._slot_nucleo_pro)
+        slot_vertical.setContentsMargins(0, 0, 0, 0)
+        vertical.addWidget(self._slot_nucleo_pro, 1)
 
         # Misma tarjeta de vidrio para el medidor: la "actividad" de la
         # referencia, con su propio rotulo eyebrow.
@@ -420,33 +445,42 @@ class VentanaHacu(QMainWindow):
         panel = QFrame()
         panel.setObjectName("panel")
         panel.setFixedWidth(272)
-        vertical = QVBoxLayout(panel)
-        vertical.setContentsMargins(18, 20, 18, 20)
-        vertical.setSpacing(11)
+        marco = QVBoxLayout(panel)
+        marco.setContentsMargins(0, 0, 0, 0)
+        marco.setSpacing(0)
+
+        # Todo el contenido del panel (Flujo + vista previa + visitante +
+        # audiencia + voz + memoria + salir) suma mas alto que la ventana en
+        # resoluciones bajas o sin maximizar. Sin QScrollArea, Qt no recorta
+        # ni desborda: comprime cada widget por debajo de su alto minimo para
+        # que todo "quepa" -texto a medio pintar y, el peor caso, el boton
+        # "Salir de HACU" con tan poca altura real que el clic no le
+        # acertaba-. Con el scroll, el contenido se desplaza en vez de
+        # aplastarse.
+        scroll = QScrollArea()
+        scroll.setObjectName("scrollPanel")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # Factor de 1: el scroll se queda con TODO el alto sobrante y el pie
+        # fijo (ver mas abajo) con su alto natural nada mas -sin esto, un
+        # `QVBoxLayout` reparte el espacio segun el sizePolicy de cada widget,
+        # que no siempre le da al scroll el hueco que debe ceder al pie-.
+        marco.addWidget(scroll, 1)
+
+        contenido = QWidget()
+        vertical = QVBoxLayout(contenido)
+        # Mas ajustado que el resto de la ventana a proposito: el panel apila
+        # muchas secciones en 272px de ancho, y el margen/espaciado "normal"
+        # (20/11) sumaba de sobra para que pareciera que el contenido se sale
+        # del espacio disponible en vez de encajar en el.
+        vertical.setContentsMargins(18, 12, 18, 10)
+        vertical.setSpacing(6)
+        scroll.setWidget(contenido)
 
         vertical.addWidget(titulo_panel("Flujo"))
         self._secuencia_flujo = SecuenciaFlujo()
         vertical.addWidget(self._secuencia_flujo)
-        vertical.addWidget(separador())
-
-        # Botones de previsualizacion: cambian solo el color/animacion del
-        # nucleo (ver `_previsualizar_estado`), para que el operador vea como
-        # se ve cada estado sin esperar a que ocurra de verdad. No tocan
-        # `self._estado`: la pastilla y el flujo siguen mostrando el estado
-        # real, y el proximo evento real vuelve a mandar en el nucleo.
-        vertical.addWidget(titulo_panel("Vista previa del núcleo"))
-        # El panel es angosto (272px fijos): una cuadricula 2x2 dejaba cada
-        # boton en ~114px, demasiado estrecho para "Escuchando" a este tamano
-        # de letra. Una lista de una columna, igual que el resto de botones
-        # del panel, usa el ancho completo y queda consistente con ellos.
-        for estado in EstadoUI:
-            boton = QPushButton(ROTULO_ESTADO[estado])
-            boton.setObjectName("modoPreview")
-            boton.setCursor(Qt.CursorShape.PointingHandCursor)
-            boton.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            boton.setToolTip("Solo cambia el color del núcleo, no el estado real")
-            boton.clicked.connect(lambda _checked=False, e=estado: self._previsualizar_estado(e))
-            vertical.addWidget(boton)
         vertical.addWidget(separador())
 
         vertical.addWidget(titulo_panel("Visitante"))
@@ -457,13 +491,22 @@ class VentanaHacu(QMainWindow):
         self._nombre.setPlaceholderText("Fijar nombre a mano")
         self._nombre.returnPressed.connect(self._fijar_nombre)
         vertical.addWidget(self._nombre)
-        anonimo = QPushButton("Nuevo visitante")
+        # "Nuevo visitante" en la misma fila que Audiencia (mas abajo) no
+        # tenia sentido -son secciones distintas-, pero SI cabe al lado del
+        # propio nombre del visitante en vez de su propia fila entera: una
+        # fila menos en un panel donde cada fila cuenta.
+        anonimo = QPushButton("Nuevo")
+        anonimo.setToolTip("Nuevo visitante: olvida el perfil activo y empieza de cero")
         anonimo.clicked.connect(self._nuevo_visitante)
-        vertical.addWidget(anonimo)
+        fila_visitante = QHBoxLayout()
+        fila_visitante.setSpacing(7)
+        fila_visitante.addWidget(self._nombre, 1)
+        fila_visitante.addWidget(anonimo, 0)
+        vertical.addLayout(fila_visitante)
 
         vertical.addWidget(separador())
         vertical.addWidget(titulo_panel("Audiencia"))
-        self._audiencia = QComboBox()
+        self._audiencia = ComboBoxSinRueda()
         self._audiencia.addItems(list(PERFILES_AUDIENCIA))
         self._audiencia.setCurrentText(self._comp.sesion.estado.perfil_audiencia)
         self._audiencia.currentTextChanged.connect(self._cambiar_audiencia)
@@ -486,14 +529,16 @@ class VentanaHacu(QMainWindow):
 
         # El sistema no siempre elige la tarjeta que uno cree: en una portatil con
         # webcam, base de conexiones y diadema hay cinco entradas. Aqui se elige a
-        # mano, sin variables de entorno ni reiniciar la aplicacion.
-        vertical.addWidget(etiqueta_campo("Micrófono"))
-        self._caja_microfono = QComboBox()
-        self._caja_microfono.setToolTip("Se aplica en la siguiente escucha")
+        # mano, sin variables de entorno ni reiniciar la aplicacion. Un solo
+        # titulo "Dispositivos" para los dos combos -antes cada uno traia su
+        # propia etiqueta encima ("Micrófono"/"Altavoz"), que sumaba dos filas
+        # mas al panel por un dato que el tooltip de cada combo ya da.
+        vertical.addWidget(titulo_panel("Dispositivos"))
+        self._caja_microfono = ComboBoxSinRueda()
+        self._caja_microfono.setToolTip("Micrófono. Se aplica en la siguiente escucha")
         vertical.addWidget(self._caja_microfono)
-        vertical.addWidget(etiqueta_campo("Altavoz"))
-        self._caja_altavoz = QComboBox()
-        self._caja_altavoz.setToolTip("Se aplica en la siguiente frase")
+        self._caja_altavoz = ComboBoxSinRueda()
+        self._caja_altavoz.setToolTip("Altavoz. Se aplica en la siguiente frase")
         vertical.addWidget(self._caja_altavoz)
         refrescar = QPushButton("Buscar dispositivos")
         refrescar.clicked.connect(self._cargar_dispositivos)
@@ -520,16 +565,36 @@ class VentanaHacu(QMainWindow):
         vertical.addWidget(purgar)
 
         vertical.addStretch(1)
-        vertical.addWidget(separador())
+
+        # "Salir de HACU" y la ayuda quedan FUERA del `QScrollArea`, en `marco`
+        # en vez de en `vertical`: son las dos cosas del panel que hay que
+        # poder tocar sin desplazarse. Si vivieran dentro del scroll, cerrar
+        # la aplicacion dependeria de haber bajado hasta el fondo -y en una
+        # ventana baja, con el desplazamiento a rueda ademas competido por los
+        # combos de arriba (ver `ComboBoxSinRueda`), el operador podia no
+        # llegar nunca al boton-. Como pie fijo, el "Salir" siempre esta a la
+        # vista, tanto si el resto del panel se desplazo como si no.
+        pie = QWidget()
+        # Sin nombre, un QWidget hereda el fondo SOLIDO generico de `hoja()`
+        # (ver estilos.py) y taparia el vidrio translucido de `QFrame#panel`
+        # con un rectangulo opaco pegado al fondo del panel -mismo problema
+        # que ya se resolvio para el `QScrollArea` de arriba, aqui con el
+        # nombre reservado "transparente" en vez de una regla nueva.
+        pie.setObjectName("transparente")
+        pie_v = QVBoxLayout(pie)
+        pie_v.setContentsMargins(18, 9, 18, 12)
+        pie_v.setSpacing(8)
+        pie_v.addWidget(separador())
         salir = QPushButton("Salir de HACU")
         salir.setObjectName("peligro")
         salir.setToolTip("Cierra la aplicación entera (pide confirmación)")
         salir.clicked.connect(self._confirmar_salida)
-        vertical.addWidget(salir)
+        pie_v.addWidget(salir)
         ayuda = QLabel("F9 oculta este panel · F11 pantalla completa · Esc callar")
         ayuda.setObjectName("pista")
         ayuda.setWordWrap(True)
-        vertical.addWidget(ayuda)
+        pie_v.addWidget(ayuda)
+        marco.addWidget(pie)
         return panel
 
     def _pie(self) -> QFrame:
@@ -575,7 +640,43 @@ class VentanaHacu(QMainWindow):
         exhibicion no tiene vuelta atras -corta a quien este hablando con
         HACU en ese momento-, asi que pasa por el mismo patron de
         confirmacion que `_purgar` en vez de actuar directo.
+
+        Tres guardas que no hacian falta antes de que "Salir de HACU"
+        estuviera confirmado como no funcional en la maquina real:
+
+        1. El dialogo es hijo de `self`; en pantalla completa, Windows no
+           siempre lo sube por encima de la ventana fullscreen -queda
+           pintado DETRAS-, y entonces pulsar el boton "no hace nada" a
+           ojos del operador porque el dialogo real esta ahi pero invisible.
+           Salir de pantalla completa antes de preguntar se lo entrega al
+           gestor de ventanas normal, donde el modal si se ve; si se
+           cancela, se vuelve a pantalla completa tal como estaba.
+        2. `closeEvent` apaga el microfono y la voz (hasta ~5 s entre
+           `self._escucha.wait(2000)` y `ServicioDeVoz.cerrar`) ANTES de que
+           la ventana desaparezca de la pantalla -`close()` no oculta nada
+           hasta que `closeEvent` termina-. Sin mas, el operador ve la
+           ventana congelada un rato tras confirmar y puede pensar que el
+           boton no hizo nada. `self.hide()` justo antes de `close()` da
+           la señal visual inmediata de que si funciono, mientras el
+           apagado sigue detras.
+        3. `self.close()` deberia bastar (Qt cierra la aplicacion sola
+           cuando se cierra la ultima ventana), pero si algun hilo en
+           segundo plano la mantuviera viva, un `quit()` explicito sobre la
+           instancia de `QApplication` fuerza la salida del bucle de
+           eventos de todos modos.
+        4. Fusible de ultimo recurso: si con TODO lo anterior el proceso
+           sigue sin terminar de verdad -un hilo que no se une, o el
+           proceso de Chromium detras del nucleo QWebEngineView que no
+           suelta el que lo aloja-, un `threading.Timer` en un hilo del
+           sistema operativo aparte (no en el bucle de eventos de Qt, que
+           puede estar colgado) mata el proceso entero a los 8 s pase lo
+           que pase. 8 s deja margen de sobra sobre el peor caso normal del
+           apagado (~5 s entre `escucha.wait` y `ServicioDeVoz.cerrar`) para
+           no disparar en falso durante un cierre lento pero sano.
         """
+        estaba_en_pantalla_completa = self.isFullScreen()
+        if estaba_en_pantalla_completa:
+            self.showNormal()
         respuesta = QMessageBox.question(
             self, "Cerrar HACU",
             "Se va a cerrar la aplicación. Si hay alguien hablando con HACU "
@@ -584,7 +685,16 @@ class VentanaHacu(QMainWindow):
             QMessageBox.StandardButton.No,
         )
         if respuesta is QMessageBox.StandardButton.Yes:
+            self.hide()
+            fusible = threading.Timer(8.0, os._exit, args=(1,))
+            fusible.daemon = True
+            fusible.start()
             self.close()
+            aplicacion = QApplication.instance()
+            if aplicacion is not None:
+                aplicacion.quit()
+        elif estaba_en_pantalla_completa:
+            self.showFullScreen()
 
     # ------------------------------------------------------------------ eventos
 
@@ -606,34 +716,42 @@ class VentanaHacu(QMainWindow):
             self._escucha.detener()
             self._escucha.wait(2000)
         self._voz.cerrar()
+        # El nucleo vive en un QWebEngineView -un proceso de Chromium aparte,
+        # no solo un widget-. Dejar que Qt lo destruya de forma implicita al
+        # salir del interprete, con el bucle de eventos ya detenido, es la
+        # situacion en la que ese proceso hijo puede quedar huerfano en vez
+        # de apagarse limpio: cerrarlo aqui, con la aplicacion y su bucle de
+        # eventos todavia vivos, le da a Qt/Chromium la oportunidad real de
+        # apagarse solos.
+        self._nucleo_web.close()
         super().closeEvent(evento)
 
     # -------------------------------------------------------------------- estado
 
+    def _reubicar_nucleo(self, indice: int) -> None:
+        """Reengancha la unica instancia de `NucleoWebHacu` al slot de la
+        vista que se acaba de mostrar.
+
+        `QLayout.addWidget` en Qt reparenta solo: saca el widget de donde
+        estuviera antes (el slot de la otra vista) y lo pone aqui, asi que
+        no hace falta quitarlo a mano del layout viejo.
+        """
+        slot = self._slot_nucleo_pro if indice == self._INDICE_PRO else self._slot_nucleo_simple
+        slot.layout().addWidget(self._nucleo_web)
+
     def _cambiar_estado(self, estado: EstadoUI) -> None:
         self._estado = estado
-        self._nucleo.set_estado(estado)
-        self._nucleo_simple.set_estado(estado)
+        self._nucleo_web.set_estado(estado)
         self._pildora_estado.set_estado(estado)
         self._secuencia_flujo.set_estado(estado)
         color = COLOR_ESTADO[estado]
         self._texto_estado_simple.setText(ROTULO_ESTADO[estado])
         self._texto_estado_simple.setStyleSheet(f"color: {color};")
 
-    def _previsualizar_estado(self, estado: EstadoUI) -> None:
-        """Boton de "Vista previa del núcleo": solo cambia como se ve el
-        nucleo, para que el operador lo muestre sin esperar a que el estado
-        ocurra de verdad. No toca `self._estado` ni la pastilla/el flujo -el
-        proximo evento real (`_cambiar_estado`) vuelve a mandar-.
-        """
-        self._nucleo.set_estado(estado)
-        self._nucleo_simple.set_estado(estado)
-
     def _refrescar_nivel(self) -> None:
         escuchando = self._estado is EstadoUI.ESCUCHANDO
         nivel = self._voz.nivel
-        self._nucleo.set_nivel(nivel)
-        self._nucleo_simple.set_nivel(nivel)
+        self._nucleo_web.set_nivel(nivel)
         self._medidor.set_nivel(nivel, escuchando)
         if self._estado is EstadoUI.HABLANDO and not self._voz.hablando:
             self._cambiar_estado(EstadoUI.REPOSO)
