@@ -37,10 +37,10 @@ from inventario.models import (
     Auditoria,
     Categoria,
     DevolucionPrestamo,
+    Existencia,
     Movimiento,
     Prestamo,
     Producto,
-    TipoMovimiento,
     Ubicacion,
 )
 
@@ -251,31 +251,65 @@ def _extraer_numero(texto: str) -> int | None:
 
 def _buscar_producto(termino: str, usuario: UsuarioAudacIA) -> Producto | None:
     """Busca un producto por código interno, código de barras o coincidencia en nombre."""
-    termino = termino.strip()
     if not termino:
         return None
 
-    qs = Producto.objects.filter(activo=True, eliminado=False)
+    # Limpiar signos de puntuación e interrogación
+    termino_limpio = re.sub(r"[¿?¡!.,:;()\[\]\"'`]", " ", termino).strip()
+    if not termino_limpio:
+        return None
+
+    qs = Producto.objects.filter(activo=True, archivado=False)
     if usuario.es_usuario_normal and usuario.almacen_asignado:
-        qs = qs.filter(almacen=usuario.almacen_asignado)
+        qs = qs.filter(categoria__almacen_principal=usuario.almacen_asignado)
 
     # 1. Búsqueda exacta por código interno
-    producto = qs.filter(codigo_interno__iexact=termino).first()
+    producto = qs.filter(codigo_interno__iexact=termino_limpio).first()
     if producto:
         return producto
 
     # 2. Búsqueda exacta por código de barras
-    producto = qs.filter(codigo_barras__iexact=termino).first()
+    producto = qs.filter(codigo_barras__iexact=termino_limpio).first()
     if producto:
         return producto
 
-    # 3. Búsqueda por nombre exacto o contenido
-    producto = qs.filter(nombre__iexact=termino).first()
+    # 3. Búsqueda por nombre exacto o contenido directo
+    producto = qs.filter(nombre__iexact=termino_limpio).first()
     if producto:
         return producto
 
-    producto = qs.filter(nombre__icontains=termino).first()
-    return producto
+    producto = qs.filter(nombre__icontains=termino_limpio).first()
+    if producto:
+        return producto
+
+    # 4. Si el término contiene códigos o nombres de productos conocidos
+    termino_lower = termino_limpio.lower()
+    for p in qs:
+        if p.codigo_interno.lower() in termino_lower:
+            return p
+        if p.codigo_barras and p.codigo_barras.lower() in termino_lower:
+            return p
+        if p.nombre.lower() in termino_lower:
+            return p
+
+    # 5. Descomponer en n-gramas ignorando palabras de parada y números
+    palabras_parada = {
+        "cuanto", "cuantos", "cuanta", "cuantas", "stock", "hay", "queda", "quedan",
+        "existencias", "existencia", "donde", "esta", "estan", "ubicacion",
+        "salida", "entrada", "prestar", "prestamo", "devolver", "devolucion",
+        "registrar", "hacer", "unidades", "unidad", "de", "del", "al", "el", "la", "los", "las",
+        "para", "por", "motivo", "a", "en", "con", "un", "una", "unos", "unas"
+    }
+    tokens = [w for w in termino_lower.split() if w not in palabras_parada and not w.isdigit()]
+    for n in range(len(tokens), 0, -1):
+        for i in range(len(tokens) - n + 1):
+            frase = " ".join(tokens[i:i+n])
+            if len(frase) >= 3:
+                encontrado = qs.filter(nombre__icontains=frase).first()
+                if encontrado:
+                    return encontrado
+
+    return None
 
 
 def procesar_comando_inventario(
@@ -323,12 +357,16 @@ def procesar_comando_inventario(
 
     # 1. Alertas de stock bajo / agotado
     if re.search(r"\b(alerta|alertas|bajo stock|sin stock|agotado|agotados|qu[eé] falta)\b", texto_lower):
-        qs_base = Producto.objects.filter(activo=True, eliminado=False)
-        if usuario.es_usuario_normal and usuario.almacen_asignado:
-            qs_base = qs_base.filter(almacen=usuario.almacen_asignado)
+        qs_existencias = Existencia.objects.filter(
+            producto__activo=True,
+            producto__archivado=False,
+        ).select_related("producto", "almacen")
 
-        sin_stock = list(qs_base.filter(stock_disponible=0)[:5])
-        bajo_stock = [p for p in qs_base if 0 < p.stock_disponible < p.stock_minimo][:5]
+        if usuario.es_usuario_normal and usuario.almacen_asignado:
+            qs_existencias = qs_existencias.filter(almacen=usuario.almacen_asignado)
+
+        sin_stock = [e for e in qs_existencias if e.sin_stock][:5]
+        bajo_stock = [e for e in qs_existencias if e.stock_bajo][:5]
 
         if not sin_stock and not bajo_stock:
             res = "No hay alertas activas de stock en este momento. Todos los productos tienen existencias suficientes."
@@ -337,11 +375,11 @@ def procesar_comando_inventario(
         lineas = []
         lineas_voz = []
         if sin_stock:
-            nombres = ", ".join(p.nombre for p in sin_stock)
+            nombres = ", ".join(f"{e.producto.nombre} ({e.almacen.nombre})" for e in sin_stock)
             lineas.append(f"**Agotados ({len(sin_stock)}):** {nombres}")
             lineas_voz.append(f"Hay {len(sin_stock)} productos agotados: {nombres}.")
         if bajo_stock:
-            nombres = ", ".join(f"{p.nombre} ({p.stock_disponible}/{p.stock_minimo})" for p in bajo_stock)
+            nombres = ", ".join(f"{e.producto.nombre} ({e.stock_disponible}/{e.producto.stock_minimo})" for e in bajo_stock)
             lineas.append(f"**Stock bajo ({len(bajo_stock)}):** {nombres}")
             lineas_voz.append(f"Hay {len(bajo_stock)} productos con stock bajo.")
 
@@ -350,10 +388,10 @@ def procesar_comando_inventario(
             "mensaje_pantalla": "\n\n".join(lineas),
             "mensaje_verbal": " ".join(lineas_voz),
             "datos": {
-                "sin_stock": [{"codigo": p.codigo_interno, "nombre": p.nombre} for p in sin_stock],
+                "sin_stock": [{"codigo": e.producto.codigo_interno, "nombre": e.producto.nombre, "almacen": e.almacen.nombre} for e in sin_stock],
                 "bajo_stock": [
-                    {"codigo": p.codigo_interno, "nombre": p.nombre, "disponible": p.stock_disponible, "minimo": p.stock_minimo}
-                    for p in bajo_stock
+                    {"codigo": e.producto.codigo_interno, "nombre": e.producto.nombre, "almacen": e.almacen.nombre, "disponible": e.stock_disponible, "minimo": e.producto.stock_minimo}
+                    for e in bajo_stock
                 ],
             },
         }
@@ -395,18 +433,23 @@ def procesar_comando_inventario(
 
         producto = _buscar_producto(limpio, usuario)
         if producto:
-            ubicaciones = ", ".join(u.ubicacion.nombre for u in producto.ubicaciones.all()) or "Sin ubicación asignada"
+            almacen = usuario.almacen_asignado if (usuario.es_usuario_normal and usuario.almacen_asignado) else producto.categoria.almacen_principal
+            existencia = Existencia.objects.filter(producto=producto, almacen=almacen).first()
+            disponible = existencia.stock_disponible if existencia else 0
+            prestado = existencia.stock_en_prestamo if existencia else 0
+
+            ubicaciones = ", ".join(u.nombre for u in producto.ubicaciones.all()) or "Sin ubicación asignada"
             pantalla = (
                 f"### {producto.nombre} (`{producto.codigo_interno}`)\n"
-                f"- **Stock disponible:** {producto.stock_disponible} unidades\n"
-                f"- **En préstamo:** {producto.stock_en_prestamo} unidades\n"
+                f"- **Stock disponible:** {disponible} unidades\n"
+                f"- **En préstamo:** {prestado} unidades\n"
                 f"- **Stock mínimo:** {producto.stock_minimo}\n"
-                f"- **Almacén:** {producto.almacen.nombre}\n"
+                f"- **Almacén:** {almacen.nombre if almacen else 'Sin almacén'}\n"
                 f"- **Ubicación:** {ubicaciones}"
             )
             voz = (
-                f"De {producto.nombre}, hay {producto.stock_disponible} unidades disponibles en {producto.almacen.nombre}, "
-                f"y {producto.stock_en_prestamo} en préstamo. Ubicación: {ubicaciones}."
+                f"De {producto.nombre}, hay {disponible} unidades disponibles en {almacen.nombre if almacen else 'el almacén'}, "
+                f"y {prestado} en préstamo. Ubicación: {ubicaciones}."
             )
             return {
                 "tipo": "consulta",
@@ -415,8 +458,8 @@ def procesar_comando_inventario(
                 "datos": {
                     "codigo": producto.codigo_interno,
                     "nombre": producto.nombre,
-                    "disponible": producto.stock_disponible,
-                    "en_prestamo": producto.stock_en_prestamo,
+                    "disponible": disponible,
+                    "en_prestamo": prestado,
                 },
             }
 
@@ -441,13 +484,13 @@ def procesar_comando_inventario(
             msg = f"¿Cuántas unidades de {producto.nombre} vas a ingresar?"
             return {"tipo": "conversacion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
 
-        almacen = usuario.almacen_asignado if usuario.es_usuario_normal else producto.almacen
+        almacen = usuario.almacen_asignado if (usuario.es_usuario_normal and usuario.almacen_asignado) else producto.categoria.almacen_principal
         if not usuario.tiene_acceso_almacen(almacen):
             raise PermissionDenied("No tienes acceso al almacén de este producto.")
 
         propuesta = {
             "id": str(uuid.uuid4()),
-            "tipo_operacion": TipoMovimiento.ENTRADA,
+            "tipo_operacion": Movimiento.Tipo.ENTRADA,
             "producto_id": producto.id,
             "producto_nombre": producto.nombre,
             "producto_codigo": producto.codigo_interno,
@@ -482,18 +525,25 @@ def procesar_comando_inventario(
 
     # 2. Salida de inventario
     if re.search(r"\b(salida|retirar|sacar|entregar|gastar)\b", texto_lower):
-        termino = re.sub(r"\b(salida|retirar|sacar|entregar|gastar|de|unidades|unidad|al|el|la)\b", " ", texto_lower)
-        if cantidad:
-            termino = re.sub(rf"\b{cantidad}\b", " ", termino)
-
         # Destinatario y motivo en la frase
-        match_destinatario = re.search(r"\b(?:para|a)\s+([A-Za-zÁ-ÿ\s]+?)(?:\s+por|\s+motivo|\s*$)", texto, re.IGNORECASE)
+        match_destinatario = re.search(r"\b(?:para|a)\s+([A-Za-zÁ-ÿ\s]+?)(?:\s+(?:por|motivo)|\s*$)", texto, re.IGNORECASE)
         destinatario = match_destinatario.group(1).strip() if match_destinatario else ""
 
         match_motivo = re.search(r"\b(?:motivo|por)\s+([A-Za-zÁ-ÿ\s0-9]+)$", texto, re.IGNORECASE)
         motivo = match_motivo.group(1).strip() if match_motivo else ""
 
-        producto = _buscar_producto(termino.strip(), usuario)
+        # Limpiar palabras operativas para aislar producto
+        termino_prod = texto_lower
+        for w in ["registrar", "salida", "retirar", "sacar", "entregar", "gastar", "unidades", "unidad"]:
+            termino_prod = re.sub(rf"\b{w}\b", " ", termino_prod)
+        if cantidad:
+            termino_prod = re.sub(rf"\b{cantidad}\b", " ", termino_prod)
+        if destinatario:
+            termino_prod = re.sub(rf"\b(?:para|a)\s+{re.escape(destinatario.lower())}\b", " ", termino_prod)
+        if motivo:
+            termino_prod = re.sub(rf"\b(?:motivo|por)\s+{re.escape(motivo.lower())}\b", " ", termino_prod)
+
+        producto = _buscar_producto(termino_prod.strip(), usuario) or _buscar_producto(texto, usuario)
         if not producto:
             msg = "Por favor indica qué producto vas a retirar del inventario."
             return {"tipo": "conversacion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
@@ -509,17 +559,19 @@ def procesar_comando_inventario(
         if not motivo:
             motivo = f"Salida registrada por Haku para {destinatario}"
 
-        almacen = usuario.almacen_asignado if usuario.es_usuario_normal else producto.almacen
+        almacen = usuario.almacen_asignado if (usuario.es_usuario_normal and usuario.almacen_asignado) else producto.categoria.almacen_principal
         if not usuario.tiene_acceso_almacen(almacen):
             raise PermissionDenied("No tienes acceso al almacén de este producto.")
 
-        if producto.stock_disponible < cantidad:
-            msg = f"Stock insuficiente: {producto.nombre} solo tiene {producto.stock_disponible} disponibles en {almacen.nombre}."
+        existencia = Existencia.objects.filter(producto=producto, almacen=almacen).first()
+        disponible = existencia.stock_disponible if existencia else 0
+        if disponible < cantidad:
+            msg = f"Stock insuficiente: {producto.nombre} solo tiene {disponible} disponibles en {almacen.nombre if almacen else 'el almacén'}."
             return {"tipo": "error", "mensaje_pantalla": msg, "mensaje_verbal": msg}
 
         propuesta = {
             "id": str(uuid.uuid4()),
-            "tipo_operacion": TipoMovimiento.SALIDA,
+            "tipo_operacion": Movimiento.Tipo.SALIDA,
             "producto_id": producto.id,
             "producto_nombre": producto.nombre,
             "producto_codigo": producto.codigo_interno,
@@ -554,79 +606,12 @@ def procesar_comando_inventario(
             "mensaje_verbal": verbal,
         }
 
-    # 3. Préstamo
-    if re.search(r"\b(prestar|pr[eé]stamo)\b", texto_lower):
-        match_destinatario = re.search(r"\b(?:para|a)\s+([A-Za-zÁ-ÿ\s]+?)(?:\s+por|\s+motivo|\s*$)", texto, re.IGNORECASE)
-        destinatario = match_destinatario.group(1).strip() if match_destinatario else ""
-
-        termino = re.sub(r"\b(prestar|pr[eé]stamo|de|unidades|unidad)\b", " ", texto_lower)
-        if cantidad:
-            termino = re.sub(rf"\b{cantidad}\b", " ", termino)
-        if destinatario:
-            termino = re.sub(rf"\b{re.escape(destinatario.lower())}\b", " ", termino)
-
-        producto = _buscar_producto(termino.strip(), usuario)
-        if not producto:
-            msg = "Por favor indica qué producto deseas prestar."
-            return {"tipo": "conversacion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
-
-        if not cantidad or cantidad <= 0:
-            msg = f"¿Cuántas unidades de {producto.nombre} se van a prestar?"
-            return {"tipo": "conversacion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
-
-        if not destinatario:
-            msg = f"¿A quién se le van a prestar las {cantidad} unidades de {producto.nombre}?"
-            return {"tipo": "conversacion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
-
-        almacen = usuario.almacen_asignado if usuario.es_usuario_normal else producto.almacen
-        if not usuario.tiene_acceso_almacen(almacen):
-            raise PermissionDenied("No tienes acceso al almacén de este producto.")
-
-        if producto.stock_disponible < cantidad:
-            msg = f"Stock insuficiente para préstamo: {producto.nombre} solo tiene {producto.stock_disponible} disponibles."
-            return {"tipo": "error", "mensaje_pantalla": msg, "mensaje_verbal": msg}
-
-        propuesta = {
-            "id": str(uuid.uuid4()),
-            "tipo_operacion": TipoMovimiento.PRESTAMO,
-            "producto_id": producto.id,
-            "producto_nombre": producto.nombre,
-            "producto_codigo": producto.codigo_interno,
-            "cantidad": cantidad,
-            "almacen_origen_id": almacen.id,
-            "almacen_origen_nombre": almacen.nombre,
-            "destinatario": destinatario,
-            "motivo": f"Préstamo registrado por Haku a {destinatario}",
-            "creado_en": time.time(),
-            "expira_en": time.time() + 300,
-        }
-
-        verbal = (
-            f"Vas a prestar {cantidad} unidades de {producto.nombre} a {destinatario}. "
-            f"Quedarán registradas como préstamo pendiente. ¿Deseas confirmar?"
-        )
-        pantalla = (
-            f"### Propuesta pendiente de confirmación\n"
-            f"- **Operación:** Préstamo de stock\n"
-            f"- **Producto:** {producto.nombre} (`{producto.codigo_interno}`)\n"
-            f"- **Cantidad:** {cantidad} unidades\n"
-            f"- **Almacén:** {almacen.nombre}\n"
-            f"- **Responsable/Destinatario:** {destinatario}\n\n"
-            f"*Di 'Confirmar' o presiona el botón para ejecutar la transacción.*"
-        )
-        return {
-            "tipo": "propuesta",
-            "requiere_confirmacion": True,
-            "propuesta": propuesta,
-            "mensaje_pantalla": pantalla,
-            "mensaje_verbal": verbal,
-        }
-
-    # 4. Devolución de préstamo
+    # 3. Devolución de préstamo (evaluar ANTES de préstamo para no capturar 'devolver préstamo')
     if re.search(r"\b(devolver|devoluci[oó]n)\b", texto_lower):
         # Buscar préstamo activo correspondiente
-        match_destinatario = re.search(r"\b(?:de|por)\s+([A-Za-zÁ-ÿ\s]+?)(?:\s*$)", texto, re.IGNORECASE)
+        match_destinatario = re.search(r"\b(?:de|por|a|para)\s+([A-Za-zÁ-ÿ\s]+?)(?:\s*$)", texto, re.IGNORECASE)
         destinatario = match_destinatario.group(1).strip() if match_destinatario else ""
+        destinatario = re.sub(r"\b(pr[eé]stamo|pr[eé]stamos|de|el|la)\b", "", destinatario, flags=re.IGNORECASE).strip()
 
         qs_prestamos = Prestamo.objects.filter(
             estado__in=[Prestamo.Estado.ABIERTO, Prestamo.Estado.DEVUELTO_PARCIAL]
@@ -634,10 +619,21 @@ def procesar_comando_inventario(
         if usuario.es_usuario_normal and usuario.almacen_asignado:
             qs_prestamos = qs_prestamos.filter(almacen=usuario.almacen_asignado)
 
+        prestamo = None
         if destinatario:
-            qs_prestamos = qs_prestamos.filter(destinatario__icontains=destinatario)
-
-        prestamo = qs_prestamos.first()
+            prestamo = qs_prestamos.filter(destinatario__icontains=destinatario).first()
+            if not prestamo:
+                for w in destinatario.split():
+                    if len(w) >= 3:
+                        prestamo = qs_prestamos.filter(destinatario__icontains=w).first()
+                        if prestamo:
+                            break
+        if not prestamo:
+            prod = _buscar_producto(texto, usuario)
+            if prod:
+                prestamo = qs_prestamos.filter(producto=prod).first()
+        if not prestamo:
+            prestamo = qs_prestamos.first()
         if not prestamo:
             msg = "No encontré ningún préstamo activo con esos datos para devolver."
             return {"tipo": "conversacion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
@@ -649,8 +645,8 @@ def procesar_comando_inventario(
 
         propuesta = {
             "id": str(uuid.uuid4()),
-            "tipo_operacion": TipoMovimiento.DEVOLUCION_PRESTAMO,
-            "prestamo_id": prestamo.id,
+            "tipo_operacion": Movimiento.Tipo.DEVOLUCION,
+            "prestamo_id": str(prestamo.id),
             "producto_id": prestamo.producto.id,
             "producto_nombre": prestamo.producto.nombre,
             "producto_codigo": prestamo.producto.codigo_interno,
@@ -674,6 +670,78 @@ def procesar_comando_inventario(
             f"- **Cantidad devuelta:** +{cantidad_dev} unidades\n"
             f"- **Responsable:** {prestamo.destinatario}\n"
             f"- **Almacén:** {prestamo.almacen.nombre}\n\n"
+            f"*Di 'Confirmar' o presiona el botón para ejecutar la transacción.*"
+        )
+        return {
+            "tipo": "propuesta",
+            "requiere_confirmacion": True,
+            "propuesta": propuesta,
+            "mensaje_pantalla": pantalla,
+            "mensaje_verbal": verbal,
+        }
+
+    # 4. Préstamo
+    if re.search(r"\b(prestar|pr[eé]stamo)\b", texto_lower) and not re.search(r"\b(devolver|devoluci[oó]n)\b", texto_lower):
+        match_destinatario = re.search(r"\b(?:para|a)\s+([A-Za-zÁ-ÿ\s]+?)(?:\s+(?:por|motivo)|\s*$)", texto, re.IGNORECASE)
+        destinatario = match_destinatario.group(1).strip() if match_destinatario else ""
+
+        termino_prod = texto_lower
+        for w in ["prestar", "prestamo", "préstamo", "unidades", "unidad"]:
+            termino_prod = re.sub(rf"\b{w}\b", " ", termino_prod)
+        if cantidad:
+            termino_prod = re.sub(rf"\b{cantidad}\b", " ", termino_prod)
+        if destinatario:
+            termino_prod = re.sub(rf"\b(?:para|a)\s+{re.escape(destinatario.lower())}\b", " ", termino_prod)
+
+        producto = _buscar_producto(termino_prod.strip(), usuario) or _buscar_producto(texto, usuario)
+        if not producto:
+            msg = "Por favor indica qué producto deseas prestar."
+            return {"tipo": "conversacion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
+
+        if not cantidad or cantidad <= 0:
+            msg = f"¿Cuántas unidades de {producto.nombre} se van a prestar?"
+            return {"tipo": "conversacion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
+
+        if not destinatario:
+            msg = f"¿A quién se le van a prestar las {cantidad} unidades de {producto.nombre}?"
+            return {"tipo": "conversacion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
+
+        almacen = usuario.almacen_asignado if (usuario.es_usuario_normal and usuario.almacen_asignado) else producto.categoria.almacen_principal
+        if not usuario.tiene_acceso_almacen(almacen):
+            raise PermissionDenied("No tienes acceso al almacén de este producto.")
+
+        existencia = Existencia.objects.filter(producto=producto, almacen=almacen).first()
+        disponible = existencia.stock_disponible if existencia else 0
+        if disponible < cantidad:
+            msg = f"Stock insuficiente para préstamo: {producto.nombre} solo tiene {disponible} disponibles."
+            return {"tipo": "error", "mensaje_pantalla": msg, "mensaje_verbal": msg}
+
+        propuesta = {
+            "id": str(uuid.uuid4()),
+            "tipo_operacion": Movimiento.Tipo.PRESTAMO,
+            "producto_id": producto.id,
+            "producto_nombre": producto.nombre,
+            "producto_codigo": producto.codigo_interno,
+            "cantidad": cantidad,
+            "almacen_origen_id": almacen.id,
+            "almacen_origen_nombre": almacen.nombre,
+            "destinatario": destinatario,
+            "motivo": f"Préstamo registrado por Haku a {destinatario}",
+            "creado_en": time.time(),
+            "expira_en": time.time() + 300,
+        }
+
+        verbal = (
+            f"Vas a prestar {cantidad} unidades de {producto.nombre} a {destinatario}. "
+            f"Quedarán registradas como préstamo pendiente. ¿Deseas confirmar?"
+        )
+        pantalla = (
+            f"### Propuesta pendiente de confirmación\n"
+            f"- **Operación:** Préstamo de stock\n"
+            f"- **Producto:** {producto.nombre} (`{producto.codigo_interno}`)\n"
+            f"- **Cantidad:** {cantidad} unidades\n"
+            f"- **Almacén:** {almacen.nombre}\n"
+            f"- **Responsable/Destinatario:** {destinatario}\n\n"
             f"*Di 'Confirmar' o presiona el botón para ejecutar la transacción.*"
         )
         return {
@@ -737,40 +805,46 @@ def ejecutar_confirmacion_propuesta(
     if not idempotency_key:
         idempotency_key = f"haku-{propuesta['id']}-{uuid.uuid4().hex[:8]}"
 
-    # Verificar si ya fue procesada con esta idempotency_key
-    existente = Movimiento.objects.filter(idempotency_key=idempotency_key).first()
+    # Verificar si ya fue procesada con esta clave de idempotencia
+    existente = Movimiento.objects.filter(clave_idempotencia=idempotency_key).first()
     if existente:
         return {
             "exito": True,
             "idempotente": True,
-            "movimiento_id": existente.id,
+            "movimiento_id": str(existente.id),
             "mensaje_pantalla": f"Operación previamente confirmada (Movimiento #{existente.id}).",
             "mensaje_verbal": "Esta operación ya había sido confirmada previamente.",
         }
 
     with transaction.atomic():
-        # Bloquear producto con select_for_update()
+        # Bloquear producto y existencia con select_for_update()
         producto = (
             Producto.objects.select_for_update()
-            .get(id=propuesta["producto_id"], activo=True, eliminado=False)
+            .get(id=propuesta["producto_id"], activo=True, archivado=False)
         )
 
         almacen = Almacen.objects.select_for_update().get(id=propuesta["almacen_origen_id"])
         if not usuario.tiene_acceso_almacen(almacen):
             raise PermissionDenied("No tienes permisos para operar en este almacén.")
 
-        stock_ant = producto.stock_disponible
+        existencia, _ = Existencia.objects.select_for_update().get_or_create(
+            producto=producto,
+            almacen=almacen,
+            defaults={"stock_disponible": 0, "stock_en_prestamo": 0},
+        )
+
+        stock_ant = existencia.stock_disponible
         stock_post = stock_ant
         movimiento = None
 
-        if tipo_op == TipoMovimiento.ENTRADA:
+        if tipo_op == Movimiento.Tipo.ENTRADA:
             stock_post = stock_ant + cantidad
-            producto.stock_disponible = stock_post
-            producto.save(update_fields=["stock_disponible", "fecha_modificacion"])
+            existencia.stock_disponible = stock_post
+            existencia.save(update_fields=["stock_disponible"])
 
             movimiento = Movimiento.objects.create(
-                idempotency_key=idempotency_key,
-                tipo=TipoMovimiento.ENTRADA,
+                clave_idempotencia=idempotency_key,
+                tipo=Movimiento.Tipo.ENTRADA,
                 producto=producto,
                 cantidad=cantidad,
                 almacen_origen=almacen,
@@ -778,21 +852,20 @@ def ejecutar_confirmacion_propuesta(
                 motivo=propuesta.get("motivo", "Entrada vía Haku"),
                 stock_disponible_anterior=stock_ant,
                 stock_disponible_posterior=stock_post,
-                via_haku=True,
             )
 
-        elif tipo_op == TipoMovimiento.SALIDA:
+        elif tipo_op == Movimiento.Tipo.SALIDA:
             if stock_ant < cantidad:
                 raise ValidationError(
                     f"Stock insuficiente: se intentó retirar {cantidad} unidades pero solo hay {stock_ant} disponibles."
                 )
             stock_post = stock_ant - cantidad
-            producto.stock_disponible = stock_post
-            producto.save(update_fields=["stock_disponible", "fecha_modificacion"])
+            existencia.stock_disponible = stock_post
+            existencia.save(update_fields=["stock_disponible"])
 
             movimiento = Movimiento.objects.create(
-                idempotency_key=idempotency_key,
-                tipo=TipoMovimiento.SALIDA,
+                clave_idempotencia=idempotency_key,
+                tipo=Movimiento.Tipo.SALIDA,
                 producto=producto,
                 cantidad=cantidad,
                 almacen_origen=almacen,
@@ -801,22 +874,21 @@ def ejecutar_confirmacion_propuesta(
                 motivo=propuesta.get("motivo", "Salida vía Haku"),
                 stock_disponible_anterior=stock_ant,
                 stock_disponible_posterior=stock_post,
-                via_haku=True,
             )
 
-        elif tipo_op == TipoMovimiento.PRESTAMO:
+        elif tipo_op == Movimiento.Tipo.PRESTAMO:
             if stock_ant < cantidad:
                 raise ValidationError(
                     f"Stock insuficiente para préstamo: {stock_ant} disponibles, se solicitaron {cantidad}."
                 )
             stock_post = stock_ant - cantidad
-            producto.stock_disponible = stock_post
-            producto.stock_en_prestamo += cantidad
-            producto.save(update_fields=["stock_disponible", "stock_en_prestamo", "fecha_modificacion"])
+            existencia.stock_disponible = stock_post
+            existencia.stock_en_prestamo += cantidad
+            existencia.save(update_fields=["stock_disponible", "stock_en_prestamo"])
 
             movimiento = Movimiento.objects.create(
-                idempotency_key=idempotency_key,
-                tipo=TipoMovimiento.PRESTAMO,
+                clave_idempotencia=idempotency_key,
+                tipo=Movimiento.Tipo.PRESTAMO,
                 producto=producto,
                 cantidad=cantidad,
                 almacen_origen=almacen,
@@ -825,30 +897,29 @@ def ejecutar_confirmacion_propuesta(
                 motivo=propuesta.get("motivo", "Préstamo vía Haku"),
                 stock_disponible_anterior=stock_ant,
                 stock_disponible_posterior=stock_post,
-                via_haku=True,
             )
 
             # Crear registro de préstamo
             Prestamo.objects.create(
+                movimiento=movimiento,
                 producto=producto,
                 almacen=almacen,
                 destinatario=propuesta.get("destinatario", ""),
-                cantidad_prestada=cantidad,
+                cantidad_original=cantidad,
                 cantidad_pendiente_devolucion=cantidad,
                 estado=Prestamo.Estado.ABIERTO,
                 usuario=usuario,
-                motivo=propuesta.get("motivo", ""),
             )
 
-        elif tipo_op == TipoMovimiento.DEVOLUCION_PRESTAMO:
+        elif tipo_op == Movimiento.Tipo.DEVOLUCION:
             prestamo = Prestamo.objects.select_for_update().get(id=propuesta["prestamo_id"])
             if cantidad > prestamo.cantidad_pendiente_devolucion:
                 raise ValidationError("La cantidad a devolver excede el saldo pendiente del préstamo.")
 
             stock_post = stock_ant + cantidad
-            producto.stock_disponible = stock_post
-            producto.stock_en_prestamo = max(0, producto.stock_en_prestamo - cantidad)
-            producto.save(update_fields=["stock_disponible", "stock_en_prestamo", "fecha_modificacion"])
+            existencia.stock_disponible = stock_post
+            existencia.stock_en_prestamo = max(0, existencia.stock_en_prestamo - cantidad)
+            existencia.save(update_fields=["stock_disponible", "stock_en_prestamo"])
 
             prestamo.cantidad_pendiente_devolucion -= cantidad
             if prestamo.cantidad_pendiente_devolucion == 0:
@@ -858,8 +929,8 @@ def ejecutar_confirmacion_propuesta(
             prestamo.save(update_fields=["cantidad_pendiente_devolucion", "estado"])
 
             movimiento = Movimiento.objects.create(
-                idempotency_key=idempotency_key,
-                tipo=TipoMovimiento.DEVOLUCION_PRESTAMO,
+                clave_idempotencia=idempotency_key,
+                tipo=Movimiento.Tipo.DEVOLUCION,
                 producto=producto,
                 cantidad=cantidad,
                 almacen_origen=almacen,
@@ -868,17 +939,15 @@ def ejecutar_confirmacion_propuesta(
                 motivo=propuesta.get("motivo", "Devolución vía Haku"),
                 stock_disponible_anterior=stock_ant,
                 stock_disponible_posterior=stock_post,
-                via_haku=True,
             )
 
             DevolucionPrestamo.objects.create(
                 prestamo=prestamo,
-                tipo_cierre=DevolucionPrestamo.TipoCierre.DEVOLUCION_TOTAL
-                if prestamo.estado == Prestamo.Estado.CERRADO
-                else DevolucionPrestamo.TipoCierre.DEVOLUCION_PARCIAL,
                 cantidad=cantidad,
-                motivo=propuesta.get("motivo", ""),
+                tipo=DevolucionPrestamo.Tipo.DEVOLUCION,
+                motivo=propuesta.get("motivo", "Devolución vía Haku"),
                 usuario=usuario,
+                movimiento=movimiento,
             )
         else:
             raise ValidationError(f"Tipo de operación '{tipo_op}' no soportado vía Haku.")
@@ -886,13 +955,12 @@ def ejecutar_confirmacion_propuesta(
         # Registro inmutable de auditoría
         Auditoria.objects.create(
             usuario=usuario,
-            ip_origen=ip_origen,
             accion=tipo_op,
             tipo_entidad="Producto",
             id_entidad=str(producto.id),
             valores_anteriores={"stock_disponible": stock_ant},
             valores_nuevos={"stock_disponible": stock_post},
-            motivo=f"Operación confirmada vía Haku: {propuesta.get('motivo', '')}",
+            motivo=f"Operación confirmada vía Haku desde IP {ip_origen}: {propuesta.get('motivo', '')}",
             resultado="OK",
             via_haku=True,
         )

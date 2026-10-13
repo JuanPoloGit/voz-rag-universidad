@@ -28,10 +28,10 @@ from inventario.models import (
     Almacen,
     Auditoria,
     Categoria,
+    Existencia,
     Movimiento,
     Prestamo,
     Producto,
-    TipoMovimiento,
     Ubicacion,
 )
 from integraciones.haku.middleware import HakuSessionMiddleware
@@ -137,11 +137,16 @@ class BaseHakuTestCase(TestCase):
         self.producto = Producto.objects.create(
             codigo_interno="CAB-0001",
             nombre="Cable HDMI 2m",
-            almacen=self.almacen_principal,
             categoria=self.categoria,
             stock_inicial=50,
-            stock_disponible=50,
             stock_minimo=10,
+        )
+
+        self.existencia = Existencia.objects.create(
+            producto=self.producto,
+            almacen=self.almacen_principal,
+            stock_disponible=50,
+            stock_en_prestamo=0,
         )
 
         self.superusuario = UsuarioAudacIA.objects.create_superuser(
@@ -193,8 +198,8 @@ class PreConfirmacionHakuTestCase(BaseHakuTestCase):
         self.assertEqual(res["propuesta"]["destinatario"], "Carlos")
 
         # Verificar que el stock NO ha cambiado aún
-        self.producto.refresh_from_db()
-        self.assertEqual(self.producto.stock_disponible, 50)
+        self.existencia.refresh_from_db()
+        self.assertEqual(self.existencia.stock_disponible, 50)
         self.assertEqual(Movimiento.objects.count(), 0)
 
     def test_confirmacion_atomica_salida_con_via_haku(self):
@@ -215,18 +220,17 @@ class PreConfirmacionHakuTestCase(BaseHakuTestCase):
         self.assertEqual(resultado["stock_nuevo"], 45)
 
         # Verificar base de datos
-        self.producto.refresh_from_db()
-        self.assertEqual(self.producto.stock_disponible, 45)
+        self.existencia.refresh_from_db()
+        self.assertEqual(self.existencia.stock_disponible, 45)
 
         movimiento = Movimiento.objects.get(id=resultado["movimiento_id"])
-        self.assertEqual(movimiento.tipo, TipoMovimiento.SALIDA)
+        self.assertEqual(movimiento.tipo, Movimiento.Tipo.SALIDA)
         self.assertEqual(movimiento.cantidad, 5)
         self.assertEqual(movimiento.destinatario, "Carlos")
-        self.assertTrue(movimiento.via_haku)
 
         auditoria = Auditoria.objects.filter(via_haku=True).first()
         self.assertIsNotNone(auditoria)
-        self.assertEqual(auditoria.accion, TipoMovimiento.SALIDA)
+        self.assertEqual(auditoria.accion, Movimiento.Tipo.SALIDA)
         self.assertEqual(auditoria.usuario, self.usuario_central)
 
     def test_prohibicion_stock_negativo_via_haku(self):
@@ -264,9 +268,9 @@ class PrestamosHakuTestCase(BaseHakuTestCase):
             propuesta=res_prestamo["propuesta"],
         )
 
-        self.producto.refresh_from_db()
-        self.assertEqual(self.producto.stock_disponible, 47)
-        self.assertEqual(self.producto.stock_en_prestamo, 3)
+        self.existencia.refresh_from_db()
+        self.assertEqual(self.existencia.stock_disponible, 47)
+        self.assertEqual(self.existencia.stock_en_prestamo, 3)
 
         prestamo = Prestamo.objects.get(destinatario="María Gómez")
         self.assertEqual(prestamo.cantidad_pendiente_devolucion, 3)
@@ -284,9 +288,9 @@ class PrestamosHakuTestCase(BaseHakuTestCase):
             propuesta=res_dev["propuesta"],
         )
 
-        self.producto.refresh_from_db()
-        self.assertEqual(self.producto.stock_disponible, 50)
-        self.assertEqual(self.producto.stock_en_prestamo, 0)
+        self.existencia.refresh_from_db()
+        self.assertEqual(self.existencia.stock_disponible, 50)
+        self.assertEqual(self.existencia.stock_en_prestamo, 0)
 
         prestamo.refresh_from_db()
         self.assertEqual(prestamo.estado, Prestamo.Estado.CERRADO)

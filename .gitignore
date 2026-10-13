@@ -21,6 +21,8 @@ chroma_db/
 hacu_memory.db
 hacu_memory.db-wal
 hacu_memory.db-shm
+*.sqlite3
+db.sqlite3
 logs/
 # Informes de las baterias y los guiones: miden una version concreta del
 # corpus, asi que envejecen mal y no sirven como referencia despues.

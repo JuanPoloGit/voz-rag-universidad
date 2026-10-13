@@ -74,23 +74,32 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "inventario_audacia.wsgi.application"
 
-# ─── Base de datos (PostgreSQL local) ────────────────────────────────────────
+# ─── Base de datos (PostgreSQL local o SQLite configurable) ───────────────────
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("DB_NAME", "inventario_audacia"),
-        "USER": os.getenv("DB_USER", "inventario"),
-        "PASSWORD": os.getenv("DB_PASSWORD", ""),
-        "HOST": os.getenv("DB_HOST", "localhost"),
-        "PORT": os.getenv("DB_PORT", "5432"),
-        # Aislamiento SERIALIZABLE garantiza que las transacciones con
-        # select_for_update() no generen anomalías en los movimientos.
-        "OPTIONS": {
-            "options": "-c default_transaction_isolation=read\\ committed",
-        },
+DB_ENGINE = os.getenv("DB_ENGINE", "postgresql").lower()
+if "sqlite" in DB_ENGINE:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.getenv("DB_NAME", "inventario_audacia"),
+            "USER": os.getenv("DB_USER", "inventario"),
+            "PASSWORD": os.getenv("DB_PASSWORD", ""),
+            "HOST": os.getenv("DB_HOST", "localhost"),
+            "PORT": os.getenv("DB_PORT", "5432"),
+            # Aislamiento SERIALIZABLE garantiza que las transacciones con
+            # select_for_update() no generen anomalías en los movimientos.
+            "OPTIONS": {
+                "options": "-c default_transaction_isolation=read\\ committed",
+            },
+        }
+    }
 
 # ─── Modelo de usuario personalizado ─────────────────────────────────────────
 

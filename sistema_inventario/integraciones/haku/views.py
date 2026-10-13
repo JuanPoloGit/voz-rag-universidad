@@ -19,7 +19,7 @@ from django.views import View
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.generic import TemplateView
 
-from inventario.models import Almacen, Prestamo, Producto
+from inventario.models import Almacen, Existencia, Prestamo, Producto
 
 from .serializers import (
     ValidadorComando,
@@ -207,6 +207,8 @@ class CancelarPropuestaView(HakuApiBaseView):
         })
 
 
+
+
 class ConsultarStockView(HakuApiBaseView):
     """Consulta directa de existencias por término de búsqueda.
 
@@ -215,27 +217,30 @@ class ConsultarStockView(HakuApiBaseView):
 
     def get(self, request):
         termino = request.GET.get("q", "").strip()
-        qs = Producto.objects.filter(activo=True, eliminado=False).select_related("almacen", "categoria")
+        qs = Existencia.objects.filter(
+            producto__activo=True,
+            producto__archivado=False,
+        ).select_related("producto", "producto__categoria", "almacen")
 
         if request.user.es_usuario_normal and request.user.almacen_asignado:
             qs = qs.filter(almacen=request.user.almacen_asignado)
 
         if termino:
-            qs = qs.filter(nombre__icontains=termino) | qs.filter(codigo_interno__icontains=termino)
+            qs = qs.filter(producto__nombre__icontains=termino) | qs.filter(producto__codigo_interno__icontains=termino)
 
         productos = []
-        for p in qs[:20]:
+        for e in qs[:20]:
             productos.append({
-                "id": p.id,
-                "codigo": p.codigo_interno,
-                "codigo_barras": p.codigo_barras,
-                "nombre": p.nombre,
-                "categoria": p.categoria.nombre if p.categoria else "",
-                "almacen": p.almacen.nombre if p.almacen else "",
-                "stock_disponible": p.stock_disponible,
-                "stock_en_prestamo": p.stock_en_prestamo,
-                "stock_minimo": p.stock_minimo,
-                "estado_alerta": "SIN_STOCK" if p.stock_disponible == 0 else ("BAJO_STOCK" if p.stock_disponible < p.stock_minimo else "NORMAL"),
+                "id": str(e.producto.id),
+                "codigo": e.producto.codigo_interno,
+                "codigo_barras": e.producto.codigo_barras,
+                "nombre": e.producto.nombre,
+                "categoria": e.producto.categoria.nombre if e.producto.categoria else "",
+                "almacen": e.almacen.nombre,
+                "stock_disponible": e.stock_disponible,
+                "stock_en_prestamo": e.stock_en_prestamo,
+                "stock_minimo": e.producto.stock_minimo,
+                "estado_alerta": "SIN_STOCK" if e.sin_stock else ("BAJO_STOCK" if e.stock_bajo else "NORMAL"),
             })
 
         return JsonResponse({"productos": productos, "total": len(productos)})
@@ -248,24 +253,27 @@ class AlertasStockView(HakuApiBaseView):
     """
 
     def get(self, request):
-        qs = Producto.objects.filter(activo=True, eliminado=False).select_related("almacen")
+        qs = Existencia.objects.filter(
+            producto__activo=True,
+            producto__archivado=False,
+        ).select_related("producto", "almacen")
         if request.user.es_usuario_normal and request.user.almacen_asignado:
             qs = qs.filter(almacen=request.user.almacen_asignado)
 
         sin_stock = []
         bajo_stock = []
 
-        for p in qs:
-            if p.stock_disponible == 0:
-                sin_stock.append({"id": p.id, "codigo": p.codigo_interno, "nombre": p.nombre, "almacen": p.almacen.nombre})
-            elif p.stock_disponible < p.stock_minimo:
+        for e in qs:
+            if e.sin_stock:
+                sin_stock.append({"id": str(e.producto.id), "codigo": e.producto.codigo_interno, "nombre": e.producto.nombre, "almacen": e.almacen.nombre})
+            elif e.stock_bajo:
                 bajo_stock.append({
-                    "id": p.id,
-                    "codigo": p.codigo_interno,
-                    "nombre": p.nombre,
-                    "almacen": p.almacen.nombre,
-                    "disponible": p.stock_disponible,
-                    "minimo": p.stock_minimo,
+                    "id": str(e.producto.id),
+                    "codigo": e.producto.codigo_interno,
+                    "nombre": e.producto.nombre,
+                    "almacen": e.almacen.nombre,
+                    "disponible": e.stock_disponible,
+                    "minimo": e.producto.stock_minimo,
                 })
 
         return JsonResponse({
