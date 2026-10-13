@@ -1,0 +1,697 @@
+/**
+ * Haku Inventario — Cliente de Voz Web y Push-to-Talk
+ * Responsable: Integrante 4 (Haku Inventario, API Interna y Voz Web)
+ *
+ * Características principales:
+ * - Push-to-Talk mediante barra espaciadora en PC (cuando no se está en un input/textarea)
+ * - Botón táctil para móvil / tablet (tap o pulsar sostenido)
+ * - Captura de micrófono con MediaRecorder API
+ * - Transcripción con faster-whisper en el servidor
+ * - Reproducción de audio TTS (Piper) EXCLUSIVAMENTE en el navegador del cliente
+ * - Normalización fonética ("Audacia") y cero audio en altavoces del servidor
+ * - Flujo de Pre-Confirmación obligatoria en dos pasos para mutaciones
+ * - Expiración del contexto conversacional tras 30 minutos de inactividad
+ */
+
+(function () {
+    "use strict";
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CONFIGURACIÓN Y CONSTANTES
+    // ─────────────────────────────────────────────────────────────────────────
+
+    const CONFIG = {
+        ENDPOINTS: {
+            MENSAJE: "/api/haku/mensaje/",
+            CONFIRMAR: "/api/haku/confirmar/",
+            CANCELAR: "/api/haku/cancelar/",
+            TRANSCRIBIR: "/api/haku/voz/transcribir/",
+            SINTETIZAR: "/api/haku/voz/sintetizar/",
+            ESTADO: "/api/haku/estado/",
+            ALERTAS: "/api/haku/alertas/",
+        },
+        TIMEOUT_INACTIVIDAD_MS: 30 * 60 * 1000, // 30 minutos
+        MIME_TYPES: [
+            "audio/webm;codecs=opus",
+            "audio/webm",
+            "audio/ogg;codecs=opus",
+            "audio/wav",
+        ],
+    };
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ESTADO DE LA APLICACIÓN
+    // ─────────────────────────────────────────────────────────────────────────
+
+    const state = {
+        grabando: false,
+        procesando: false,
+        reproduciendoAudio: false,
+        mediaRecorder: null,
+        audioChunks: [],
+        streamMicrofono: null,
+        propuestaActiva: null,
+        ultimoAcceso: Date.now(),
+        timerInactividad: null,
+        espacioPresionado: false,
+    };
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // UTILIDADES CSRF Y RED
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function getCsrfToken() {
+        // 1. Buscar en meta tag
+        const metaTag = document.querySelector('meta[name="csrf-token"]');
+        if (metaTag && metaTag.content) return metaTag.content;
+
+        // 2. Buscar en input oculto
+        const inputCsrf = document.querySelector('input[name="csrfmiddlewaretoken"]');
+        if (inputCsrf && inputCsrf.value) return inputCsrf.value;
+
+        // 3. Buscar en cookies
+        const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]*)/);
+        return match ? decodeURIComponent(match[1]) : "";
+    }
+
+    async function apiFetch(url, options = {}) {
+        const headers = options.headers || {};
+        headers["X-CSRFToken"] = getCsrfToken();
+        headers["X-Requested-With"] = "XMLHttpRequest";
+
+        const config = { ...options, headers };
+        const response = await fetch(url, config);
+
+        if (response.status === 401) {
+            mostrarToast("Sesión expirada o no iniciada. Redirigiendo...", "error");
+            setTimeout(() => { window.location.href = "/cuentas/login/"; }, 1500);
+            throw new Error("No autenticado");
+        }
+
+        if (response.status === 403) {
+            mostrarToast("Acceso denegado o cuenta desactivada.", "error");
+            throw new Error("Acceso denegado");
+        }
+
+        return response;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // GESTIÓN DEL TIMER DE 30 MINUTOS DE INACTIVIDAD
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function reiniciarTimerInactividad() {
+        state.ultimoAcceso = Date.now();
+        if (state.timerInactividad) clearTimeout(state.timerInactividad);
+
+        state.timerInactividad = setTimeout(() => {
+            manejarExpiracionInactividad();
+        }, CONFIG.TIMEOUT_INACTIVIDAD_MS);
+    }
+
+    function manejarExpiracionInactividad() {
+        state.propuestaActiva = null;
+        ocultarTarjetaPropuesta();
+        mostrarToast("El contexto de Haku ha caducado por inactividad (30 min). Tu sesión sigue abierta.", "info");
+        agregarMensajeSistema("Contexto conversacional reiniciado por inactividad (30 min).");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // GRABACIÓN DE VOZ (MICROFONO CLIENTE)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    async function iniciarGrabacion() {
+        if (state.grabando || state.procesando) return;
+
+        try {
+            if (!state.streamMicrofono) {
+                state.streamMicrofono = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        sampleRate: 16000,
+                    },
+                });
+            }
+
+            // Seleccionar el formato de grabación soportado
+            let mimeType = "";
+            for (const t of CONFIG.MIME_TYPES) {
+                if (MediaRecorder.isTypeSupported(t)) {
+                    mimeType = t;
+                    break;
+                }
+            }
+
+            state.audioChunks = [];
+            state.mediaRecorder = mimeType
+                ? new MediaRecorder(state.streamMicrofono, { mimeType })
+                : new MediaRecorder(state.streamMicrofono);
+
+            state.mediaRecorder.ondataavailable = (event) => {
+                if (event.data && event.data.size > 0) {
+                    state.audioChunks.push(event.data);
+                }
+            };
+
+            state.mediaRecorder.onstop = procesarAudioGrabado;
+
+            state.mediaRecorder.start(250); // trozos cada 250ms
+            state.grabando = true;
+            actualizarEstadoVisual("grabando");
+        } catch (error) {
+            console.error("Error al acceder al micrófono:", error);
+            mostrarToast("No se pudo acceder al micrófono. Verifica los permisos del navegador o el certificado HTTPS.", "error");
+            actualizarEstadoVisual("reposo");
+        }
+    }
+
+    function detenerGrabacion() {
+        if (!state.grabando || !state.mediaRecorder) return;
+        state.grabando = false;
+        actualizarEstadoVisual("procesando");
+        try {
+            state.mediaRecorder.stop();
+        } catch (e) {
+            console.error("Error al detener grabador:", e);
+        }
+    }
+
+    async function procesarAudioGrabado() {
+        if (state.audioChunks.length === 0) {
+            actualizarEstadoVisual("reposo");
+            return;
+        }
+
+        const mime = (state.mediaRecorder && state.mediaRecorder.mimeType) || "audio/webm";
+        const audioBlob = new Blob(state.audioChunks, { type: mime });
+        state.audioChunks = [];
+
+        // Filtro: si el audio dura menos de 300ms, descartar (clic accidental)
+        if (audioBlob.size < 1000) {
+            actualizarEstadoVisual("reposo");
+            return;
+        }
+
+        state.procesando = true;
+        actualizarEstadoVisual("procesando");
+
+        try {
+            reiniciarTimerInactividad();
+
+            // 1. Enviar audio para transcripción con faster-whisper
+            const formData = new FormData();
+            formData.append("audio", audioBlob, "grabacion.webm");
+
+            const respSTT = await apiFetch(CONFIG.ENDPOINTS.TRANSCRIBIR, {
+                method: "POST",
+                body: formData,
+            });
+
+            const dataSTT = await respSTT.json();
+            const textoTranscrito = (dataSTT.texto || "").trim();
+
+            if (!textoTranscrito) {
+                mostrarToast("No se detectó voz clara. Intenta nuevamente.", "info");
+                actualizarEstadoVisual("reposo");
+                state.procesando = false;
+                return;
+            }
+
+            // Mostrar lo que el usuario dijo
+            agregarMensajeChat("usuario", textoTranscrito);
+
+            // 2. Procesar el comando con Haku
+            await enviarComandoHaku(textoTranscrito);
+
+        } catch (error) {
+            console.error("Error procesando audio:", error);
+            mostrarToast("Error de conexión al procesar audio.", "error");
+            actualizarEstadoVisual("reposo");
+        } finally {
+            state.procesando = false;
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ENVÍO DE COMANDO Y RESPUESTA
+    // ─────────────────────────────────────────────────────────────────────────
+
+    async function enviarComandoHaku(mensajeTexto) {
+        reiniciarTimerInactividad();
+        actualizarEstadoVisual("procesando");
+
+        try {
+            const resp = await apiFetch(CONFIG.ENDPOINTS.MENSAJE, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ mensaje: mensajeTexto }),
+            });
+
+            const data = await resp.json();
+
+            if (data.error) {
+                agregarMensajeChat("haku", `⚠️ **Error:** ${data.error}`);
+                if (data.mensaje_verbal) reproducirVozCliente(data.mensaje_verbal);
+                actualizarEstadoVisual("reposo");
+                return;
+            }
+
+            // Si es una propuesta pendiente de confirmación
+            if (data.tipo === "propuesta" && data.propuesta) {
+                state.propuestaActiva = data.propuesta;
+                mostrarTarjetaPropuesta(data.propuesta);
+            } else if (data.tipo === "confirmacion_ejecutada" || data.tipo === "propuesta_cancelada") {
+                state.propuestaActiva = null;
+                ocultarTarjetaPropuesta();
+            }
+
+            // Mostrar respuesta en chat
+            if (data.mensaje_pantalla) {
+                agregarMensajeChat("haku", data.mensaje_pantalla, data.tipo);
+            }
+
+            // Reproducir síntesis de voz en el dispositivo cliente
+            if (data.mensaje_verbal) {
+                await reproducirVozCliente(data.mensaje_verbal);
+            } else {
+                actualizarEstadoVisual("reposo");
+            }
+
+        } catch (error) {
+            console.error("Error al enviar comando:", error);
+            agregarMensajeChat("haku", "⚠️ Ocurrió un error al procesar tu solicitud.");
+            actualizarEstadoVisual("reposo");
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // SÍNTESIS DE VOZ Y REPRODUCCIÓN EN CLIENTE (PIPER TTS)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    async function reproducirVozCliente(textoParaVoz) {
+        if (!textoParaVoz) {
+            actualizarEstadoVisual("reposo");
+            return;
+        }
+
+        try {
+            actualizarEstadoVisual("hablando");
+            state.reproduciendoAudio = true;
+
+            const resp = await apiFetch(CONFIG.ENDPOINTS.SINTETIZAR, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ texto: textoParaVoz }),
+            });
+
+            if (!resp.ok) {
+                actualizarEstadoVisual("reposo");
+                state.reproduciendoAudio = false;
+                return;
+            }
+
+            const audioBlob = await resp.blob();
+            const audioUrl = URL.createObjectURL(audioBlob);
+            const audio = new Audio(audioUrl);
+
+            audio.onended = () => {
+                URL.revokeObjectURL(audioUrl);
+                state.reproduciendoAudio = false;
+                actualizarEstadoVisual("reposo");
+            };
+
+            audio.onerror = () => {
+                URL.revokeObjectURL(audioUrl);
+                state.reproduciendoAudio = false;
+                actualizarEstadoVisual("reposo");
+            };
+
+            await audio.play();
+
+        } catch (error) {
+            console.warn("No se pudo reproducir audio en cliente:", error);
+            state.reproduciendoAudio = false;
+            actualizarEstadoVisual("reposo");
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // PRE-CONFIRMACIÓN: CONFIRMAR O CANCELAR PROPUESTA
+    // ─────────────────────────────────────────────────────────────────────────
+
+    async function confirmarPropuestaManual(propuestaId) {
+        if (!propuestaId) return;
+        reiniciarTimerInactividad();
+        actualizarEstadoVisual("procesando");
+
+        try {
+            const resp = await apiFetch(CONFIG.ENDPOINTS.CONFIRMAR, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ propuesta_id: propuestaId }),
+            });
+
+            const data = await resp.json();
+
+            if (data.error) {
+                mostrarToast(data.error, "error");
+                agregarMensajeChat("haku", `⚠️ No se pudo completar: ${data.error}`);
+            } else {
+                state.propuestaActiva = null;
+                ocultarTarjetaPropuesta();
+                agregarMensajeChat("haku", `✅ ${data.mensaje_pantalla}`, "confirmacion_ejecutada");
+                if (data.mensaje_verbal) {
+                    await reproducirVozCliente(data.mensaje_verbal);
+                }
+            }
+        } catch (error) {
+            console.error("Error al confirmar propuesta:", error);
+            mostrarToast("Error al confirmar la transacción.", "error");
+        } finally {
+            actualizarEstadoVisual("reposo");
+        }
+    }
+
+    async function cancelarPropuestaManual(propuestaId) {
+        reiniciarTimerInactividad();
+
+        try {
+            await apiFetch(CONFIG.ENDPOINTS.CANCELAR, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ propuesta_id: propuestaId }),
+            });
+
+            state.propuestaActiva = null;
+            ocultarTarjetaPropuesta();
+            agregarMensajeChat("haku", "❌ Operación cancelada por el usuario.", "propuesta_cancelada");
+            await reproducirVozCliente("Operación cancelada. No se realizaron cambios.");
+        } catch (error) {
+            console.error("Error al cancelar propuesta:", error);
+        } finally {
+            actualizarEstadoVisual("reposo");
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // PUSH-TO-TALK CON BARRA ESPACIADORA (PC)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function configurarPushToTalkTeclado() {
+        window.addEventListener("keydown", (e) => {
+            // Verificar si es la barra espaciadora
+            if (e.code !== "Space" && e.key !== " ") return;
+
+            // No interceptar si el usuario está escribiendo en un input o editable
+            const activo = document.activeElement;
+            const esCampoDeTexto =
+                activo &&
+                (activo.tagName === "INPUT" ||
+                 activo.tagName === "TEXTAREA" ||
+                 activo.tagName === "SELECT" ||
+                 activo.isContentEditable);
+
+            if (esCampoDeTexto) return;
+
+            e.preventDefault(); // Evitar scroll de la página con espacio
+
+            if (!state.espacioPresionado && !state.grabando && !state.procesando) {
+                state.espacioPresionado = true;
+                iniciarGrabacion();
+            }
+        });
+
+        window.addEventListener("keyup", (e) => {
+            if (e.code !== "Space" && e.key !== " ") return;
+
+            if (state.espacioPresionado) {
+                state.espacioPresionado = false;
+                if (state.grabando) {
+                    detenerGrabacion();
+                }
+            }
+        });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // BOTÓN MÓVIL / TÁCTIL (CLICK Y TOUCH)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function configurarBotonMicrofono() {
+        const btnMic = document.getElementById("haku-btn-mic");
+        if (!btnMic) return;
+
+        // Soporte táctil móvil (mantener pulsado para hablar)
+        btnMic.addEventListener("touchstart", (e) => {
+            e.preventDefault();
+            iniciarGrabacion();
+        }, { passive: false });
+
+        btnMic.addEventListener("touchend", (e) => {
+            e.preventDefault();
+            detenerGrabacion();
+        }, { passive: false });
+
+        // Soporte clic (toggle o clic para alternar)
+        btnMic.addEventListener("click", (e) => {
+            e.preventDefault();
+            if (state.grabando) {
+                detenerGrabacion();
+            } else {
+                iniciarGrabacion();
+            }
+        });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // COMPONENTES DE INTERFAZ GRÁFICA
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function actualizarEstadoVisual(nuevoEstado) {
+        const btnMic = document.getElementById("haku-btn-mic");
+        const statusLabel = document.getElementById("haku-status-label");
+        const waveContainer = document.getElementById("haku-wave-container");
+
+        if (btnMic) {
+            btnMic.classList.remove("recording", "processing", "speaking");
+            if (nuevoEstado === "grabando") btnMic.classList.add("recording");
+            if (nuevoEstado === "procesando") btnMic.classList.add("processing");
+            if (nuevoEstado === "hablando") btnMic.classList.add("speaking");
+        }
+
+        if (statusLabel) {
+            switch (nuevoEstado) {
+                case "grabando":
+                    statusLabel.textContent = "Escuchando... (suelta Espacio o toca el micro)";
+                    statusLabel.className = "status-recording";
+                    break;
+                case "procesando":
+                    statusLabel.textContent = "Haku está pensando...";
+                    statusLabel.className = "status-processing";
+                    break;
+                case "hablando":
+                    statusLabel.textContent = "Haku respondiendo...";
+                    statusLabel.className = "status-speaking";
+                    break;
+                default:
+                    statusLabel.textContent = "Presiona Espacio o toca el micrófono para hablar";
+                    statusLabel.className = "status-idle";
+            }
+        }
+
+        if (waveContainer) {
+            waveContainer.style.display = nuevoEstado === "grabando" || nuevoEstado === "hablando" ? "flex" : "none";
+        }
+    }
+
+    function agregarMensajeChat(remitente, texto, tipo = "normal") {
+        const chatFeed = document.getElementById("haku-chat-feed");
+        if (!chatFeed) return;
+
+        const bubble = document.createElement("div");
+        bubble.className = `haku-msg haku-msg-${remitente} haku-msg-type-${tipo}`;
+
+        const hora = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        const encabezado = remitente === "usuario" ? "Tú" : "Haku";
+
+        // Formato simple de markdown para negritas y listas
+        let htmlTexto = escapeHtml(texto)
+            .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+            .replace(/`([^`]+)`/g, "<code>$1</code>")
+            .replace(/\n/g, "<br>");
+
+        bubble.innerHTML = `
+            <div class="msg-header">
+                <span class="msg-sender">${encabezado}</span>
+                <span class="msg-time">${hora}</span>
+            </div>
+            <div class="msg-body">${htmlTexto}</div>
+        `;
+
+        chatFeed.appendChild(bubble);
+        chatFeed.scrollTop = chatFeed.scrollHeight;
+    }
+
+    function agregarMensajeSistema(texto) {
+        const chatFeed = document.getElementById("haku-chat-feed");
+        if (!chatFeed) return;
+
+        const info = document.createElement("div");
+        info.className = "haku-msg-sistema";
+        info.textContent = texto;
+        chatFeed.appendChild(info);
+        chatFeed.scrollTop = chatFeed.scrollHeight;
+    }
+
+    function mostrarTarjetaPropuesta(propuesta) {
+        const contenedor = document.getElementById("haku-propuesta-card");
+        if (!contenedor) return;
+
+        const badges = {
+            ENTRADA: '<span class="badge badge-success">Entrada de stock</span>',
+            SALIDA: '<span class="badge badge-danger">Salida de stock</span>',
+            PRESTAMO: '<span class="badge badge-warning">Préstamo de artículo</span>',
+            DEVOLUCION_PRESTAMO: '<span class="badge badge-info">Devolución de préstamo</span>',
+        };
+
+        const badgeHtml = badges[propuesta.tipo_operacion] || '<span class="badge badge-secondary">Operación</span>';
+
+        contenedor.innerHTML = `
+            <div class="propuesta-inner">
+                <div class="propuesta-header">
+                    <h4>Confirmación de Operación</h4>
+                    ${badgeHtml}
+                </div>
+                <div class="propuesta-detalles">
+                    <p><strong>Producto:</strong> ${escapeHtml(propuesta.producto_nombre)} (<code>${escapeHtml(propuesta.producto_codigo)}</code>)</p>
+                    <p><strong>Cantidad:</strong> <span class="cantidad-destacada">${propuesta.cantidad}</span> unidades</p>
+                    <p><strong>Almacén:</strong> ${escapeHtml(propuesta.almacen_origen_nombre)}</p>
+                    ${propuesta.destinatario ? `<p><strong>Destinatario:</strong> ${escapeHtml(propuesta.destinatario)}</p>` : ""}
+                    ${propuesta.motivo ? `<p><strong>Motivo:</strong> ${escapeHtml(propuesta.motivo)}</p>` : ""}
+                </div>
+                <div class="propuesta-acciones">
+                    <button type="button" class="btn btn-confirmar" id="haku-btn-confirmar">
+                        ✅ Confirmar operación
+                    </button>
+                    <button type="button" class="btn btn-cancelar" id="haku-btn-cancelar">
+                        ❌ Cancelar
+                    </button>
+                </div>
+                <div class="propuesta-nota">
+                    También puedes decir <em>"Confirmar"</em> o <em>"Cancelar"</em> por voz.
+                </div>
+            </div>
+        `;
+
+        contenedor.style.display = "block";
+
+        document.getElementById("haku-btn-confirmar")?.addEventListener("click", () => {
+            confirmarPropuestaManual(propuesta.id);
+        });
+
+        document.getElementById("haku-btn-cancelar")?.addEventListener("click", () => {
+            cancelarPropuestaManual(propuesta.id);
+        });
+    }
+
+    function ocultarTarjetaPropuesta() {
+        const contenedor = document.getElementById("haku-propuesta-card");
+        if (contenedor) {
+            contenedor.style.display = "none";
+            contenedor.innerHTML = "";
+        }
+    }
+
+    function mostrarToast(mensaje, tipo = "info") {
+        const contenedorToast = document.getElementById("haku-toasts") || document.body;
+        const toast = document.createElement("div");
+        toast.className = `haku-toast haku-toast-${tipo}`;
+        toast.textContent = mensaje;
+        contenedorToast.appendChild(toast);
+
+        setTimeout(() => {
+            toast.classList.add("haku-toast-fadeout");
+            setTimeout(() => toast.remove(), 400);
+        }, 4000);
+    }
+
+    function escapeHtml(texto) {
+        if (!texto) return "";
+        return String(texto)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ENVÍO DE MENSAJE MANUAL POR TECLADO
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function configurarInputManual() {
+        const inputTexto = document.getElementById("haku-input-texto");
+        const btnEnviar = document.getElementById("haku-btn-enviar");
+
+        if (!inputTexto || !btnEnviar) return;
+
+        function enviar() {
+            const val = inputTexto.value.trim();
+            if (!val) return;
+            inputTexto.value = "";
+            agregarMensajeChat("usuario", val);
+            enviarComandoHaku(val);
+        }
+
+        btnEnviar.addEventListener("click", (e) => {
+            e.preventDefault();
+            enviar();
+        });
+
+        inputTexto.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                enviar();
+            }
+        });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // INICIALIZACIÓN
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function init() {
+        configurarPushToTalkTeclado();
+        configurarBotonMicrofono();
+        configurarInputManual();
+        reiniciarTimerInactividad();
+
+        // Consultar estado inicial
+        apiFetch(CONFIG.ENDPOINTS.ESTADO)
+            .then(res => res.json())
+            .then(data => {
+                if (data.tiene_propuesta_activa && data.propuesta_activa) {
+                    state.propuestaActiva = data.propuesta_activa;
+                    mostrarTarjetaPropuesta(data.propuesta_activa);
+                }
+            })
+            .catch(() => {});
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", init);
+    } else {
+        init();
+    }
+
+    // Exponer API global de conveniencia
+    window.HakuVoz = {
+        iniciarGrabacion,
+        detenerGrabacion,
+        enviarComando: enviarComandoHaku,
+        confirmarPropuesta: () => state.propuestaActiva && confirmarPropuestaManual(state.propuestaActiva.id),
+        cancelarPropuesta: () => state.propuestaActiva && cancelarPropuestaManual(state.propuestaActiva.id),
+    };
+
+})();
