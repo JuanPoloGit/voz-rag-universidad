@@ -51,6 +51,10 @@ Claude outputs/
 *.sqlite3-wal
 *.sqlite3-shm
 sistema_inventario/certificados/
+sistema_inventario/certs/
+*.pem
+*.key
+*.sha256
 sistema_inventario/backups/
 sistema_inventario/staticfiles/
 sistema_inventario/media/
