@@ -25,6 +25,18 @@ Write-Host "==========================================================" -Foregro
 Write-Host "   INVENTARIO AUDACIA - SERVIDOR HTTPS LOCAL (UVICORN)    " -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
+# 0. Liberar el puerto si quedo un proceso huerfano previo
+$Occupied = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue
+if ($Occupied) {
+    foreach ($conn in $Occupied) {
+        if ($conn.OwningProcess -gt 4) {
+            Write-Host "[INFO] Liberando puerto $Port (terminando proceso anterior PID $($conn.OwningProcess))..." -ForegroundColor Yellow
+            Stop-Process -Id $conn.OwningProcess -Force -ErrorAction SilentlyContinue
+        }
+    }
+    Start-Sleep -Milliseconds 800
+}
+
 # 1. Verificar certificados TLS
 $CertsDir = Join-Path $ProjectDir "certs"
 $CertFile = Join-Path $CertsDir "localhost.pem"
