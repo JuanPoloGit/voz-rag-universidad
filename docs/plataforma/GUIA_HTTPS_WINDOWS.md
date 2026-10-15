@@ -44,13 +44,13 @@ El proyecto admite dos métodos de generación de certificados locales en `siste
    ```
 2. **Generar los certificados automáticamente:**
    ```powershell
-   powershell -ExecutionPolicy Bypass -File .\sistema_inventario\scripts\generar_certificados.ps1
+   powershell -ExecutionPolicy Bypass -File .\sistema_inventario\scripts\plataforma\generar_certificados.ps1
    ```
    El script ejecutará `mkcert -install` y emitirá `localhost.pem` y `localhost-key.pem` con Nombres Alternativos del Sujeto (SAN): `localhost`, `127.0.0.1` y `::1`.
 
 ### Método B: Mediante generador integrado Python (Cero dependencias externas)
 
-Si la estación no dispone de `winget` ni permisos de administrador para instalar herramientas externas, el script detecta la ausencia de `mkcert` y conmuta automáticamente al generador integrado [`generar_certificados_python.py`](file:///C:/Users/jchrn/Documents/Trabajos/U/voz-rag-universidad/sistema_inventario/scripts/generar_certificados_python.py), emitiendo certificados RSA de 2048 bits con firma SHA-256 válidos por 365 días.
+Si la estación no dispone de `winget` ni permisos de administrador para instalar herramientas externas, el script detecta la ausencia de `mkcert` y conmuta automáticamente al generador integrado [`generar_certificados_python.py`](file:///C:/Users/jchrn/Documents/Trabajos/U/voz-rag-universidad/sistema_inventario/scripts/plataforma/generar_certificados_python.py), emitiendo certificados RSA de 2048 bits con firma SHA-256 válidos por 365 días.
 
 ---
 
@@ -59,7 +59,7 @@ Si la estación no dispone de `winget` ni permisos de administrador para instala
 Antes de iniciar el sistema, ejecute el script de diagnóstico integral:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\sistema_inventario\scripts\verificar_entorno.ps1
+powershell -ExecutionPolicy Bypass -File .\sistema_inventario\scripts\plataforma\verificar_entorno.ps1
 ```
 
 Este script evalúa de forma automatizada:
@@ -77,13 +77,13 @@ Para levantar el servidor ASGI seguro:
 
 ```powershell
 # Inicio estándar en el puerto 8000
-powershell -ExecutionPolicy Bypass -File .\sistema_inventario\scripts\iniciar_sistema.ps1
+powershell -ExecutionPolicy Bypass -File .\sistema_inventario\scripts\plataforma\iniciar_sistema.ps1
 
 # Inicio en modo desarrollo con recarga automática en cambios de código
-powershell -ExecutionPolicy Bypass -File .\sistema_inventario\scripts\iniciar_sistema.ps1 -Reload
+powershell -ExecutionPolicy Bypass -File .\sistema_inventario\scripts\plataforma\iniciar_sistema.ps1 -Reload
 
 # Inicio en puerto alternativo
-powershell -ExecutionPolicy Bypass -File .\sistema_inventario\scripts\iniciar_sistema.ps1 -Port 8443
+powershell -ExecutionPolicy Bypass -File .\sistema_inventario\scripts\plataforma\iniciar_sistema.ps1 -Port 8443
 ```
 
 ### URLs de acceso:
@@ -115,19 +115,19 @@ cd sistema_inventario
 ### Programación automática cada 2 horas (Windows Task Scheduler):
 ```powershell
 # Registrar tarea en el programador de Windows (lunes a viernes cada 2 horas)
-powershell -ExecutionPolicy Bypass -File .\sistema_inventario\scripts\registrar_tarea_windows.ps1
+powershell -ExecutionPolicy Bypass -File .\sistema_inventario\scripts\backups\registrar_tarea_windows.ps1
 
 # Desinstalar tarea programada:
-powershell -ExecutionPolicy Bypass -File .\sistema_inventario\scripts\registrar_tarea_windows.ps1 -Desinstalar
+powershell -ExecutionPolicy Bypass -File .\sistema_inventario\scripts\backups\registrar_tarea_windows.ps1 -Desinstalar
 ```
 
 ### Exportación a memoria USB:
 ```powershell
 # Detección automática de unidad USB
-powershell -ExecutionPolicy Bypass -File .\sistema_inventario\scripts\exportar_usb.ps1
+powershell -ExecutionPolicy Bypass -File .\sistema_inventario\scripts\backups\exportar_usb.ps1
 
 # Destino específico
-powershell -ExecutionPolicy Bypass -File .\sistema_inventario\scripts\exportar_usb.ps1 -DestinoUSB E:\AudacIA_Backups
+powershell -ExecutionPolicy Bypass -File .\sistema_inventario\scripts\backups\exportar_usb.ps1 -DestinoUSB E:\AudacIA_Backups
 ```
 
 ---
@@ -136,7 +136,7 @@ powershell -ExecutionPolicy Bypass -File .\sistema_inventario\scripts\exportar_u
 
 | Síntoma | Causa probable | Solución |
 |---|---|---|
-| Advertencia *"Su conexión no es privada"* (NET::ERR_CERT_AUTHORITY_INVALID) | Se generó el certificado con el método autofirmado B en lugar de `mkcert`. | Para desarrollo, hacer clic en "Avanzado" -> "Continuar a localhost (no seguro)", o instalar `mkcert` y regenerar con `generar_certificados.ps1`. |
-| Error `[WinError 10048] Only one usage of each socket address` | El puerto 8000 ya está siendo utilizado por otro proceso. | Iniciar en otro puerto: `.\sistema_inventario\scripts\iniciar_sistema.ps1 -Port 8443`. |
+| Advertencia *"Su conexión no es privada"* (NET::ERR_CERT_AUTHORITY_INVALID) | Se generó el certificado con el método autofirmado B en lugar de `mkcert`. | Para desarrollo, hacer clic en "Avanzado" -> "Continuar a localhost (no seguro)", o instalar `mkcert` y regenerar con `.\sistema_inventario\scripts\plataforma\generar_certificados.ps1`. |
+| Error `[WinError 10048] Only one usage of each socket address` | El puerto 8000 ya está siendo utilizado por otro proceso. | Iniciar en otro puerto: `.\sistema_inventario\scripts\plataforma\iniciar_sistema.ps1 -Port 8443`. |
 | La cookie de sesión se borra inmediatamente al iniciar sesión | La aplicación se abrió por HTTP (`http://`) en lugar de HTTPS (`https://`). | Abrir siempre usando el esquema `https://`. La directiva `SESSION_COOKIE_SECURE=True` exige HTTPS. |
 | Respaldo omitido: *"Fecha es no laboral en Colombia"* | El comando detectó fin de semana o día festivo según la Ley Emiliani (Política A). | Es el comportamiento normal de la Política A. Si desea forzar la copia manual, agregue el parámetro `--force`. |

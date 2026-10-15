@@ -12,7 +12,8 @@ param (
 $ErrorActionPreference = "Stop"
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ProjectDir = Split-Path -Parent $ScriptDir
+$ScriptsRoot = Split-Path -Parent $ScriptDir
+$ProjectDir = Split-Path -Parent $ScriptsRoot
 $BackupsDir = Join-Path $ProjectDir "backups"
 
 if (-not (Test-Path $BackupsDir)) {

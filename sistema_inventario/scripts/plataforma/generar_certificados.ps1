@@ -12,7 +12,8 @@ param (
 $ErrorActionPreference = "Stop"
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ProjectDir = Split-Path -Parent $ScriptDir
+$ScriptsRoot = Split-Path -Parent $ScriptDir
+$ProjectDir = Split-Path -Parent $ScriptsRoot
 $VenvPython = Join-Path (Split-Path -Parent $ProjectDir) "venv\Scripts\python.exe"
 
 if (-not (Test-Path $VenvPython)) {
@@ -56,7 +57,7 @@ if ($Mkcert) {
     } else {
         Write-Host ""
         Write-Host " [TIP] Para registrar confianza en Windows y ver el candado cerrado en el navegador:" -ForegroundColor Yellow
-        Write-Host "       powershell -ExecutionPolicy Bypass -File .\scripts\generar_certificados.ps1 -InstalarConfianza" -ForegroundColor White
+        Write-Host "       powershell -ExecutionPolicy Bypass -File .\scripts\plataforma\generar_certificados.ps1 -InstalarConfianza" -ForegroundColor White
     }
 }
 

@@ -7,7 +7,7 @@ import os
 import sys
 
 # Agregar la raíz de sistema_inventario al PYTHONPATH
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 import django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "inventario_audacia.settings")

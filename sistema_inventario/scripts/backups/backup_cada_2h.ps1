@@ -12,7 +12,8 @@ $ErrorActionPreference = "Stop"
 
 # Ubicar raíz del proyecto
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ProjectDir = Split-Path -Parent $ScriptDir
+$ScriptsRoot = Split-Path -Parent $ScriptDir
+$ProjectDir = Split-Path -Parent $ScriptsRoot
 $VenvPython = Join-Path (Split-Path -Parent $ProjectDir) "venv\Scripts\python.exe"
 
 if (-not (Test-Path $VenvPython)) {
@@ -32,7 +33,11 @@ if (-not $Force) {
 # 2. Ejecutar comando Django de respaldo
 Write-Host "[INFO] $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - Iniciando respaldo automático de Inventario AudacIA..." -ForegroundColor Cyan
 Set-Location $ProjectDir
-& $VenvPython manage.py backup_inventario --no-input --force:$Force
+$BackupArgs = @("manage.py", "backup_inventario", "--no-input")
+if ($Force) {
+    $BackupArgs += "--force"
+}
+& $VenvPython @BackupArgs
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "[ÉXITO] $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - Respaldo completado satisfactoriamente." -ForegroundColor Green

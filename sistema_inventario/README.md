@@ -38,10 +38,10 @@ A diferencia de los proyectos Django tradicionales que usan el servidor de desar
 ---
 
 ### 1.2. Criptografía y Certificados TLS Locales
-El sistema incluye un generador criptográfico en `scripts/generar_certificados_python.py` que emite certificados X.509 de alta seguridad:
+El sistema incluye un generador criptográfico en `scripts/plataforma/generar_certificados_python.py` que emite certificados X.509 de alta seguridad:
 - **Algoritmo:** Clave privada RSA de 2048 bits con firma SHA-256.
 - **Extensiones SAN (Subject Alternative Name):** Incluye explícitamente `DNS:localhost`, `IP:127.0.0.1` e `IP:::1`.
-- **Compatibilidad con `mkcert`:** Si la estación dispone de la herramienta `mkcert`, el script `generar_certificados.ps1` la utiliza automáticamente para instalar una CA raíz local en Windows, eliminando cualquier aviso de seguridad en Chrome/Edge.
+- **Compatibilidad con `mkcert`:** Si la estación dispone de la herramienta `mkcert`, el script `scripts/plataforma/generar_certificados.ps1` la utiliza automáticamente para instalar una CA raíz local en Windows, eliminando cualquier aviso de seguridad en Chrome/Edge.
 
 ---
 
@@ -83,7 +83,7 @@ En PowerShell ejecuta:
 Desde la carpeta `sistema_inventario`:
 ```powershell
 $env:DJANGO_ALLOWED_HOSTS = "*"
-powershell -ExecutionPolicy Bypass -File .\scripts\iniciar_sistema.ps1 -HostName "0.0.0.0" -Reload
+powershell -ExecutionPolicy Bypass -File .\scripts\plataforma\iniciar_sistema.ps1 -HostName "0.0.0.0" -Reload
 ```
 
 #### Paso 3: Conectar desde cualquier celular o equipo en la misma red Wi-Fi
@@ -168,7 +168,7 @@ Ubicada en `inventario/auditoria.py` y `inventario/signals_auditoria.py`:
 
 ## 5. SISTEMA DE RESPALDOS (POLÍTICA A — COLOMBIA)
 
-### 5.1. Calendario Laboral Colombiano (`scripts/colombia_calendario.py`)
+### 5.1. Calendario Laboral Colombiano (`scripts/backups/colombia_calendario.py`)
 Implementación determinista $O(1)$ sin librerías externas que calcula los **18 festivos oficiales anuales de Colombia**:
 1. **Festivos fijos:** 1 Ene, 1 May, 20 Jul, 7 Ago, 8 Dic, 25 Dic.
 2. **Ley Emiliani (Ley 51 de 1983):** Traslado al siguiente lunes de 6 Ene, 19 Mar, 29 Jun, 15 Ago, 12 Oct, 1 Nov, 11 Nov.
@@ -197,9 +197,9 @@ python manage.py restaurar_inventario .\backups\<archivo>.sqlite3.gz --no-input
 ---
 
 ### 5.3. Automatización en Windows
-- `scripts/backup_cada_2h.ps1`: Script de ejecución periódica condicionado al calendario laboral.
-- `scripts/registrar_tarea_windows.ps1`: Registra la tarea en el Programador de Tareas de Windows (*Task Scheduler*).
-- `scripts/exportar_usb.ps1`: Sincroniza automáticamente los respaldos más recientes hacia una unidad extraíble USB.
+- `scripts/backups/backup_cada_2h.ps1`: Script de ejecución periódica condicionado al calendario laboral.
+- `scripts/backups/registrar_tarea_windows.ps1`: Registra la tarea en el Programador de Tareas de Windows (*Task Scheduler*).
+- `scripts/backups/exportar_usb.ps1`: Sincroniza automáticamente los respaldos más recientes hacia una unidad extraíble USB.
 
 ---
 
@@ -217,7 +217,7 @@ cd sistema_inventario
 
 ### 6.2. Script de Diagnóstico del Entorno
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\verificar_entorno.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\plataforma\verificar_entorno.ps1
 ```
 Valida de forma automática Python, Django, Uvicorn, Cryptography, certificados TLS, consistencia del ORM y el calendario laboral.
 
@@ -231,3 +231,27 @@ Valida de forma automática Python, Django, Uvicorn, Cryptography, certificados 
 | `admin_general` | `AdminGeneral2026!` | Administrador | Transversal (`None`) |
 | `operador_norte` | `OperadorNorte2026!` | Usuario | Almacén Central Norte |
 | `operador_sur` | `OperadorSur2026!` | Usuario | Almacén Satélite Sur |
+
+---
+
+## 8. ESTRUCTURA MODULAR DE SCRIPTS (`scripts/`)
+
+Para mantener el orden, modularidad y separación de responsabilidades, los scripts se encuentran organizados por dominios en subdirectorios:
+
+```text
+sistema_inventario/scripts/
+├── plataforma/                       # Control del servidor seguro y diagnóstico
+│   ├── iniciar_sistema.ps1           # Arranque Uvicorn ASGI con TLS directo
+│   ├── generar_certificados.ps1      # Orquestador mkcert / Python
+│   ├── generar_certificados_python.py# Generador criptográfico X.509 RSA/SHA-256
+│   └── verificar_entorno.ps1         # Diagnóstico integral de 5 fases
+├── backups/                          # Políticas de respaldo y contingencia
+│   ├── colombia_calendario.py        # Motor de festivos colombianos (Ley Emiliani)
+│   ├── backup_cada_2h.ps1            # Ejecución periódica según Política A
+│   ├── registrar_tarea_windows.ps1   # Registro en Task Scheduler de Windows
+│   └── exportar_usb.ps1              # Exportación hacia memorias USB
+├── dev/                              # Herramientas de apoyo al desarrollo
+│   └── crear_datos_prueba.py         # Población de almacenes y cuentas demo
+└── colombia_calendario.py            # Stub de retrocompatibilidad
+```
+

@@ -6,7 +6,8 @@
 $ErrorActionPreference = "Continue"
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ProjectDir = Split-Path -Parent $ScriptDir
+$ScriptsRoot = Split-Path -Parent $ScriptDir
+$ProjectDir = Split-Path -Parent $ScriptsRoot
 $VenvPython = Join-Path (Split-Path -Parent $ProjectDir) "venv\Scripts\python.exe"
 
 Write-Host "==========================================================" -ForegroundColor Cyan
@@ -69,7 +70,7 @@ if ($LASTEXITCODE -eq 0) {
 
 # 5. Calendario Laboral Colombiano
 Write-Host "`n[5/5] Probando modulo de calendario laboral colombiano..." -ForegroundColor Yellow
-$CalScript = Join-Path $ScriptDir "colombia_calendario.py"
+$CalScript = Join-Path $ScriptsRoot "backups\colombia_calendario.py"
 $CalTest = & $VenvPython $CalScript --listar-festivos 2026 2>&1
 if ($LASTEXITCODE -eq 0 -and ($CalTest.Count -eq 18)) {
     Write-Host " [OK] Calendario de festivos Ley Emiliani operativo (18 festivos/ano)." -ForegroundColor Green
