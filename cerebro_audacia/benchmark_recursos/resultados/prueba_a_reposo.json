@@ -1,0 +1,126 @@
+{
+  "prueba": "Prueba A — Sistema en Reposo",
+  "fecha": "2026-10-15 12:28:37",
+  "condiciones": {
+    "duracion_segundos": 10.0,
+    "intervalo_muestreo_s": 0.25,
+    "total_muestras": 18,
+    "servicios_activos": "Ningún servicio de IA activo"
+  },
+  "telemetria_inicial": {
+    "sistema": {
+      "ram_total_mib": 15881.1,
+      "ram_usada_mib": 9794.95,
+      "ram_libre_mib": 6086.14,
+      "ram_total_gib": 15.51,
+      "ram_usada_gib": 9.57,
+      "ram_libre_gib": 5.94,
+      "ram_carga_pct": 61,
+      "memoria_comprometida_mib": 17205.75,
+      "limite_compromiso_mib": 24073.1,
+      "cpu_sistema_pct": 0.0
+    },
+    "gpu": {
+      "gpu_nombre": "NVIDIA RTX 2000 Ada Generation Laptop GPU",
+      "driver_version": "596.58",
+      "vram_total_mib": 8188.0,
+      "vram_usada_mib": 0.0,
+      "vram_libre_mib": 7956.0,
+      "gpu_util_pct": 0.0,
+      "gpu_mem_util_pct": 0.0,
+      "gpu_temp_c": 44.0,
+      "gpu_power_w": 13.36,
+      "procesos_gpu": []
+    }
+  },
+  "resumen_muestreo": {
+    "total_muestras": 18,
+    "duracion_muestreo_s": 8.98,
+    "vram_usada": {
+      "min": 0.0,
+      "max": 0.0,
+      "promedio": 0.0,
+      "p50": 0.0,
+      "p95": 0.0
+    },
+    "vram_pico_mib": 0.0,
+    "vram_delta_baseline_mib": 0.0,
+    "ram_usada": {
+      "min": 9787.7,
+      "max": 9831.66,
+      "promedio": 9799.75,
+      "p50": 9798.02,
+      "p95": 9831.66
+    },
+    "ram_pico_mib": 9831.66,
+    "ram_delta_baseline_mib": 36.71,
+    "cpu_sistema": {
+      "min": 5.22,
+      "max": 16.34,
+      "promedio": 11.03,
+      "p50": 10.33,
+      "p95": 16.34
+    },
+    "gpu_util": {
+      "min": 0.0,
+      "max": 0.0,
+      "promedio": 0.0,
+      "p50": 0.0,
+      "p95": 0.0
+    }
+  },
+  "top_procesos_consumo": [
+    {
+      "Id": 212,
+      "ProcessName": "Antigravity IDE",
+      "WS_MB": 541.6,
+      "CPU_s": 1697.02
+    },
+    {
+      "Id": 28508,
+      "ProcessName": "chrome",
+      "WS_MB": 477.17,
+      "CPU_s": 1982.48
+    },
+    {
+      "Id": 18136,
+      "ProcessName": "language_server_windows_x64",
+      "WS_MB": 324.3,
+      "CPU_s": 366.77
+    },
+    {
+      "Id": 3848,
+      "ProcessName": "ekrn",
+      "WS_MB": 227.54,
+      "CPU_s": 0
+    },
+    {
+      "Id": 3992,
+      "ProcessName": "Spotify",
+      "WS_MB": 216.33,
+      "CPU_s": 2030.52
+    },
+    {
+      "Id": 26500,
+      "ProcessName": "Antigravity IDE",
+      "WS_MB": 215.15,
+      "CPU_s": 111.02
+    },
+    {
+      "Id": 23328,
+      "ProcessName": "chrome",
+      "WS_MB": 203.34,
+      "CPU_s": 449.95
+    },
+    {
+      "Id": 13476,
+      "ProcessName": "explorer",
+      "WS_MB": 194.75,
+      "CPU_s": 435.11
+    }
+  ],
+  "archivos_guardados": {
+    "crudo_csv": "C:\\Users\\AudacIA\\Documents\\inventario\\voz-rag-universidad\\cerebro_audacia\\benchmark_recursos\\resultados\\prueba_a_reposo_crudo.csv",
+    "resumen_json": "C:\\Users\\AudacIA\\Documents\\inventario\\voz-rag-universidad\\cerebro_audacia\\benchmark_recursos\\resultados\\prueba_a_reposo.json"
+  }
+}

@@ -70,6 +70,8 @@ Paso a paso completo, con verificación y errores típicos:
 | **[Pruebas](docs/pruebas.md)** | Las cinco suites y cuándo se corre cada una |
 | **[Operación](docs/operacion.md)** | Guion del día de la exhibición |
 | **[Datos](docs/datos.md)** | Qué se guarda de los visitantes y quién decide |
+| **[Guía Operativa](docs/GUIA_OPERATIVA_AUDACIA.md)** | Manual operativo global: LLM local, Django HAKU, interfaces y resolución de problemas |
+| **[Agregar Agentes](docs/COMO_AGREGAR_AGENTES.md)** | Guía técnica y tutorial paso a paso para crear y gobernar nuevos agentes de IA |
 
 Todo lo anterior, en un solo manual con portada e índice:
 **[docs/HACU-documentacion.pdf](docs/HACU-documentacion.pdf)** (~71 páginas). Se

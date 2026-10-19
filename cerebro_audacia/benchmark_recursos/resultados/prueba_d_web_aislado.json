@@ -1,0 +1,116 @@
+{
+  "prueba": "Prueba D — Aplicación Web sin Inferencia",
+  "fecha": "2026-10-15 12:29:29",
+  "servidor": {
+    "endpoint": "https://127.0.0.1:8000",
+    "pid": 30796,
+    "servidor_asgi": "Uvicorn + Django 5.x",
+    "protocolo": "HTTPS (TLS)"
+  },
+  "memoria_proceso_web": {
+    "working_set_inicial_mib": 15.5,
+    "working_set_final_mib": 28.65,
+    "delta_working_set_mib": 13.15,
+    "private_bytes_mib": 41.8
+  },
+  "latencias_http": {
+    "total_peticiones": 10,
+    "latencia_promedio_s": 0.0294,
+    "latencia_min_s": 0.0108,
+    "latencia_max_s": 0.1283,
+    "latencia_p50_s": 0.0239,
+    "latencia_p95_s": 0.1283
+  },
+  "telemetria_muestreo": {
+    "total_muestras": 6,
+    "duracion_muestreo_s": 2.03,
+    "vram_usada": {
+      "min": 0.0,
+      "max": 0.0,
+      "promedio": 0.0,
+      "p50": 0.0,
+      "p95": 0.0
+    },
+    "vram_pico_mib": 0.0,
+    "vram_delta_baseline_mib": 0.0,
+    "ram_usada": {
+      "min": 9696.84,
+      "max": 9709.57,
+      "promedio": 9702.92,
+      "p50": 9704.16,
+      "p95": 9709.57
+    },
+    "ram_pico_mib": 9709.57,
+    "ram_delta_baseline_mib": -4.92,
+    "cpu_sistema": {
+      "min": 7.55,
+      "max": 14.02,
+      "promedio": 11.21,
+      "p50": 11.84,
+      "p95": 14.02
+    },
+    "gpu_util": {
+      "min": 0.0,
+      "max": 0.0,
+      "promedio": 0.0,
+      "p50": 0.0,
+      "p95": 0.0
+    }
+  },
+  "detalle_peticiones": [
+    {
+      "url": "https://127.0.0.1:8000/",
+      "codigo": 404,
+      "latencia_s": 0.1283
+    },
+    {
+      "url": "https://127.0.0.1:8000/static/css/estilos.css",
+      "codigo": 404,
+      "latencia_s": 0.0139
+    },
+    {
+      "url": "https://127.0.0.1:8000/",
+      "codigo": 404,
+      "latencia_s": 0.0138
+    },
+    {
+      "url": "https://127.0.0.1:8000/",
+      "codigo": 404,
+      "latencia_s": 0.0278
+    },
+    {
+      "url": "https://127.0.0.1:8000/static/css/estilos.css",
+      "codigo": 404,
+      "latencia_s": 0.011
+    },
+    {
+      "url": "https://127.0.0.1:8000/",
+      "codigo": 404,
+      "latencia_s": 0.0133
+    },
+    {
+      "url": "https://127.0.0.1:8000/",
+      "codigo": 404,
+      "latencia_s": 0.0259
+    },
+    {
+      "url": "https://127.0.0.1:8000/static/css/estilos.css",
+      "codigo": 404,
+      "latencia_s": 0.0239
+    },
+    {
+      "url": "https://127.0.0.1:8000/",
+      "codigo": 404,
+      "latencia_s": 0.0108
+    },
+    {
+      "url": "https://127.0.0.1:8000/",
+      "codigo": 404,
+      "latencia_s": 0.0254
+    }
+  ],
+  "archivos_guardados": {
+    "crudo_csv": "C:\\Users\\AudacIA\\Documents\\inventario\\voz-rag-universidad\\cerebro_audacia\\benchmark_recursos\\resultados\\prueba_d_web_aislado_crudo.csv",
+    "resumen_json": "C:\\Users\\AudacIA\\Documents\\inventario\\voz-rag-universidad\\cerebro_audacia\\benchmark_recursos\\resultados\\prueba_d_web_aislado.json"
+  }
+}

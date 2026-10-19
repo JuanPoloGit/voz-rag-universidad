@@ -13,6 +13,8 @@
 | **[pruebas.md](pruebas.md)** | Las cinco suites y cuándo se corre cada una |
 | **[operacion.md](operacion.md)** | Guion del día de la exhibición |
 | **[datos.md](datos.md)** | Qué se guarda de los visitantes y quién decide |
+| **[GUIA_OPERATIVA_AUDACIA.md](GUIA_OPERATIVA_AUDACIA.md)** | Manual operativo global: puesta en marcha de AudacIA, uso del LLM, Django y resolución de problemas |
+| **[COMO_AGREGAR_AGENTES.md](COMO_AGREGAR_AGENTES.md)** | Tutorial paso a paso para incorporar, probar y retirar agentes de IA en AudacIA |
 
 Todo esto, ensamblado en un solo manual con portada e índice:
 **[HACU-documentacion.pdf](HACU-documentacion.pdf)** (~71 páginas). Se regenera con

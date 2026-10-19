@@ -1,0 +1,161 @@
+{
+  "prueba": "Prueba B — LLM de Forma Aislada",
+  "fecha": "2026-10-15 12:30:35",
+  "configuracion": {
+    "modelo": "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+    "motor": "llama.cpp b11669-620d2225c (CUDA 12.4)",
+    "n_ctx": 8192,
+    "n_gpu_layers": 33,
+    "kv_cache": "q8_0",
+    "flash_attn": true,
+    "n_parallel": 1,
+    "endpoint": "http://127.0.0.1:8080"
+  },
+  "arranque_en_frio": {
+    "tiempo_carga_s": 17.821,
+    "pid": 30388,
+    "vram_antes_carga_mib": 0.0,
+    "vram_cargado_mib": 0.0,
+    "vram_delta_carga_mib": 0.0
+  },
+  "metricas_generacion": {
+    "total_solicitudes": 9,
+    "latencia_promedio_s": 2.572,
+    "latencia_min_s": 0.45,
+    "latencia_max_s": 6.262,
+    "latencia_p50_s": 2.95,
+    "latencia_p95_s": 6.262,
+    "tokens_por_segundo_promedio": 33.83,
+    "tokens_por_segundo_max": 40.88,
+    "tokens_totales_generados": 785
+  },
+  "concurrencia_2_clientes": {
+    "tiempo_total_conjunto_s": 3.235,
+    "latencia_cliente_1_s": 1.663,
+    "latencia_cliente_2_s": 3.231,
+    "comportamiento": "Serialización correcta en cola FIFO respetando n_parallel=1 sin fallos ni OOM"
+  },
+  "telemetria_muestreo": {
+    "total_muestras": 61,
+    "duracion_muestreo_s": 21.33,
+    "vram_usada": {
+      "min": 0.0,
+      "max": 0.0,
+      "promedio": 0.0,
+      "p50": 0.0,
+      "p95": 0.0
+    },
+    "vram_pico_mib": 0.0,
+    "vram_delta_baseline_mib": 0.0,
+    "ram_usada": {
+      "min": 14455.0,
+      "max": 14812.12,
+      "promedio": 14594.87,
+      "p50": 14605.47,
+      "p95": 14807.23
+    },
+    "ram_pico_mib": 14812.12,
+    "ram_delta_baseline_mib": 5068.96,
+    "cpu_sistema": {
+      "min": 9.24,
+      "max": 23.9,
+      "promedio": 13.82,
+      "p50": 13.11,
+      "p95": 19.44
+    },
+    "gpu_util": {
+      "min": 0.0,
+      "max": 0.0,
+      "promedio": 0.0,
+      "p50": 0.0,
+      "p95": 0.0
+    }
+  },
+  "liberacion_recursos": {
+    "vram_post_detencion_mib": 0.0,
+    "vram_liberada_exitosamente": true
+  },
+  "detalle_solicitudes": [
+    {
+      "duracion_segundos": 1.069,
+      "prompt_tokens": 75,
+      "completion_tokens": 32,
+      "total_tokens": 107,
+      "tokens_por_segundo": 29.93,
+      "respuesta": "Me llamo Sofía, soy la asistente técnica de AudacIA y estoy aquí para ayudarte con cualquier consulta o necesidad relaci..."
+    },
+    {
+      "duracion_segundos": 0.45,
+      "prompt_tokens": 76,
+      "completion_tokens": 17,
+      "total_tokens": 93,
+      "tokens_por_segundo": 37.79,
+      "respuesta": "La capital del departamento de Atlántico en Colombia es Barranquilla.",
+      "nombre_caso": "Corta - Factual"
+    },
+    {
+      "duracion_segundos": 1.184,
+      "prompt_tokens": 83,
+      "completion_tokens": 48,
+      "total_tokens": 131,
+      "tokens_por_segundo": 40.54,
+      "respuesta": "Lo siento, pero no tengo acceso a información actualizada sobre el inventario de AudacIA. Sin embargo, puedo ofrecerte u...",
+      "nombre_caso": "Corta - Stock"
+    },
+    {
+      "duracion_segundos": 3.162,
+      "prompt_tokens": 87,
+      "completion_tokens": 128,
+      "total_tokens": 215,
+      "tokens_por_segundo": 40.48,
+      "respuesta": "Aquí te presento los 4 pasos para dar de baja un activo dañado en el inventario:\n\n**Paso 1: Identificar y documentar el ...",
+      "nombre_caso": "Mediana - Procedimiento"
+    },
+    {
+      "duracion_segundos": 3.178,
+      "prompt_tokens": 85,
+      "completion_tokens": 128,
+      "total_tokens": 213,
+      "tokens_por_segundo": 40.28,
+      "respuesta": "La conciliación de los registros físicos y lógicos de inventario es fundamental para garantizar la precisión y confiabil...",
+      "nombre_caso": "Mediana - Explicación"
+    },
+    {
+      "duracion_segundos": 6.262,
+      "prompt_tokens": 106,
+      "completion_tokens": 256,
+      "total_tokens": 362,
+      "tokens_por_segundo": 40.88,
+      "respuesta": "**Informe Técnico: Consumo de Suministros Informáticos en un Semestre Académico**\n\n**Introducción**\n\nEn el marco de la g...",
+      "nombre_caso": "Larga - Reporte"
+    },
+    {
+      "duracion_segundos": 2.95,
+      "prompt_tokens": 2861,
+      "completion_tokens": 48,
+      "total_tokens": 2909,
+      "tokens_por_segundo": 16.27,
+      "respuesta": "Según el catálogo consolidado, el artículo 0042 es un Switch Cisco Gigabit Modelo Catalyst-3002. \n\nLa cantidad de unidad..."
+    },
+    {
+      "duracion_segundos": 1.663,
+      "prompt_tokens": 82,
+      "completion_tokens": 64,
+      "total_tokens": 146,
+      "tokens_por_segundo": 38.49,
+      "respuesta": "Un código de barras EAN-13 (European Article Number) es un código de barras de 13 dígitos que se utiliza para identifica..."
+    },
+    {
+      "duracion_segundos": 3.231,
+      "prompt_tokens": 79,
+      "completion_tokens": 64,
+      "total_tokens": 143,
+      "tokens_por_segundo": 19.81,
+      "respuesta": "Un código QR (Quick Response) es un código de barras bidimensional que se utiliza para almacenar información en un espac..."
+    }
+  ],
+  "archivos_guardados": {
+    "crudo_csv": "C:\\Users\\AudacIA\\Documents\\inventario\\voz-rag-universidad\\cerebro_audacia\\benchmark_recursos\\resultados\\prueba_b_llm_aislado_crudo.csv",
+    "resumen_json": "C:\\Users\\AudacIA\\Documents\\inventario\\voz-rag-universidad\\cerebro_audacia\\benchmark_recursos\\resultados\\prueba_b_llm_aislado.json"
+  }
+}

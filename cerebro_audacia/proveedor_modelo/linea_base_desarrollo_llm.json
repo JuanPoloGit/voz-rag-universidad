@@ -1,0 +1,99 @@
+{
+  "fecha": "2026-10-15 12:13:26",
+  "hardware": {
+    "gpu": {
+      "gpu_nombre": "NVIDIA RTX 2000 Ada Generation Laptop GPU",
+      "driver_version": "596.58",
+      "vram_total_mib": 8188.0,
+      "vram_usada_mib": 5177.0,
+      "vram_libre_mib": 2780.0,
+      "gpu_utilizacion_pct": 0.0
+    },
+    "ram": {
+      "ram_total_mib": 15881.1,
+      "ram_usada_mib": 14636.86,
+      "ram_libre_mib": 1244.23,
+      "ram_total_gib": 15.51,
+      "ram_usada_gib": 14.29,
+      "ram_libre_gib": 1.22,
+      "ram_porcentaje_uso": 92
+    }
+  },
+  "motor_inferencia": {
+    "motor": "llama.cpp / llama-server",
+    "version_build": "b11669-620d2225c (CUDA 12.4)",
+    "modelo_id": "C:\\Users\\AudacIA\\Documents\\inventario\\voz-rag-universidad\\models\\Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+    "modelo_archivo": "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+    "cuantizacion": "Q4_K_M",
+    "tamano_archivo_bytes": 4920739232,
+    "sha256": "7b064f5842bf9532c91456deda288a1b672397a54fa729aa665952863033557c",
+    "n_ctx": 8192,
+    "n_gpu_layers": 33,
+    "flash_attn": true,
+    "kv_cache_tipo": "q8_0",
+    "concurrencia": 1,
+    "dispositivo": "CUDA0",
+    "endpoint": "http://127.0.0.1:8080"
+  },
+  "metricas_consolidadas": {
+    "total_pruebas": 4,
+    "tokens_completados_totales": 296,
+    "latencia_promedio_s": 2.29,
+    "latencia_min_s": 0.814,
+    "latencia_max_s": 3.868,
+    "tokens_por_segundo_promedio": 29.99,
+    "vram_modelo_cargado_mib": 5177.0,
+    "vram_libre_remanente_mib": 2780.0,
+    "ram_usada_gib": 14.32
+  },
+  "detalle_solicitudes": [
+    {
+      "caso": "Pregunta Factual Simple",
+      "prompt": "¿Cuál es la capital del departamento del Atlántico en Colombia?",
+      "respuesta_resumen": "La capital del departamento del Atlántico en Colombia es Barranquilla.",
+      "prompt_tokens": 74,
+      "completion_tokens": 17,
+      "total_tokens": 91,
+      "duracion_segundos": 0.82,
+      "tokens_por_segundo": 20.74,
+      "vram_usada_mib": 5177.0,
+      "ram_usada_gib": 14.3
+    },
+    {
+      "caso": "Instrucción Multi-Paso",
+      "prompt": "Enumera exactamente tres pasos esenciales para recibir mercancía en bodega.",
+      "respuesta_resumen": "Como asistente técnico de AudacIA, te proporciono los siguientes pasos esenciales para recibir mercancía en bodega:\n\n1. ...",
+      "prompt_tokens": 78,
+      "completion_tokens": 128,
+      "total_tokens": 206,
+      "duracion_segundos": 3.868,
+      "tokens_por_segundo": 33.09,
+      "vram_usada_mib": 5177.0,
+      "ram_usada_gib": 14.29
+    },
+    {
+      "caso": "Consulta sobre Inventario",
+      "prompt": "Explica la diferencia entre conteo cíclico y auditoría física anual en 2 frases.",
+      "respuesta_resumen": "La auditoría física anual es un proceso de verificación periódico que se realiza en un plazo determinado (generalmente a...",
+      "prompt_tokens": 82,
+      "completion_tokens": 125,
+      "total_tokens": 207,
+      "duracion_segundos": 3.657,
+      "tokens_por_segundo": 34.18,
+      "vram_usada_mib": 5177.0,
+      "ram_usada_gib": 14.31
+    },
+    {
+      "caso": "Generación Estructurada",
+      "prompt": "Devuelve un objeto JSON con campos 'producto' y 'cantidad' para 10 unidades de cinta de embalaje.",
+      "respuesta_resumen": "```json\n{\n  \"producto\": \"Cinta de embalaje\",\n  \"cantidad\": 10\n}\n```",
+      "prompt_tokens": 85,
+      "completion_tokens": 26,
+      "total_tokens": 111,
+      "duracion_segundos": 0.814,
+      "tokens_por_segundo": 31.94,
+      "vram_usada_mib": 5177.0,
+      "ram_usada_gib": 14.32
+    }
+  ]
+}

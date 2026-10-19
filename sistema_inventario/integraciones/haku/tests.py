@@ -65,7 +65,7 @@ class NormalizacionFoneticatestCase(TestCase):
 
         self.assertNotIn("**", normalizado)
         self.assertNotIn("`", normalizado)
-        self.assertIn("código CAB guion 0001", normalizado)
+        self.assertIn("código CAB guion cero cero cero uno", normalizado)
 
 
 class ColaSeguraLockTestCase(TestCase):
@@ -321,7 +321,7 @@ class MiddlewareTimeoutTestCase(BaseHakuTestCase):
         session = self.client.session
         session["haku_conversacion"] = ["mensaje anterior"]
         session["haku_propuesta_activa"] = {"id": "123"}
-        session["haku_ultimo_acceso"] = time.time() - 2000  # Más de 30 min atrás (1800s)
+        session["haku_ultimo_acceso"] = time.time() - 7300  # Más de 2 horas atrás (> 7200s)
         session.save()
         request.session = session
 

@@ -1,0 +1,110 @@
+{
+  "prueba": "Prueba E — Concurrencia Simultánea LLM + STT en GPU",
+  "fecha": "2026-10-15 12:32:47",
+  "configuracion": {
+    "gpu": "NVIDIA RTX 2000 Ada Generation Laptop GPU",
+    "llm": "llama.cpp b11669 / Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf (CUDA0)",
+    "stt": "faster-whisper base float16 (CUDA0)",
+    "memoria_coexistencia": "Ambos modelos coexisten simultáneamente en VRAM compartida de 8GB"
+  },
+  "coexistencia_vram": {
+    "vram_reposo_inicial_mib": 0.0,
+    "vram_llm_solo_mib": 0.0,
+    "vram_ambos_cargados_mib": 0.0,
+    "vram_delta_ambos_mib": 0.0,
+    "vram_libre_remanente_mib": 7956.0,
+    "margen_seguridad_pct": 97.17
+  },
+  "ronda_1_simultanea": {
+    "duracion_total_s": 2.539,
+    "llm": {
+      "servicio": "LLM",
+      "duracion_s": 2.538,
+      "completion_tokens": 96,
+      "tokens_por_segundo": 37.82,
+      "respuesta": "Como asistente de AudacIA, puedo decir que tres controles clave para el inventar..."
+    },
+    "stt": {
+      "servicio": "STT",
+      "audio": "1_movimientos.wav",
+      "duracion_audio_s": 2.74,
+      "duracion_s": 1.677,
+      "rtf": 0.612,
+      "transcripcion": "que movimiento se hicieron hoy en el almacén...."
+    }
+  },
+  "ronda_2_rafaga": {
+    "duracion_total_s": 3.468,
+    "llm": {
+      "servicio": "LLM",
+      "duracion_s": 3.468,
+      "completion_tokens": 128,
+      "tokens_por_segundo": 36.91,
+      "respuesta": "Como asistente de AudacIA, puedo explicarte las diferencias entre una auditoría ..."
+    },
+    "stt_items": [
+      {
+        "servicio": "STT",
+        "audio": "3_orden.wav",
+        "duracion_audio_s": 3.042,
+        "duracion_s": 0.1917,
+        "rtf": 0.063,
+        "transcripcion": "Sacar 5 unidades de ponchadora para carlos...."
+      },
+      {
+        "servicio": "STT",
+        "audio": "2_stock.wav",
+        "duracion_audio_s": 2.368,
+        "duracion_s": 0.1873,
+        "rtf": 0.0791,
+        "transcripcion": "Cuanto stock, queda de cable HDMI...."
+      }
+    ]
+  },
+  "telemetria_muestreo": {
+    "total_muestras": 23,
+    "duracion_muestreo_s": 5.89,
+    "vram_usada": {
+      "min": 0.0,
+      "max": 0.0,
+      "promedio": 0.0,
+      "p50": 0.0,
+      "p95": 0.0
+    },
+    "vram_pico_mib": 0.0,
+    "vram_delta_baseline_mib": 0.0,
+    "ram_usada": {
+      "min": 14768.75,
+      "max": 15226.32,
+      "promedio": 15129.03,
+      "p50": 15155.41,
+      "p95": 15216.3
+    },
+    "ram_pico_mib": 15226.32,
+    "ram_delta_baseline_mib": 5489.21,
+    "cpu_sistema": {
+      "min": 9.4,
+      "max": 21.95,
+      "promedio": 14.48,
+      "p50": 14.18,
+      "p95": 19.93
+    },
+    "gpu_util": {
+      "min": 0.0,
+      "max": 0.0,
+      "promedio": 0.0,
+      "p50": 0.0,
+      "p95": 0.0
+    }
+  },
+  "evaluacion_colisiones_y_estabilidad": {
+    "errores_oom": false,
+    "caidas_de_proceso": false,
+    "vram_pico_durante_carga_mib": 0.0,
+    "conclusion": "LLM 8B Q4_K_M y Faster-Whisper base float16 coexisten y operan concurrentemente en 8GB de VRAM sin degradación catastrófica ni colisiones OOM."
+  },
+  "archivos_guardados": {
+    "crudo_csv": "C:\\Users\\AudacIA\\Documents\\inventario\\voz-rag-universidad\\cerebro_audacia\\benchmark_recursos\\resultados\\prueba_e_concurrencia_llm_stt_crudo.csv",
+    "resumen_json": "C:\\Users\\AudacIA\\Documents\\inventario\\voz-rag-universidad\\cerebro_audacia\\benchmark_recursos\\resultados\\prueba_e_concurrencia_llm_stt.json"
+  }
+}

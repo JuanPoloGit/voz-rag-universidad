@@ -28,7 +28,8 @@ from typing import Any
 
 from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from cuentas.models import UsuarioAudacIA
@@ -46,17 +47,22 @@ from inventario.models import (
 
 logger = logging.getLogger("integraciones.haku")
 
-# ═════════════════════════════════════════════════════════════════════════════
-# 1. COLA SEGURA Y LOCK PARA CONVIVIR CON HAKU VISITANTE
+HAKU_PROPUESTA_TIMEOUT_SEGUNDOS = getattr(
+    settings, "HAKU_PROPOSAL_TIMEOUT", getattr(settings, "HAKU_PROPUESTA_TIMEOUT_SEGUNDOS", 1800)
+)  # 30 minutos por defecto (transaccional)
+# 1. CONTROL DE CONCURRENCIA INTRA-PROCESO PARA TRANSCRIPCIÓN Y AUDIO (DJANGO)
 # ═════════════════════════════════════════════════════════════════════════════
 
-# Lock global reentrante para compartir la GPU/LLM con Haku Visitante.
-# Ningún proceso llamará inferencia en paralelo sobre el modelo de 8B no reentrante.
+# Lock reentrante intra-proceso para serializar llamadas de transcripción/audio dentro de los hilos de Django.
+# NOTA TÉCNICA: threading.RLock() es exclusivo del proceso del worker de Django. No coordina
+# procesos independientes de Windows (como run_hacu.py o llama-server.exe). La serialización global
+# del LLM se gobierna a nivel de red en llama-server.exe (--parallel 1/2), y la coexistencia con
+# Faster-Whisper depende del driver CUDA y el fallback a CPU int8 en HakuTranscriber.
 HAKU_GPU_LOCK = threading.RLock()
 
 
 class HakuOcupadoError(Exception):
-    """Lanzada cuando Haku Visitante o un proceso previo retiene el lock."""
+    """Lanzada cuando otro hilo del servidor web retiene el lock de transcripción de audio."""
     pass
 
 
@@ -66,52 +72,126 @@ def adquirir_lock_haku(timeout: float = 12.0):
     adquirido = HAKU_GPU_LOCK.acquire(timeout=timeout)
     if not adquirido:
         logger.warning("Timeout esperando lock de Haku (ocupado por Visitante o hilo previo)")
-        raise HakuOcupadoError(
-            "Haku está atendiendo en este momento a un visitante en el servidor o procesando otra solicitud. "
-            "Por favor, intenta nuevamente en unos segundos."
-        )
+        raise HakuOcupadoError("Haku ocupado procesando otra solicitud. Intenta nuevamente.")
     try:
         yield
     finally:
         HAKU_GPU_LOCK.release()
 
 
+
 # ═════════════════════════════════════════════════════════════════════════════
 # 2. NORMALIZACIÓN FONÉTICA PARA SÍNTESIS DE VOZ (PIPER TTS)
 # ═════════════════════════════════════════════════════════════════════════════
 
+NUMEROS_TEXTO_ES = {
+    0: "cero", 1: "un", 2: "dos", 3: "tres", 4: "cuatro", 5: "cinco",
+    6: "seis", 7: "siete", 8: "ocho", 9: "nueve", 10: "diez",
+    11: "once", 12: "doce", 13: "trece", 14: "catorce", 15: "quince",
+    16: "dieciséis", 17: "diecisiete", 18: "dieciocho", 19: "diecinueve",
+    20: "veinte", 21: "veintiuno", 22: "veintidós", 23: "veintitrés",
+    24: "veinticuatro", 25: "veinticinco", 26: "veintiséis", 27: "veintisiete",
+    28: "veintiocho", 29: "veintinueve", 30: "treinta", 40: "cuarenta",
+    50: "cincuenta", 60: "sesenta", 70: "setenta", 80: "ochenta", 90: "noventa",
+    100: "cien",
+}
+
+
+def _numero_a_letras(n: int) -> str:
+    """Convierte un número entero positivo a palabras en español."""
+    if n in NUMEROS_TEXTO_ES:
+        return NUMEROS_TEXTO_ES[n]
+    if n < 100:
+        dec = (n // 10) * 10
+        uni = n % 10
+        return f"{NUMEROS_TEXTO_ES[dec]} y {NUMEROS_TEXTO_ES[uni]}"
+    if n < 1000:
+        cen = (n // 100) * 100
+        resto = n % 100
+        pref = "ciento" if cen == 100 else {
+            200: "doscientos", 300: "trescientos", 400: "cuatrocientos",
+            500: "quinientos", 600: "seiscientos", 700: "setecientos",
+            800: "ochocientos", 900: "novecientos"
+        }.get(cen, str(cen))
+        return f"{pref} {_numero_a_letras(resto)}" if resto > 0 else pref
+    return str(n)
+
+
+DIGITOS_A_LETRAS = {
+    "0": "cero",
+    "1": "uno",
+    "2": "dos",
+    "3": "tres",
+    "4": "cuatro",
+    "5": "cinco",
+    "6": "seis",
+    "7": "siete",
+    "8": "ocho",
+    "9": "nueve",
+}
+
+
+def _formatear_codigo_tts(m: re.Match) -> str:
+    """Convierte códigos de inventario (ej. CAB-0001 -> código CAB guion cero cero cero uno)."""
+    prefijo = m.group(1)
+    digitos = m.group(2)
+    digitos_leidos = " ".join(DIGITOS_A_LETRAS.get(d, d) for d in digitos)
+    return f"código {prefijo} guion {digitos_leidos}"
+
 
 def normalizar_para_tts(texto: str) -> str:
-    """Normaliza texto para que Piper TTS lo pronuncie correctamente.
+    """Normaliza texto formal para que Piper TTS lo pronuncie con prosodia profesional.
 
-    Regla innegociable de la especificación:
-    - En pantalla se escribe 'Inventario AudacIA'.
-    - Al enviar texto a Piper TTS, reemplazar 'AudacIA' por 'Audacia' para evitar
-      que pronuncie 'AudakIA'.
+    Reglas de calidad:
+    - Remueve markdown (negritas, cursivas, encabezados, viñetas, bloques de código).
+    - Remueve emojis y símbolos especiales no verbales.
+    - Convierte códigos de inventario (ej. CAB-0001 -> código CAB guion cero cero cero uno).
+    - Pronunciación de AudacIA -> Audacia.
+    - Expansión de números cardinales aislados (ej. **3** -> tres).
     """
     if not texto:
         return ""
 
-    # 1. Reemplazo de pronunciación para AudacIA
-    resultado = re.sub(r"AudacIA\b", "Audacia", texto)
-    resultado = re.sub(r"AUDACIA\b", "Audacia", resultado)
-    resultado = re.sub(r"audacIA\b", "audacia", resultado)
+    resultado = texto
 
-    # 2. Limpieza de markdown (negritas, cursivas, encabezados, viñetas)
+    # 1. Limpieza de emojis y caracteres gráficos no verbales
+    resultado = re.sub(r"[\U00010000-\U0010ffff\u2600-\u27bf\u2300-\u23ff\u2b50-\u2b55]", "", resultado)
+
+    # 2. Reemplazo fonético para AudacIA
+    resultado = re.sub(r"\bAudacIA\b", "Audacia", resultado, flags=re.IGNORECASE)
+
+    # 3. Limpieza de markdown
     resultado = re.sub(r"\*\*([^*]+)\*\*", r"\1", resultado)
     resultado = re.sub(r"\*([^*]+)\*", r"\1", resultado)
     resultado = re.sub(r"`([^`]+)`", r"\1", resultado)
     resultado = re.sub(r"^#+\s*", "", resultado, flags=re.MULTILINE)
     resultado = re.sub(r"^\s*[-*•]\s*", "", resultado, flags=re.MULTILINE)
 
-    # 3. Separación de códigos de inventario (ej. CAB-0001 -> C A B 0 0 0 1 o guion dicho como código)
+    # 4. Códigos de inventario (CAB-0001 -> código CAB guion cero cero cero uno)
     resultado = re.sub(
-        r"\b([A-Z]{3})-(\d{4})\b",
-        r"código \1 guion \2",
+        r"\b([A-Z]{2,6})-(\d{2,6})\b",
+        _formatear_codigo_tts,
         resultado,
     )
 
-    return resultado.strip()
+    # 5. Expansión de números enteros cardinales aislados (evitando códigos con guion)
+    def _reemplazar_numero(m: re.Match) -> str:
+        num_str = m.group(1)
+        if len(num_str) > 1 and num_str.startswith("0"):
+            return num_str  # Códigos con ceros a la izquierda se dejan para pronunciar dígito a dígito
+        try:
+            val = int(num_str)
+            if val <= 999:
+                return _numero_a_letras(val)
+        except ValueError:
+            pass
+        return num_str
+
+    resultado = re.sub(r"(?<!guion\s)(?<!código\s)\b(\d+)\b", _reemplazar_numero, resultado)
+
+    # 6. Colapsar espacios múltiples
+    resultado = re.sub(r"\s+", " ", resultado).strip()
+    return resultado
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -119,63 +199,23 @@ def normalizar_para_tts(texto: str) -> str:
 # ═════════════════════════════════════════════════════════════════════════════
 
 
-def _generar_wav_sintetico_fallback(texto: str) -> bytes:
-    """Genera un archivo WAV válido (16-bit PCM mono 16000Hz) en caso de fallback."""
-    buffer = io.BytesIO()
-    frecuencia = 16000
-    duracion_s = max(0.5, min(2.0, len(texto) * 0.05))
-    num_muestras = int(frecuencia * duracion_s)
-
-    with wave.open(buffer, "wb") as wav_file:
-        wav_file.setnchannels(1)
-        wav_file.setsampwidth(2)  # 16 bits
-        wav_file.setframerate(frecuencia)
-        # Tono suave de confirmación acústica
-        datos = bytearray()
-        for i in range(num_muestras):
-            muestra = int(1000 * 0.1)  # tono mínimo inaudible/suave
-            datos.extend(struct.pack("<h", muestra))
-        wav_file.writeframes(bytes(datos))
-
-    buffer.seek(0)
-    return buffer.read()
-
-
 def sintetizar_audio_bytes(texto: str) -> bytes:
-    """Sintetiza texto a audio WAV en memoria para enviar al navegador cliente.
+    """Sintetiza texto a audio WAV en memoria usando HakuSynthesizer.
 
-    REGLA INNEGOCIABLE:
-    El audio generado NUNCA suena en los altavoces físicos del servidor (no usa
-    sounddevice ni altavoces locales). Se devuelve exclusivamente en bytes WAV
-    para reproducción en el navegador del dispositivo cliente.
+    REGLAS INNEGOCIABLES:
+    1. Capa fina: texto -> HakuSynthesizer -> WAV bytes.
+    2. NO reproduce en altavoces del servidor físico (reproducción exclusiva en el cliente).
+    3. NO depende de hacu/ (Haku Visitante).
+    4. NO devuelve tonos sinusoidales de fallback; lanza HakuSynthesizerError en caso de fallo.
     """
     texto_normalizado = normalizar_para_tts(texto)
     if not texto_normalizado:
-        return _generar_wav_sintetico_fallback("vacío")
+        from .audio.synthesizer import HakuSynthesizerError
+        raise HakuSynthesizerError("Texto de entrada vacío para síntesis de voz.")
 
-    # Intentar invocar el motor Piper si está disponible en el entorno
-    try:
-        # Verificar si piper-tts o el módulo hacu.voz está disponible
-        from hacu.config import VozConfig  # type: ignore
-        from hacu.voz.sintetizador import ruta_de_voz  # type: ignore
-
-        cfg_voz = VozConfig()
-        ruta_modelo = ruta_de_voz(cfg_voz, cfg_voz.piper_voz)
-
-        if ruta_modelo and ruta_modelo.exists():
-            from piper import PiperVoice  # type: ignore
-
-            with adquirir_lock_haku(timeout=8.0):
-                voz = PiperVoice.load(str(ruta_modelo))
-                buffer = io.BytesIO()
-                with wave.open(buffer, "wb") as wav_file:
-                    voz.synthesize(texto_normalizado, wav_file)
-                buffer.seek(0)
-                return buffer.read()
-    except Exception as exc:
-        logger.debug("No se pudo usar Piper en proceso (%s), usando síntesis fallback", exc)
-
-    return _generar_wav_sintetico_fallback(texto_normalizado)
+    from .audio.synthesizer import HakuSynthesizer
+    synth = HakuSynthesizer.obtener_instancia()
+    return synth.sintetizar(texto_normalizado)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -183,45 +223,87 @@ def sintetizar_audio_bytes(texto: str) -> bytes:
 # ═════════════════════════════════════════════════════════════════════════════
 
 
+def procesar_audio_y_transcribir(audio_bytes: bytes) -> dict[str, Any]:
+    """Procesa el buffer de audio (pipeline completo: decode -> analyzer -> VAD -> normalizer)
+    y transcribe con faster-whisper únicamente si se detecta voz válida.
+
+    Retorna un diccionario con:
+    - estado: "VOZ_DETECTADA" | "SIN_VOZ"
+    - motivo: "VOZ_DETECTADA" | "AUDIO_SILENCIOSO" | "SOLO_RUIDO" | "ERROR_DECODIFICACION"
+    - texto: str
+    - metricas: dict
+    """
+    if not audio_bytes:
+        return {
+            "estado": "SIN_VOZ",
+            "motivo": "BUFFER_VACIO",
+            "texto": "",
+            "metricas": {},
+        }
+
+    from .audio.pipeline import AudioPipeline
+    pipeline = AudioPipeline.desde_settings()
+    resultado_proc = pipeline.procesar(audio_bytes)
+
+    if resultado_proc.estado == "SIN_VOZ":
+        logger.info("Audio descartado por pipeline: %s", resultado_proc.motivo)
+        return {
+            "estado": "SIN_VOZ",
+            "motivo": resultado_proc.motivo,
+            "texto": "",
+            "metricas": resultado_proc.to_dict(),
+        }
+
+    # Si se detectó voz válida, procedemos a transcribir usando HakuTranscriber
+    samples_float32 = resultado_proc.audio_limpio
+    texto_transcrito = ""
+
+    from .audio.transcriber import HakuTranscriber, TranscripcionError
+
+    try:
+        transcriptor = HakuTranscriber.obtener_instancia()
+        if transcriptor.es_cuda():
+            with adquirir_lock_haku(timeout=30.0):
+                texto_transcrito = transcriptor.transcribir(samples_float32)
+        else:
+            texto_transcrito = transcriptor.transcribir(samples_float32)
+    except HakuOcupadoError:
+        logger.warning("Haku ocupado por otro proceso al intentar transcribir")
+        raise
+    except TranscripcionError as err:
+        logger.error("Error en motor STT de Haku: %s", err)
+        return {
+            "estado": "ERROR_TRANSCRIPCION",
+            "motivo": "ERROR_STT",
+            "texto": "",
+            "error": "Fallo en motor de transcripción de voz.",
+            "metricas": resultado_proc.to_dict(),
+        }
+    except Exception as exc:
+        logger.exception("Error inesperado en transcripción faster-whisper: %s", exc)
+        return {
+            "estado": "ERROR_TRANSCRIPCION",
+            "motivo": "ERROR_STT",
+            "texto": "",
+            "error": "Error interno en procesamiento de audio.",
+            "metricas": resultado_proc.to_dict(),
+        }
+
+    return {
+        "estado": "VOZ_DETECTADA",
+        "motivo": "VOZ_DETECTADA",
+        "texto": texto_transcrito,
+        "metricas": resultado_proc.to_dict(),
+    }
+
+
 def transcribir_audio_bytes(audio_bytes: bytes) -> str:
     """Transcribe un archivo de audio (WAV/WebM) recibido del navegador cliente.
 
     Usa faster-whisper con el lock de Haku para evitar conflictos de VRAM con el LLM.
     """
-    if not audio_bytes:
-        return ""
-
-    try:
-        from hacu.config import VozConfig  # type: ignore
-        from hacu.voz.transcriptor import TranscriptorWhisper  # type: ignore
-
-        # Si faster-whisper está disponible en el entorno
-        cfg_voz = VozConfig()
-        transcriptor = TranscriptorWhisper(cfg_voz, logger)
-
-        with adquirir_lock_haku(timeout=10.0):
-            import tempfile
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-                tmp.write(audio_bytes)
-                tmp_path = tmp.name
-
-            try:
-                import numpy as np  # type: ignore
-                import soundfile as sf  # type: ignore
-                audio_data, _ = sf.read(tmp_path, dtype="float32")
-                if audio_data.ndim > 1:
-                    audio_data = audio_data.mean(axis=1)
-                texto = transcriptor.transcribir(audio_data)
-                return texto.strip()
-            finally:
-                import os
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
-    except Exception as exc:
-        logger.debug("Transcripción directa no disponible (%s), usando fallback", exc)
-        return ""
+    res = procesar_audio_y_transcribir(audio_bytes)
+    return res.get("texto", "")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -259,117 +341,818 @@ def _buscar_producto(termino: str, usuario: UsuarioAudacIA) -> Producto | None:
     if not termino_limpio:
         return None
 
-    qs = Producto.objects.filter(activo=True, archivado=False)
-    if usuario.es_usuario_normal and usuario.almacen_asignado:
-        qs = qs.filter(categoria__almacen_principal=usuario.almacen_asignado)
+    from .lenguaje.normalizador import NormalizadorLenguajeHaku
+    prod, _, _ = NormalizadorLenguajeHaku._resolver_producto_en_texto(termino_limpio, usuario)
+    return prod
 
-    # 1. Búsqueda exacta por código interno
-    producto = qs.filter(codigo_interno__iexact=termino_limpio).first()
-    if producto:
-        return producto
 
-    # 2. Búsqueda exacta por código de barras
-    producto = qs.filter(codigo_barras__iexact=termino_limpio).first()
-    if producto:
-        return producto
+def _validar_acceso_almacen(usuario: UsuarioAudacIA, almacen_intencion: Almacen | None) -> tuple[Almacen | None, dict[str, Any] | None]:
+    """Valida los permisos de acceso al almacén solicitado.
+    
+    Retorna:
+    - (almacen_filtrado, None) si el acceso es válido.
+    - (None, dict_error) si el usuario normal intentó consultar un almacén no autorizado
+      o si no tiene almacén asignado.
+    """
+    if almacen_intencion:
+        if not usuario.tiene_acceso_almacen(almacen_intencion):
+            msg = f"No tienes permiso para consultar el almacén '{almacen_intencion.nombre}'."
+            return None, {
+                "tipo": "consulta",
+                "mensaje_pantalla": msg,
+                "mensaje_verbal": normalizar_para_tts(msg),
+                "datos": {"error_permisos": True, "almacen_denegado": almacen_intencion.nombre},
+            }
+        return almacen_intencion, None
 
-    # 3. Búsqueda por nombre exacto o contenido directo
-    producto = qs.filter(nombre__iexact=termino_limpio).first()
-    if producto:
-        return producto
+    if usuario.es_usuario_normal:
+        if usuario.almacen_asignado:
+            return usuario.almacen_asignado, None
+        else:
+            msg = "Tu cuenta de usuario no tiene un almacén asignado para realizar esta consulta."
+            return None, {
+                "tipo": "consulta",
+                "mensaje_pantalla": msg,
+                "mensaje_verbal": normalizar_para_tts(msg),
+                "datos": {"error_permisos": True, "sin_almacen_asignado": True},
+            }
 
-    producto = qs.filter(nombre__icontains=termino_limpio).first()
-    if producto:
-        return producto
-
-    # 4. Si el término contiene códigos o nombres de productos conocidos
-    termino_lower = termino_limpio.lower()
-    for p in qs:
-        if p.codigo_interno.lower() in termino_lower:
-            return p
-        if p.codigo_barras and p.codigo_barras.lower() in termino_lower:
-            return p
-        if p.nombre.lower() in termino_lower:
-            return p
-
-    # 5. Descomponer en n-gramas ignorando palabras de parada y números
-    palabras_parada = {
-        "cuanto", "cuantos", "cuanta", "cuantas", "stock", "hay", "queda", "quedan",
-        "existencias", "existencia", "donde", "esta", "estan", "ubicacion",
-        "salida", "entrada", "prestar", "prestamo", "devolver", "devolucion",
-        "registrar", "hacer", "unidades", "unidad", "de", "del", "al", "el", "la", "los", "las",
-        "para", "por", "motivo", "a", "en", "con", "un", "una", "unos", "unas"
-    }
-    tokens = [w for w in termino_lower.split() if w not in palabras_parada and not w.isdigit()]
-    for n in range(len(tokens), 0, -1):
-        for i in range(len(tokens) - n + 1):
-            frase = " ".join(tokens[i:i+n])
-            if len(frase) >= 3:
-                encontrado = qs.filter(nombre__icontains=frase).first()
-                if encontrado:
-                    return encontrado
-
-    return None
+    # Administrador o Superusuario sin almacén explícito: acceso global
+    return None, None
 
 
 def procesar_comando_inventario(
     usuario: UsuarioAudacIA,
     mensaje: str,
     propuesta_activa: dict | None = None,
+    sesion: dict | None = None,
+    estado_operativo: Any = None,
 ) -> dict[str, Any]:
-    """Interpreta el mensaje del usuario y devuelve respuesta o genera propuesta.
+    """Interpreta el mensaje del usuario mediante la capa lingüística desacoplada.
+
+    Flujo obligatorio:
+    Audio -> Whisper -> Normalización lingüística -> Intención -> Confirmación Haku -> API Inventario
 
     Retorna un diccionario con:
-    - tipo: "consulta" | "propuesta" | "confirmacion_ejecutada" | "propuesta_cancelada" | "error" | "conversacion"
+    - tipo: "consulta" | "propuesta" | "aclaracion" | "accion_confirmar" | "accion_cancelar" | "error" | "conversacion"
     - mensaje_pantalla: texto formateado para la interfaz
     - mensaje_verbal: texto optimizado para síntesis de voz (sin markdown)
     - propuesta: dict con datos de la propuesta (si tipo == "propuesta")
     - datos: dict adicional para renderizado visual
     """
+    from .cache import HakuCacheManager
+    from .contexto import HakuOperationalContext
+    from .lenguaje.normalizador import IntencionResultado, IntencionTipo, NormalizadorLenguajeHaku
+
     texto = mensaje.strip()
     texto_lower = texto.lower()
 
+    if estado_operativo is None and usuario and getattr(usuario, "id", None) and sesion is not None:
+        session_key = getattr(sesion, "session_key", None) if hasattr(sesion, "session_key") else (sesion.get("session_key") if isinstance(sesion, dict) else None)
+        if not session_key:
+            session_key = f"sess_{usuario.id}"
+        almacen_id = getattr(usuario, "almacen_asignado_id", None)
+        estado_operativo = HakuOperationalContext.obtener_o_crear(usuario.id, session_key, almacen_id)
+
+    if propuesta_activa is None and estado_operativo and getattr(estado_operativo, "propuesta_activa", None):
+        propuesta_activa = estado_operativo.propuesta_activa
+
     # ─────────────────────────────────────────────────────────────────────────
-    # A. RESPUESTA A PROPUESTA ACTIVA (Confirmar / Cancelar)
+    # GENERACIÓN DE INTENCIÓN SEMÁNTICA (CAPA LINGÜÍSTICA SIN EFECTOS SECUNDARIOS)
     # ─────────────────────────────────────────────────────────────────────────
-    if propuesta_activa:
-        # Palabras de confirmación
-        if re.search(r"\b(s[ií]|confirmar|confirmo|proceder|ejecutar|de acuerdo|afirmativo|adelante)\b", texto_lower):
+    intencion: IntencionResultado = NormalizadorLenguajeHaku.interpretar(
+        mensaje=texto,
+        usuario=usuario,
+        contexto_sesion=sesion,
+        estado_operativo=estado_operativo,
+    )
+
+    # Actualizar producto en foco conversacional en RAM
+    if intencion.producto and estado_operativo:
+        estado_operativo.asignar_producto(
+            intencion.producto.id,
+            intencion.producto.codigo_interno,
+            intencion.producto.nombre,
+        )
+        estado_operativo.ultima_intencion = intencion.tipo.value
+        estado_operativo.ultima_busqueda = texto
+        HakuOperationalContext.guardar(estado_operativo)
+
+    # 0. Protocolo social: Saludos y Agradecimientos
+    if intencion.tipo == IntencionTipo.SALUDO:
+        msg = "Buenos días. Sistema Haku de control de inventario listo. ¿Qué consulta u operación deseas realizar?"
+        return {
+            "tipo": "saludo",
+            "mensaje_pantalla": msg,
+            "mensaje_verbal": normalizar_para_tts(msg),
+        }
+
+    if intencion.tipo == IntencionTipo.AGRADECIMIENTO:
+        msg = "Con gusto. El sistema permanece disponible para nuevas consultas u operaciones."
+        return {
+            "tipo": "agradecimiento",
+            "mensaje_pantalla": msg,
+            "mensaje_verbal": normalizar_para_tts(msg),
+        }
+
+    if intencion.tipo == IntencionTipo.SOLICITUD_NO_COMPRENDIDA:
+        msg = "Disculpa, no entendí la solicitud. ¿Puedes repetirla?"
+        return {
+            "tipo": "no_comprendido",
+            "mensaje_pantalla": msg,
+            "mensaje_verbal": normalizar_para_tts(msg),
+            "datos": {"no_comprendido": True},
+        }
+
+    # 0-bis. Acciones de Confirmación y Cancelación desacopladas
+    if intencion.tipo == IntencionTipo.ACCION_CONFIRMAR:
+        if propuesta_activa:
+            if time.time() > propuesta_activa.get("expira_en", 0):
+                if estado_operativo:
+                    estado_operativo.propuesta_activa = None
+                    HakuOperationalContext.guardar(estado_operativo)
+                if sesion is not None:
+                    sesion["haku_propuesta_activa"] = None
+                return {
+                    "tipo": "aclaracion",
+                    "mensaje_pantalla": "La propuesta previa ha caducado por superar los 30 minutos. Por favor genera una nueva solicitud.",
+                    "mensaje_verbal": "La propuesta ha caducado. Por favor solicita la operación de nuevo.",
+                    "propuesta_activa": False,
+                }
             return {
                 "tipo": "accion_confirmar",
                 "propuesta_id": propuesta_activa["id"],
                 "mensaje_pantalla": "Confirmación recibida. Procediendo con la transacción...",
                 "mensaje_verbal": "Confirmación recibida. Ejecutando la operación.",
             }
+        return {
+            "tipo": "accion_confirmar",
+            "mensaje_pantalla": "No hay ninguna transacción pendiente de confirmación en este momento.",
+            "mensaje_verbal": normalizar_para_tts("No hay ninguna transacción pendiente de confirmación en este momento."),
+        }
 
-        # Palabras de cancelación
-        if re.search(r"\b(no|cancelar|cancela|anular|descartar|olv[ií]dalo|parar)\b", texto_lower):
+    if intencion.tipo == IntencionTipo.ACCION_CANCELAR:
+        if propuesta_activa:
+            if estado_operativo:
+                estado_operativo.propuesta_activa = None
+                HakuOperationalContext.guardar(estado_operativo)
+            if sesion is not None:
+                sesion["haku_propuesta_activa"] = None
             return {
                 "tipo": "accion_cancelar",
                 "propuesta_id": propuesta_activa["id"],
                 "mensaje_pantalla": "Operación cancelada. La propuesta ha sido descartada.",
                 "mensaje_verbal": "Operación cancelada. No se realizaron cambios en el inventario.",
             }
+        return {
+            "tipo": "accion_cancelar",
+            "mensaje_pantalla": "Entendido. No hay operaciones pendientes en ejecución.",
+            "mensaje_verbal": normalizar_para_tts("Entendido. No hay operaciones pendientes en ejecución."),
+        }
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # B. CONSULTAS DE SOLO LECTURA (No requieren pre-confirmación)
-    # ─────────────────────────────────────────────────────────────────────────
+    # 1. Petición de aclaración por ambigüedad o múltiples códigos (Reglas 3 y 5)
+    if intencion.tipo == IntencionTipo.SOLICITAR_ACLARACION:
+        if intencion.candidatos and estado_operativo:
+            estado_operativo.asignar_candidatos(intencion.candidatos)
+            estado_operativo.ultima_intencion = intencion.tipo.value
+            estado_operativo.ultima_busqueda = texto
+            HakuOperationalContext.guardar(estado_operativo)
 
-    # 1. Alertas de stock bajo / agotado
-    if re.search(r"\b(alerta|alertas|bajo stock|sin stock|agotado|agotados|qu[eé] falta)\b", texto_lower):
+        msg_aclaracion = intencion.mensaje_aclaracion or "¿Podrías especificar a qué producto o acción te refieres?"
+        return {
+            "tipo": "aclaracion",
+            "mensaje_pantalla": msg_aclaracion,
+            "mensaje_verbal": normalizar_para_tts(msg_aclaracion),
+            "datos": {"requiere_aclaracion": True},
+        }
+
+    # 2. Métricas generales de movimientos de hoy
+    if intencion.tipo == IntencionTipo.CONSULTAR_METRICAS_MOVIMIENTOS:
+        hoy = timezone.now().date()
+        qs_mov = Movimiento.objects.filter(
+            estado=Movimiento.Estado.CONFIRMADO,
+            fecha_hora__date=hoy,
+        )
+        if usuario.es_usuario_normal:
+            if usuario.almacen_asignado:
+                qs_mov = qs_mov.filter(almacen_origen=usuario.almacen_asignado)
+            else:
+                msg = "Tu cuenta de usuario no tiene un almacén asignado. No puedes consultar métricas de inventario."
+                return {
+                    "tipo": "consulta",
+                    "mensaje_pantalla": msg,
+                    "mensaje_verbal": normalizar_para_tts(msg),
+                    "datos": {"fecha": str(hoy), "total": 0, "entradas": 0, "salidas": 0, "prestamos": 0, "devoluciones": 0},
+                }
+
+        total_mov = qs_mov.count()
+        entradas = qs_mov.filter(tipo=Movimiento.Tipo.ENTRADA).count()
+        salidas = qs_mov.filter(tipo=Movimiento.Tipo.SALIDA).count()
+        prestamos = qs_mov.filter(tipo=Movimiento.Tipo.PRESTAMO).count()
+        devoluciones = qs_mov.filter(tipo=Movimiento.Tipo.DEVOLUCION).count()
+
+        if estado_operativo:
+            estado_operativo.registrar_accion(
+                "CONSULTAR_METRICAS_MOVIMIENTOS",
+                cantidad=total_mov,
+            )
+            HakuOperationalContext.guardar(estado_operativo)
+
+        es_pregunta_entradas = bool(re.search(r"\bentradas?\b", texto_lower) and not re.search(r"\bsalidas?\b", texto_lower))
+        es_pregunta_salidas = bool(re.search(r"\bsalidas?\b", texto_lower) and not re.search(r"\bentradas?\b", texto_lower))
+
+        if es_pregunta_entradas:
+            pantalla = (
+                f"Hoy se han registrado **{entradas}** entradas (de un total de {total_mov} movimientos hoy):\n"
+                f"- **{entradas}** entradas\n"
+                f"- **{salidas}** salidas\n"
+                f"- **{prestamos}** préstamos\n"
+                f"- **{devoluciones}** devoluciones."
+            )
+            verbal = f"Hoy se han registrado {entradas} entradas en el almacén, de un total de {total_mov} movimientos realizados."
+        elif es_pregunta_salidas:
+            pantalla = (
+                f"Hoy se han registrado **{salidas}** salidas (de un total de {total_mov} movimientos hoy):\n"
+                f"- **{entradas}** entradas\n"
+                f"- **{salidas}** salidas\n"
+                f"- **{prestamos}** préstamos\n"
+                f"- **{devoluciones}** devoluciones."
+            )
+            verbal = f"Hoy se han registrado {salidas} salidas en el almacén, de un total de {total_mov} movimientos realizados."
+        else:
+            pantalla = (
+                f"Durante la jornada se registraron movimientos de inventario correspondientes a las operaciones realizadas hoy.\n"
+                f"Hoy se han realizado **{total_mov}** movimientos:\n"
+                f"- **{entradas}** entradas\n"
+                f"- **{salidas}** salidas\n"
+                f"- **{prestamos}** préstamos\n"
+                f"- **{devoluciones}** devoluciones.\n\n"
+                f"¿Quieres revisar algún producto específico?"
+            )
+            verbal = (
+                f"Durante la jornada se registraron movimientos de inventario correspondientes a las operaciones realizadas hoy: "
+                f"{entradas} entradas, {salidas} salidas, {prestamos} préstamos y {devoluciones} devoluciones. "
+                f"¿Quieres revisar algún producto específico?"
+            )
+        return {
+            "tipo": "consulta",
+            "mensaje_pantalla": pantalla,
+            "mensaje_verbal": normalizar_para_tts(verbal),
+            "datos": {
+                "fecha": str(hoy),
+                "total": total_mov,
+                "entradas": entradas,
+                "salidas": salidas,
+                "prestamos": prestamos,
+                "devoluciones": devoluciones,
+            },
+        }
+
+    # 3. Resumen de inventario / almacén
+    if intencion.tipo == IntencionTipo.CONSULTAR_RESUMEN_INVENTARIO:
+        hoy = timezone.now().date()
+        almacen, error_resp = _validar_acceso_almacen(usuario, intencion.almacen)
+        if error_resp:
+            return error_resp
+
+        qs_prod = Producto.objects.filter(activo=True, archivado=False)
+        if almacen:
+            qs_prod = qs_prod.filter(categoria__almacen_principal=almacen)
+        total_productos = qs_prod.count()
+
+        qs_exist = Existencia.objects.filter(producto__activo=True, producto__archivado=False)
+        if almacen:
+            qs_exist = qs_exist.filter(almacen=almacen)
+
+        sin_stock_count = sum(1 for e in qs_exist if e.sin_stock)
+        bajo_stock_count = sum(1 for e in qs_exist if e.stock_bajo)
+        total_alertas = sin_stock_count + bajo_stock_count
+
+        qs_mov = Movimiento.objects.filter(estado=Movimiento.Estado.CONFIRMADO, fecha_hora__date=hoy)
+        if almacen:
+            qs_mov = qs_mov.filter(almacen_origen=almacen)
+        movimientos_hoy = qs_mov.count()
+
+        qs_prest = Prestamo.objects.filter(
+            estado__in=[Prestamo.Estado.ABIERTO, Prestamo.Estado.DEVUELTO_PARCIAL]
+        )
+        if almacen:
+            qs_prest = qs_prest.filter(almacen=almacen)
+        prestamos_activos = qs_prest.count()
+
+        if estado_operativo:
+            estado_operativo.registrar_accion(
+                "CONSULTAR_RESUMEN_INVENTARIO",
+                cantidad=total_productos,
+            )
+            HakuOperationalContext.guardar(estado_operativo)
+
+        nombre_almacen = almacen.nombre if almacen else "el inventario general"
+        pantalla = (
+            f"### Resumen de inventario ({nombre_almacen})\n"
+            f"- **Cantidad de productos registrados:** {total_productos}\n"
+            f"- **Productos con bajo stock:** {bajo_stock_count}\n"
+            f"- **Productos sin stock (agotados):** {sin_stock_count}\n"
+            f"- **Movimientos del día:** {movimientos_hoy}\n"
+            f"- **Alertas activas:** {total_alertas}\n"
+            f"- **Préstamos activos:** {prestamos_activos}"
+        )
+        verbal = (
+            f"En {nombre_almacen} hay {total_productos} productos registrados. "
+            f"Hay {bajo_stock_count} con bajo stock y {sin_stock_count} agotados. "
+            f"Hoy van {movimientos_hoy} movimientos del día y {prestamos_activos} préstamos activos."
+        )
+        return {
+            "tipo": "consulta",
+            "mensaje_pantalla": pantalla,
+            "mensaje_verbal": normalizar_para_tts(verbal),
+            "datos": {
+                "total_productos": total_productos,
+                "bajo_stock": bajo_stock_count,
+                "sin_stock": sin_stock_count,
+                "movimientos_hoy": movimientos_hoy,
+                "alertas": total_alertas,
+                "prestamos_activos": prestamos_activos,
+            },
+        }
+
+    # 3-bis A. Listar almacenes / bodegas
+    if intencion.tipo == IntencionTipo.LISTAR_ALMACENES:
+        qs_almacenes = Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
+        total_almacenes = qs_almacenes.count()
+
+        if total_almacenes == 0:
+            msg = "Actualmente no hay almacenes activos registrados en el sistema."
+            return {
+                "tipo": "consulta",
+                "mensaje_pantalla": msg,
+                "mensaje_verbal": normalizar_para_tts(msg),
+                "datos": {"almacenes": []},
+            }
+
+        almacen_asignado = usuario.almacen_asignado if (usuario.es_usuario_normal and usuario.almacen_asignado) else None
+
+        lineas_pantalla = ["### Almacenes activos en el sistema:\n"]
+        lineas_voz = [f"Hay {total_almacenes} almacenes registrados:"]
+        lista_datos = []
+
+        for alm in qs_almacenes:
+            es_propio = bool(almacen_asignado and alm.id == almacen_asignado.id)
+            marca_asignado = " *(Tu almacén asignado)*" if es_propio else ""
+            desc = f" — {alm.descripcion}" if alm.descripcion else ""
+            lineas_pantalla.append(f"- **{alm.nombre}**{marca_asignado}{desc}")
+            lineas_voz.append(f"{alm.nombre}.")
+            lista_datos.append({"id": alm.id, "nombre": alm.nombre, "descripcion": alm.descripcion, "es_asignado": es_propio})
+
+        if usuario.es_usuario_normal and not usuario.almacen_asignado:
+            lineas_pantalla.append("\n*Aviso: Tu cuenta de usuario no tiene ningún almacén asignado actualmente.*")
+
+        if estado_operativo:
+            estado_operativo.registrar_accion(
+                "LISTAR_ALMACENES",
+                cantidad=total_almacenes,
+            )
+            HakuOperationalContext.guardar(estado_operativo)
+
+        pantalla = "\n".join(lineas_pantalla)
+        verbal = " ".join(lineas_voz)
+
+        return {
+            "tipo": "consulta",
+            "mensaje_pantalla": pantalla,
+            "mensaje_verbal": normalizar_para_tts(verbal),
+            "datos": {"almacenes": lista_datos, "total": total_almacenes},
+        }
+
+    # 3-bis B. Listar catálogo general de productos
+    if intencion.tipo == IntencionTipo.LISTAR_CATALOGO:
+        almacen, error_resp = _validar_acceso_almacen(usuario, intencion.almacen)
+        if error_resp:
+            return error_resp
+
+        qs_prod = Producto.objects.filter(activo=True, archivado=False).select_related("categoria")
+        if almacen:
+            qs_prod = qs_prod.filter(categoria__almacen_principal=almacen)
+
+        filtro_nombre = intencion.datos_extra.get("filtro_nombre") if intencion.datos_extra else None
+        if filtro_nombre:
+            qs_prod = qs_prod.filter(
+                Q(nombre__icontains=filtro_nombre) | Q(categoria__nombre__icontains=filtro_nombre)
+            )
+
+        qs_prod = qs_prod.order_by("codigo_interno")
+
+        total_productos = qs_prod.count()
+        if total_productos == 0:
+            if filtro_nombre:
+                msg = f"No hay productos de la categoría o tipo '{filtro_nombre}' registrados en el catálogo."
+            else:
+                msg = "No hay productos registrados en el catálogo en este momento."
+            return {
+                "tipo": "consulta",
+                "mensaje_pantalla": msg,
+                "mensaje_verbal": normalizar_para_tts(msg),
+                "datos": {"productos": [], "total": 0},
+            }
+
+        productos_muestra = list(qs_prod[:10])
+        lineas_pantalla = [f"### Catálogo de productos ({total_productos} registrados):\n"]
+        lineas_voz = [f"El catálogo cuenta con {total_productos} productos."]
+
+        lista_datos = []
+        nombres_voz = []
+        for p in productos_muestra:
+            lineas_pantalla.append(f"- **{p.nombre}** (`{p.codigo_interno}`) — Categoría: {p.categoria.nombre}")
+            nombres_voz.append(p.nombre)
+            lista_datos.append({"id": str(p.id), "codigo": p.codigo_interno, "nombre": p.nombre, "categoria": p.categoria.nombre})
+
+        if total_productos > 10:
+            lineas_pantalla.append(f"\n*Mostrando 10 de {total_productos} productos registrados.*")
+            lineas_voz.append(f"Entre ellos: {', '.join(nombres_voz[:5])}.")
+        else:
+            lineas_voz.append(f"Listado: {', '.join(nombres_voz)}.")
+
+        if estado_operativo:
+            estado_operativo.asignar_coleccion(lista_datos)
+            estado_operativo.registrar_accion(
+                "LISTAR_CATALOGO",
+                cantidad=total_productos,
+            )
+            estado_operativo.producto_id = None
+            estado_operativo.producto_codigo = None
+            estado_operativo.producto_nombre = None
+            HakuOperationalContext.guardar(estado_operativo)
+
+        return {
+            "tipo": "consulta",
+            "mensaje_pantalla": "\n".join(lineas_pantalla),
+            "mensaje_verbal": normalizar_para_tts(" ".join(lineas_voz)),
+            "datos": {"productos": lista_datos, "total": total_productos},
+        }
+
+    # 3-bis C. Productos con existencias disponibles en stock
+    if intencion.tipo == IntencionTipo.PRODUCTOS_CON_STOCK:
+        # Si se seleccionaron candidatos plurales específicos (ej. "de los tres")
+        cands_plurales = intencion.datos_extra.get("candidatos_plurales") if intencion.datos_extra else None
+        if cands_plurales:
+            ids_cands = [c["id"] for c in cands_plurales if "id" in c]
+            qs_exist = Existencia.objects.filter(
+                producto_id__in=ids_cands,
+                producto__activo=True,
+                producto__archivado=False,
+            ).select_related("producto", "almacen")
+        else:
+            almacen, error_resp = _validar_acceso_almacen(usuario, intencion.almacen)
+            if error_resp:
+                return error_resp
+
+            qs_exist = Existencia.objects.filter(
+                producto__activo=True,
+                producto__archivado=False,
+                stock_disponible__gt=0,
+            ).select_related("producto", "almacen").order_by("-stock_disponible")
+
+            if almacen:
+                qs_exist = qs_exist.filter(almacen=almacen)
+
+            filtro_nombre = intencion.datos_extra.get("filtro_nombre") if intencion.datos_extra else None
+            if filtro_nombre:
+                qs_exist = qs_exist.filter(
+                    Q(producto__nombre__icontains=filtro_nombre) | Q(producto__categoria__nombre__icontains=filtro_nombre)
+                )
+
+        total_con_stock = qs_exist.count()
+        if total_con_stock == 0:
+            filtro_nombre = intencion.datos_extra.get("filtro_nombre") if intencion.datos_extra else None
+            if filtro_nombre:
+                msg = f"No hay productos de la categoría o tipo '{filtro_nombre}' con existencias disponibles en este momento."
+            else:
+                msg = "No hay productos con existencias disponibles en este momento."
+            return {
+                "tipo": "consulta",
+                "mensaje_pantalla": msg,
+                "mensaje_verbal": normalizar_para_tts(msg),
+                "datos": {"existencias": [], "total": 0},
+            }
+
+        existencias_muestra = list(qs_exist[:10])
+        lineas_pantalla = [f"### Productos con existencias disponibles ({total_con_stock} en total):\n"]
+        lineas_voz = [f"Hay {total_con_stock} productos con existencias disponibles."]
+
+        lista_datos = []
+        nombres_voz = []
+        for e in existencias_muestra:
+            lineas_pantalla.append(
+                f"- **{e.producto.nombre}** (`{e.producto.codigo_interno}`): **{e.stock_disponible}** unidades en {e.almacen.nombre}"
+            )
+            nombres_voz.append(f"{e.producto.nombre} con {e.stock_disponible} unidades")
+            lista_datos.append({
+                "id": e.producto.id,
+                "producto_id": str(e.producto.id),
+                "codigo": e.producto.codigo_interno,
+                "nombre": e.producto.nombre,
+                "disponible": e.stock_disponible,
+                "almacen": e.almacen.nombre,
+            })
+
+        if total_con_stock > 10:
+            lineas_pantalla.append(f"\n*Mostrando los 10 productos con mayor disponibilidad.*")
+            lineas_voz.append(f"Entre los principales: {', '.join(nombres_voz[:4])}.")
+        else:
+            lineas_voz.append(f"Listado: {', '.join(nombres_voz)}.")
+
+        if estado_operativo:
+            estado_operativo.asignar_coleccion(lista_datos)
+            estado_operativo.registrar_accion(
+                "PRODUCTOS_CON_STOCK",
+                cantidad=total_con_stock,
+            )
+            estado_operativo.producto_id = None
+            estado_operativo.producto_codigo = None
+            estado_operativo.producto_nombre = None
+            HakuOperationalContext.guardar(estado_operativo)
+
+        return {
+            "tipo": "consulta",
+            "mensaje_pantalla": "\n".join(lineas_pantalla),
+            "mensaje_verbal": normalizar_para_tts(" ".join(lineas_voz)),
+            "datos": {"existencias": lista_datos, "total": total_con_stock},
+        }
+
+    # 3-bis D. Productos sin stock / agotados (stock == 0)
+    if intencion.tipo == IntencionTipo.PRODUCTOS_SIN_STOCK:
+        almacen, error_resp = _validar_acceso_almacen(usuario, intencion.almacen)
+        if error_resp:
+            return error_resp
+
+        qs_exist = Existencia.objects.filter(
+            producto__activo=True,
+            producto__archivado=False,
+            stock_disponible=0,
+        ).select_related("producto", "almacen").order_by("producto__nombre")
+
+        if almacen:
+            qs_exist = qs_exist.filter(almacen=almacen)
+
+        filtro_nombre = intencion.datos_extra.get("filtro_nombre") if intencion.datos_extra else None
+        if filtro_nombre:
+            qs_exist = qs_exist.filter(
+                Q(producto__nombre__icontains=filtro_nombre) | Q(producto__categoria__nombre__icontains=filtro_nombre)
+            )
+
+        filtrar_coleccion = bool(intencion.datos_extra and intencion.datos_extra.get("filtrar_coleccion"))
+        if filtrar_coleccion:
+            coleccion = estado_operativo.coleccion_productos if estado_operativo else []
+            if not coleccion:
+                msg = "No tengo una lista previa de productos en la conversación activa para verificar cuáles se acabaron."
+                return {
+                    "tipo": "aclaracion",
+                    "mensaje_pantalla": msg,
+                    "mensaje_verbal": normalizar_para_tts(msg),
+                    "datos": {"sin_stock": [], "total": 0},
+                }
+            ids = [c.get("id") or c.get("producto_id") for c in coleccion if (c.get("id") or c.get("producto_id"))]
+            qs_exist = qs_exist.filter(producto_id__in=ids)
+
+        total_sin_stock = qs_exist.count()
+        if total_sin_stock == 0:
+            if filtro_nombre:
+                msg = f"No hay productos de la categoría o tipo '{filtro_nombre}' agotados en este momento."
+            elif filtrar_coleccion:
+                msg = "De las referencias que acabamos de revisar, ninguna se ha agotado. Todas tienen stock disponible."
+            else:
+                msg = "No hay productos agotados en este momento. Todas las referencias cuentan con existencias disponibles."
+            return {
+                "tipo": "consulta",
+                "mensaje_pantalla": msg,
+                "mensaje_verbal": normalizar_para_tts(msg),
+                "datos": {"sin_stock": [], "total": 0},
+            }
+
+        items_muestra = list(qs_exist[:10])
+        if filtrar_coleccion:
+            lineas_pantalla = [f"### De las referencias revisadas, las siguientes están agotadas ({total_sin_stock} en total):\n"]
+            lineas_voz = [f"De las referencias revisadas, {total_sin_stock} están agotadas:"]
+        else:
+            lineas_pantalla = [f"### Productos agotados sin existencias ({total_sin_stock} en total):\n"]
+            lineas_voz = [f"Hay {total_sin_stock} productos agotados sin existencias:"]
+        lista_datos = []
+        nombres_voz = []
+
+        for e in items_muestra:
+            lineas_pantalla.append(f"- **{e.producto.nombre}** (`{e.producto.codigo_interno}`) en {e.almacen.nombre}: **0 unidades disponibles**")
+            nombres_voz.append(f"{e.producto.nombre} en {e.almacen.nombre}")
+            lista_datos.append({
+                "id": e.producto.id,
+                "producto_id": str(e.producto.id),
+                "codigo": e.producto.codigo_interno,
+                "nombre": e.producto.nombre,
+                "disponible": 0,
+                "almacen": e.almacen.nombre,
+            })
+
+        if total_sin_stock > 10:
+            lineas_pantalla.append(f"\n*Mostrando 10 de {total_sin_stock} productos agotados.*")
+            lineas_voz.append(f"Entre ellos: {', '.join(nombres_voz[:4])}.")
+        else:
+            lineas_voz.append(f"{', '.join(nombres_voz)}.")
+
+        if estado_operativo:
+            estado_operativo.asignar_coleccion(lista_datos, total_original=total_sin_stock)
+            estado_operativo.registrar_accion(
+                "PRODUCTOS_SIN_STOCK",
+                cantidad=total_sin_stock,
+            )
+            estado_operativo.producto_id = None
+            estado_operativo.producto_codigo = None
+            estado_operativo.producto_nombre = None
+            HakuOperationalContext.guardar(estado_operativo)
+
+        return {
+            "tipo": "consulta",
+            "mensaje_pantalla": "\n".join(lineas_pantalla),
+            "mensaje_verbal": normalizar_para_tts(" ".join(lineas_voz)),
+            "datos": {"sin_stock": lista_datos, "total": total_sin_stock},
+        }
+
+    # 3-bis E. Productos con bajo stock (por debajo del mínimo)
+    if intencion.tipo == IntencionTipo.PRODUCTOS_BAJO_STOCK:
+        almacen, error_resp = _validar_acceso_almacen(usuario, intencion.almacen)
+        if error_resp:
+            return error_resp
+
+        qs_exist = Existencia.objects.filter(
+            producto__activo=True,
+            producto__archivado=False,
+            stock_disponible__gt=0,
+        ).select_related("producto", "almacen")
+
+        if almacen:
+            qs_exist = qs_exist.filter(almacen=almacen)
+
+        filtro_nombre = intencion.datos_extra.get("filtro_nombre") if intencion.datos_extra else None
+        if filtro_nombre:
+            qs_exist = qs_exist.filter(
+                Q(producto__nombre__icontains=filtro_nombre) | Q(producto__categoria__nombre__icontains=filtro_nombre)
+            )
+
+        bajo_stock_items = [e for e in qs_exist if e.stock_bajo]
+        total_bajo_stock = len(bajo_stock_items)
+
+        if total_bajo_stock == 0:
+            if filtro_nombre:
+                msg = f"No hay productos de la categoría o tipo '{filtro_nombre}' por debajo del stock mínimo configurado."
+            else:
+                msg = "No hay productos con existencias por debajo del stock mínimo configurado."
+            return {
+                "tipo": "consulta",
+                "mensaje_pantalla": msg,
+                "mensaje_verbal": normalizar_para_tts(msg),
+                "datos": {"bajo_stock": [], "total": 0},
+            }
+
+        items_muestra = bajo_stock_items[:10]
+        lineas_pantalla = [f"### Productos por debajo del stock mínimo ({total_bajo_stock} en total):\n"]
+        lineas_voz = [f"Hay {total_bajo_stock} productos por debajo del stock mínimo:"]
+        lista_datos = []
+        nombres_voz = []
+
+        for e in items_muestra:
+            lineas_pantalla.append(
+                f"- **{e.producto.nombre}** (`{e.producto.codigo_interno}`) en {e.almacen.nombre}: "
+                f"**{e.stock_disponible}** unidades (mínimo: {e.producto.stock_minimo})"
+            )
+            nombres_voz.append(f"{e.producto.nombre} con {e.stock_disponible} de {e.producto.stock_minimo}")
+            lista_datos.append({
+                "id": e.producto.id,
+                "producto_id": str(e.producto.id),
+                "codigo": e.producto.codigo_interno,
+                "nombre": e.producto.nombre,
+                "disponible": e.stock_disponible,
+                "minimo": e.producto.stock_minimo,
+                "almacen": e.almacen.nombre,
+            })
+
+        if total_bajo_stock > 10:
+            lineas_pantalla.append(f"\n*Mostrando 10 de {total_bajo_stock} productos con bajo stock.*")
+            lineas_voz.append(f"Entre ellos: {', '.join(nombres_voz[:4])}.")
+        else:
+            lineas_voz.append(f"{', '.join(nombres_voz)}.")
+
+        if estado_operativo:
+            estado_operativo.asignar_coleccion(lista_datos, total_original=total_bajo_stock)
+            estado_operativo.registrar_accion(
+                "PRODUCTOS_BAJO_STOCK",
+                cantidad=total_bajo_stock,
+            )
+            estado_operativo.producto_id = None
+            estado_operativo.producto_codigo = None
+            estado_operativo.producto_nombre = None
+            HakuOperationalContext.guardar(estado_operativo)
+
+        return {
+            "tipo": "consulta",
+            "mensaje_pantalla": "\n".join(lineas_pantalla),
+            "mensaje_verbal": normalizar_para_tts(" ".join(lineas_voz)),
+            "datos": {"bajo_stock": lista_datos, "total": total_bajo_stock},
+        }
+
+    # 4. Movimientos por producto específico
+    if intencion.tipo == IntencionTipo.CONSULTAR_PRODUCTO_MOVIMIENTOS:
+        producto = intencion.producto
+        if not producto:
+            msg = "¿De cuál producto deseas consultar los movimientos?"
+            return {"tipo": "aclaracion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
+
+        if sesion is not None:
+            sesion["haku_ultimo_producto_id"] = str(producto.id)
+            sesion["haku_ultimo_acceso"] = time.time()
+
+        qs_mov = Movimiento.objects.filter(
+            producto=producto,
+            estado=Movimiento.Estado.CONFIRMADO,
+        )
+        if usuario.es_usuario_normal:
+            if usuario.almacen_asignado:
+                qs_mov = qs_mov.filter(almacen_origen=usuario.almacen_asignado)
+            else:
+                msg = "Tu cuenta de usuario no tiene un almacén asignado para consultar movimientos."
+                return {"tipo": "consulta", "mensaje_pantalla": msg, "mensaje_verbal": normalizar_para_tts(msg), "datos": {}}
+
+        total_mov = qs_mov.count()
+        entradas = qs_mov.filter(tipo=Movimiento.Tipo.ENTRADA).count()
+        salidas = qs_mov.filter(tipo=Movimiento.Tipo.SALIDA).count()
+        prestamos = qs_mov.filter(tipo=Movimiento.Tipo.PRESTAMO).count()
+        devoluciones = qs_mov.filter(tipo=Movimiento.Tipo.DEVOLUCION).count()
+
+        if estado_operativo:
+            estado_operativo.registrar_accion(
+                "CONSULTAR_PRODUCTO_MOVIMIENTOS",
+                producto=producto.nombre,
+                producto_id=producto.id,
+                codigo=producto.codigo_interno,
+                cantidad=total_mov,
+            )
+            HakuOperationalContext.guardar(estado_operativo)
+
+        pantalla = (
+            f"### Movimientos de {producto.nombre} (`{producto.codigo_interno}`)\n"
+            f"El {producto.nombre} tuvo **{total_mov}** movimientos:\n"
+            f"- **{entradas}** entradas\n"
+            f"- **{salidas}** salidas\n"
+            f"- **{prestamos}** préstamos\n"
+            f"- **{devoluciones}** devoluciones"
+        )
+        verbal = (
+            f"El {producto.nombre} tuvo {total_mov} movimientos: "
+            f"{entradas} entradas, {salidas} salidas y {prestamos} préstamos."
+        )
+        return {
+            "tipo": "consulta",
+            "mensaje_pantalla": pantalla,
+            "mensaje_verbal": normalizar_para_tts(verbal),
+            "datos": {
+                "producto_id": str(producto.id),
+                "codigo": producto.codigo_interno,
+                "nombre": producto.nombre,
+                "total": total_mov,
+                "entradas": entradas,
+                "salidas": salidas,
+                "prestamos": prestamos,
+                "devoluciones": devoluciones,
+            },
+        }
+
+    # 5. Alertas de stock bajo / agotado
+    if intencion.tipo == IntencionTipo.ALERTAS_STOCK:
+        almacen, error_resp = _validar_acceso_almacen(usuario, intencion.almacen)
+        if error_resp:
+            return error_resp
+
         qs_existencias = Existencia.objects.filter(
             producto__activo=True,
             producto__archivado=False,
         ).select_related("producto", "almacen")
 
-        if usuario.es_usuario_normal and usuario.almacen_asignado:
-            qs_existencias = qs_existencias.filter(almacen=usuario.almacen_asignado)
+        if almacen:
+            qs_existencias = qs_existencias.filter(almacen=almacen)
+
+        filtro_nombre = intencion.datos_extra.get("filtro_nombre") if intencion.datos_extra else None
+        if filtro_nombre:
+            qs_existencias = qs_existencias.filter(
+                Q(producto__nombre__icontains=filtro_nombre) | Q(producto__categoria__nombre__icontains=filtro_nombre)
+            )
 
         sin_stock = [e for e in qs_existencias if e.sin_stock][:5]
         bajo_stock = [e for e in qs_existencias if e.stock_bajo][:5]
 
         if not sin_stock and not bajo_stock:
-            res = "No hay alertas activas de stock en este momento. Todos los productos tienen existencias suficientes."
+            if almacen:
+                res = f"No hay alertas activas de stock en {almacen.nombre}. Todos los productos tienen existencias suficientes."
+            elif filtro_nombre:
+                res = f"No hay alertas activas de stock para '{filtro_nombre}'. Todos los productos tienen existencias suficientes."
+            else:
+                res = "No hay alertas activas de stock en este momento. Todos los productos tienen existencias suficientes."
             return {"tipo": "consulta", "mensaje_pantalla": res, "mensaje_verbal": res, "datos": {}}
 
         lineas = []
@@ -382,6 +1165,26 @@ def procesar_comando_inventario(
             nombres = ", ".join(f"{e.producto.nombre} ({e.stock_disponible}/{e.producto.stock_minimo})" for e in bajo_stock)
             lineas.append(f"**Stock bajo ({len(bajo_stock)}):** {nombres}")
             lineas_voz.append(f"Hay {len(bajo_stock)} productos con stock bajo.")
+
+        if estado_operativo:
+            lista_alertas = []
+            for e in sin_stock + bajo_stock:
+                lista_alertas.append({
+                    "id": e.producto.id,
+                    "producto_id": str(e.producto.id),
+                    "codigo": e.producto.codigo_interno,
+                    "nombre": e.producto.nombre,
+                    "almacen": e.almacen.nombre,
+                })
+            estado_operativo.asignar_coleccion(lista_alertas)
+            estado_operativo.registrar_accion(
+                "ALERTAS_STOCK",
+                cantidad=len(sin_stock) + len(bajo_stock),
+            )
+            estado_operativo.producto_id = None
+            estado_operativo.producto_codigo = None
+            estado_operativo.producto_nombre = None
+            HakuOperationalContext.guardar(estado_operativo)
 
         return {
             "tipo": "consulta",
@@ -396,97 +1199,409 @@ def procesar_comando_inventario(
             },
         }
 
-    # 2. Préstamos activos
-    if re.search(r"\b(pr[eé]stamos activos|qui[eé]n tiene|pr[eé]stamos pendientes)\b", texto_lower):
+    # 3. Préstamos activos
+    if intencion.tipo == IntencionTipo.PRESTAMOS_ACTIVOS:
+        almacen, error_resp = _validar_acceso_almacen(usuario, intencion.almacen)
+        if error_resp:
+            return error_resp
+
         qs_prestamos = Prestamo.objects.filter(
             estado__in=[Prestamo.Estado.ABIERTO, Prestamo.Estado.DEVUELTO_PARCIAL]
         ).select_related("producto", "almacen")
-        if usuario.es_usuario_normal and usuario.almacen_asignado:
-            qs_prestamos = qs_prestamos.filter(almacen=usuario.almacen_asignado)
 
+        if almacen:
+            qs_prestamos = qs_prestamos.filter(almacen=almacen)
+
+        producto = intencion.producto
+        filtro_nombre = intencion.datos_extra.get("filtro_nombre") if intencion.datos_extra else None
+
+        if producto:
+            qs_prestamos = qs_prestamos.filter(producto=producto)
+            if sesion is not None:
+                sesion["haku_ultimo_producto_id"] = str(producto.id)
+                sesion["haku_ultimo_acceso"] = time.time()
+        elif filtro_nombre:
+            qs_prestamos = qs_prestamos.filter(
+                Q(producto__nombre__icontains=filtro_nombre) | Q(producto__categoria__nombre__icontains=filtro_nombre)
+            )
+
+        from django.db.models import Sum
+        total_prestamos = qs_prestamos.count()
+        agg_unidades = qs_prestamos.aggregate(Sum("cantidad_pendiente_devolucion"))
+        total_unidades = agg_unidades.get("cantidad_pendiente_devolucion__sum") or 0
+        total_productos_distintos = qs_prestamos.values("producto").distinct().count()
         prestamos = list(qs_prestamos[:10])
+        metrica = intencion.datos_extra.get("metrica", "GENERAL") if intencion.datos_extra else "GENERAL"
+
         if not prestamos:
-            msg = "No hay préstamos activos pendientes en este almacén."
-            return {"tipo": "consulta", "mensaje_pantalla": msg, "mensaje_verbal": msg, "datos": {}}
+            if producto:
+                if almacen:
+                    msg = f"El producto {producto.nombre} no tiene préstamos activos pendientes en {almacen.nombre}."
+                else:
+                    msg = f"El producto {producto.nombre} no tiene préstamos activos pendientes."
+            elif filtro_nombre:
+                msg = f"No hay préstamos activos para productos de la categoría o tipo '{filtro_nombre}'."
+            elif almacen:
+                msg = f"No hay préstamos activos pendientes en {almacen.nombre}."
+            else:
+                msg = "No hay préstamos activos pendientes en este almacén." if usuario.es_usuario_normal else "No hay préstamos activos pendientes en el inventario."
+            return {"tipo": "consulta", "mensaje_pantalla": msg, "mensaje_verbal": msg, "datos": {"prestamos": [], "total": 0, "total_prestamos": 0, "total_unidades": 0, "total_productos_distintos": 0}}
 
         items = []
-        lineas_voz = [f"Hay {len(prestamos)} préstamos activos:"]
-        for p in prestamos:
-            items.append(f"- **{p.producto.nombre}**: {p.cantidad_pendiente_devolucion} ud(s) prestadas a **{p.destinatario}**")
-            lineas_voz.append(f"{p.cantidad_pendiente_devolucion} de {p.producto.nombre} a {p.destinatario}.")
+        if producto:
+            lineas_voz = [f"El {producto.nombre} tiene {total_prestamos} préstamo(s) activo(s) con {total_unidades} unidad(es) pendiente(s) de devolución:"]
+            for p in prestamos:
+                items.append(f"- **{p.cantidad_pendiente_devolucion} ud(s)** prestadas a **{p.destinatario}** ({p.almacen.nombre})")
+                lineas_voz.append(f"{p.cantidad_pendiente_devolucion} unidades a {p.destinatario}.")
+            if total_prestamos > 10:
+                items.append(f"\n*Mostrando 10 de {total_prestamos} préstamos activos.*")
+            pantalla = f"### Préstamos activos de {producto.nombre} (`{producto.codigo_interno}`):\n- **Total préstamos:** {total_prestamos}\n- **Unidades pendientes:** {total_unidades}\n\n" + "\n".join(items)
+        elif metrica == "CONTEO_REGISTROS":
+            lineas_voz = [f"Hay {total_prestamos} préstamo(s) activo(s) en este momento, correspondientes a {total_unidades} unidad(es) de {total_productos_distintos} producto(s) distinto(s)."]
+            for p in prestamos:
+                items.append(f"- **{p.producto.nombre}**: {p.cantidad_pendiente_devolucion} ud(s) prestadas a **{p.destinatario}** ({p.almacen.nombre})")
+            if total_prestamos > 10:
+                items.append(f"\n*Mostrando 10 de {total_prestamos} préstamos activos.*")
+            pantalla = f"### Conteo de préstamos activos ({total_prestamos} en total):\n- **Total préstamos activos:** {total_prestamos}\n- **Total unidades prestadas:** {total_unidades}\n- **Productos distintos involucrados:** {total_productos_distintos}\n\n" + "\n".join(items)
+        elif metrica == "CONTEO_UNIDADES":
+            lineas_voz = [f"Hay {total_unidades} unidad(es) prestada(s) en total, distribuidas en {total_prestamos} préstamo(s)."]
+            for p in prestamos:
+                items.append(f"- **{p.producto.nombre}**: {p.cantidad_pendiente_devolucion} ud(s) prestadas a **{p.destinatario}** ({p.almacen.nombre})")
+            if total_prestamos > 10:
+                items.append(f"\n*Mostrando 10 de {total_prestamos} préstamos activos.*")
+            pantalla = f"### Unidades activas en préstamo ({total_unidades} en total):\n- **Total unidades pendientes de devolución:** {total_unidades}\n- **Total préstamos activos:** {total_prestamos}\n- **Productos distintos involucrados:** {total_productos_distintos}\n\n" + "\n".join(items)
+        elif metrica == "LISTA_RESPONSABLES":
+            resp_str = ", ".join(f"{p.destinatario} ({p.cantidad_pendiente_devolucion} ud de {p.producto.nombre})" for p in prestamos[:3])
+            lineas_voz = [f"Hay {total_prestamos} préstamos activos a cargo de: {resp_str}."]
+            for p in prestamos:
+                items.append(f"- **{p.destinatario}**: {p.cantidad_pendiente_devolucion} ud(s) de **{p.producto.nombre}** ({p.almacen.nombre})")
+            if total_prestamos > 10:
+                items.append(f"\n*Mostrando 10 de {total_prestamos} préstamos activos.*")
+            pantalla = f"### Préstamos activos por responsable ({total_prestamos} en total):\n" + "\n".join(items)
+        else:
+            lineas_voz = [f"Hay {total_prestamos} préstamos activos:"]
+            for p in prestamos:
+                items.append(f"- **{p.producto.nombre}**: {p.cantidad_pendiente_devolucion} ud(s) prestadas a **{p.destinatario}** ({p.almacen.nombre})")
+                lineas_voz.append(f"{p.cantidad_pendiente_devolucion} de {p.producto.nombre} a {p.destinatario}.")
+            if total_prestamos > 10:
+                items.append(f"\n*Mostrando 10 de {total_prestamos} préstamos activos.*")
+            pantalla = f"### Préstamos activos ({total_prestamos} en total):\n" + "\n".join(items)
+
+        if estado_operativo:
+            if producto:
+                estado_operativo.registrar_accion(
+                    "PRESTAMOS_ACTIVOS_PRODUCTO",
+                    producto=producto.nombre,
+                    producto_id=producto.id,
+                    codigo=producto.codigo_interno,
+                    cantidad=total_prestamos,
+                )
+            else:
+                lista_prestamos = [
+                    {
+                        "id": p.producto.id,
+                        "producto_id": str(p.producto.id),
+                        "codigo": p.producto.codigo_interno,
+                        "nombre": p.producto.nombre,
+                        "almacen": p.almacen.nombre,
+                        "destinatario": p.destinatario,
+                        "cantidad_prestada": p.cantidad_pendiente_devolucion,
+                    }
+                    for p in prestamos
+                ]
+                estado_operativo.asignar_coleccion(lista_prestamos, total_original=total_prestamos)
+                estado_operativo.registrar_accion("PRESTAMOS_ACTIVOS", cantidad=total_prestamos)
+                estado_operativo.producto_id = None
+                estado_operativo.producto_codigo = None
+                estado_operativo.producto_nombre = None
+            HakuOperationalContext.guardar(estado_operativo)
 
         return {
             "tipo": "consulta",
-            "mensaje_pantalla": "### Préstamos activos:\n" + "\n".join(items),
-            "mensaje_verbal": " ".join(lineas_voz),
-            "datos": {"prestamos": [{"id": p.id, "producto": p.producto.nombre, "destinatario": p.destinatario} for p in prestamos]},
+            "mensaje_pantalla": pantalla,
+            "mensaje_verbal": normalizar_para_tts(" ".join(lineas_voz)),
+            "datos": {
+                "prestamos": [
+                    {
+                        "id": p.id,
+                        "producto": p.producto.nombre,
+                        "codigo": p.producto.codigo_interno,
+                        "destinatario": p.destinatario,
+                        "cantidad": p.cantidad_pendiente_devolucion,
+                        "almacen": p.almacen.nombre,
+                    }
+                    for p in prestamos
+                ],
+                "total": total_prestamos,
+            },
         }
 
-    # 3. Consulta de stock de un producto específico
-    if re.search(r"\b(stock|cu[aá]nto|cu[aá]ntos|hay|existencias|d[oó]nde est[aá]|ubicaci[oó]n)\b", texto_lower):
-        # Intentar extraer nombre del producto o código
-        limpio = re.sub(
-            r"\b(cu[aá]nto|cu[aá]ntos|stock|de|hay|queda|quedan|existencias|el|la|los|las|producto|d[oó]nde|est[aá]|ubicaci[oó]n|en)\b",
-            " ",
-            texto_lower,
-        ).strip()
+    # 4-bis. Consulta de ubicación de colección o conjunto de productos
+    if intencion.tipo == IntencionTipo.CONSULTAR_UBICACION_COLECCION:
+        coleccion = []
+        if intencion.candidatos:
+            coleccion = intencion.candidatos
+        elif intencion.datos_extra and intencion.datos_extra.get("candidatos_plurales"):
+            coleccion = intencion.datos_extra["candidatos_plurales"]
+        elif estado_operativo and estado_operativo.coleccion_productos:
+            coleccion = estado_operativo.coleccion_productos
 
-        producto = _buscar_producto(limpio, usuario)
-        if producto:
-            almacen = usuario.almacen_asignado if (usuario.es_usuario_normal and usuario.almacen_asignado) else producto.categoria.almacen_principal
-            existencia = Existencia.objects.filter(producto=producto, almacen=almacen).first()
-            disponible = existencia.stock_disponible if existencia else 0
-            prestado = existencia.stock_en_prestamo if existencia else 0
+        if not coleccion:
+            msg = "No tengo una lista previa de productos en la conversación activa. Puedes consultar el catálogo o los productos con stock primero."
+            return {
+                "tipo": "aclaracion",
+                "mensaje_pantalla": msg,
+                "mensaje_verbal": normalizar_para_tts(msg),
+                "datos": {"productos": []},
+            }
 
-            ubicaciones = ", ".join(u.nombre for u in producto.ubicaciones.all()) or "Sin ubicación asignada"
-            pantalla = (
-                f"### {producto.nombre} (`{producto.codigo_interno}`)\n"
-                f"- **Stock disponible:** {disponible} unidades\n"
-                f"- **En préstamo:** {prestado} unidades\n"
-                f"- **Stock mínimo:** {producto.stock_minimo}\n"
-                f"- **Almacén:** {almacen.nombre if almacen else 'Sin almacén'}\n"
-                f"- **Ubicación:** {ubicaciones}"
+        total_orig = (estado_operativo.coleccion_total_original if estado_operativo else 0) or len(coleccion)
+        if total_orig < len(coleccion):
+            total_orig = len(coleccion)
+        es_parcial = total_orig > len(coleccion)
+
+        lineas_pantalla = ["### Ubicación de las referencias consultadas:\n"]
+        if es_parcial:
+            lineas_voz = [f"Ubicación de {len(coleccion)} de las {total_orig} referencias consultadas:"]
+        else:
+            lineas_voz = [f"Ubicación de {len(coleccion)} productos:"]
+        lista_datos = []
+
+        almacen_usuario = usuario.almacen_asignado if (usuario.es_usuario_normal and usuario.almacen_asignado) else None
+
+        for item in coleccion:
+            prod_id = item.get("id") or item.get("producto_id")
+            prod = Producto.objects.filter(id=prod_id, activo=True, archivado=False).first() if prod_id else None
+            if not prod:
+                continue
+
+            alm = almacen_usuario or prod.categoria.almacen_principal
+            ubicaciones = HakuCacheManager.obtener_o_cargar_ubicacion(prod)
+            nombre_alm = alm.nombre if alm else "Sin almacén"
+
+            lineas_pantalla.append(f"- **{prod.nombre}** (`{prod.codigo_interno}`): **{ubicaciones}** en *{nombre_alm}*")
+            lineas_voz.append(f"{prod.nombre} en {ubicaciones}, {nombre_alm}.")
+            lista_datos.append({
+                "producto_id": str(prod.id),
+                "codigo": prod.codigo_interno,
+                "nombre": prod.nombre,
+                "ubicaciones": ubicaciones,
+                "almacen": nombre_alm,
+            })
+
+        if es_parcial:
+            lineas_pantalla.append(
+                f"\n*Aviso: Mostrando la ubicación de las {len(lista_datos)} referencias conservadas en el foco conversacional activo (de {total_orig} productos devueltos por la consulta anterior).*"
             )
-            voz = (
-                f"De {producto.nombre}, hay {disponible} unidades disponibles en {almacen.nombre if almacen else 'el almacén'}, "
-                f"y {prestado} en préstamo. Ubicación: {ubicaciones}."
+
+        if estado_operativo:
+            estado_operativo.registrar_accion(
+                "CONSULTAR_UBICACION_COLECCION",
+                cantidad=len(lista_datos),
             )
+            HakuOperationalContext.guardar(estado_operativo)
+
+        return {
+            "tipo": "consulta",
+            "mensaje_pantalla": "\n".join(lineas_pantalla),
+            "mensaje_verbal": normalizar_para_tts(" ".join(lineas_voz)),
+            "datos": {
+                "productos": lista_datos,
+                "total": len(lista_datos),
+                "total_original": total_orig,
+                "es_parcial": es_parcial,
+            },
+        }
+
+    # 4. Consulta de ubicación específica
+    if intencion.tipo == IntencionTipo.CONSULTAR_UBICACION:
+        producto = intencion.producto
+        if not producto:
+            msg = "¿De cuál producto deseas conocer la ubicación?"
+            return {"tipo": "aclaracion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
+
+        if sesion is not None:
+            sesion["haku_ultimo_producto_id"] = str(producto.id)
+            sesion["haku_ultimo_acceso"] = time.time()
+
+        almacen, error_resp = _validar_acceso_almacen(usuario, intencion.almacen)
+        if error_resp:
+            return error_resp
+
+        if not almacen and not usuario.es_usuario_normal:
+            almacen = producto.categoria.almacen_principal
+
+        cached_stock = HakuCacheManager.obtener_o_cargar_stock(producto.id, almacen.id if almacen else None)
+        disponible = cached_stock["disponible"]
+        if almacen:
+            qs_ub = producto.ubicaciones.filter(almacen=almacen)
+            ubicaciones = ", ".join(u.nombre for u in qs_ub) if qs_ub.exists() else f"Sin ubicación registrada en {almacen.nombre}"
+        else:
+            ubicaciones = HakuCacheManager.obtener_o_cargar_ubicacion(producto)
+
+        if estado_operativo:
+            estado_operativo.registrar_accion(
+                "CONSULTAR_UBICACION",
+                producto=producto.nombre,
+                producto_id=producto.id,
+                codigo=producto.codigo_interno,
+            )
+            HakuOperationalContext.guardar(estado_operativo)
+
+        pantalla = (
+            f"### Ubicación de {producto.nombre} (`{producto.codigo_interno}`)\n"
+            f"- **Ubicación:** {ubicaciones}\n"
+            f"- **Almacén:** {almacen.nombre if almacen else 'Sin almacén'}\n"
+            f"- **Stock disponible:** {disponible} unidades"
+        )
+        voz = f"{producto.nombre} está ubicado en {ubicaciones}, en {almacen.nombre if almacen else 'el almacén'}."
+        return {
+            "tipo": "consulta",
+            "mensaje_pantalla": pantalla,
+            "mensaje_verbal": normalizar_para_tts(voz),
+            "datos": {"producto_id": str(producto.id), "codigo": producto.codigo_interno, "ubicaciones": ubicaciones},
+        }
+
+    # 5. Consulta de stock o búsqueda de producto
+    if intencion.tipo in (IntencionTipo.CONSULTAR_STOCK, IntencionTipo.BUSCAR_PRODUCTO):
+        producto = intencion.producto
+        if not producto:
+            msg = "¿De cuál producto deseas consultar el stock o existencias?"
+            return {"tipo": "aclaracion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
+
+        if sesion is not None:
+            sesion["haku_ultimo_producto_id"] = str(producto.id)
+            sesion["haku_ultimo_acceso"] = time.time()
+
+        almacen, error_resp = _validar_acceso_almacen(usuario, intencion.almacen)
+        if error_resp:
+            return error_resp
+
+        if not almacen and not usuario.es_usuario_normal:
+            almacen = producto.categoria.almacen_principal
+
+        otro_almacen = bool(intencion.datos_extra and intencion.datos_extra.get("otro_almacen"))
+
+        if otro_almacen:
+            if usuario.es_usuario_normal:
+                msg = f"Tu cuenta de usuario solo tiene acceso al almacén {almacen.nombre if almacen else 'asignado'}. No tienes permisos para consultar existencias en otros almacenes."
+                return {"tipo": "consulta", "mensaje_pantalla": msg, "mensaje_verbal": normalizar_para_tts(msg), "datos": {"producto_id": str(producto.id), "codigo": producto.codigo_interno}}
+
+            existencias_otros = Existencia.objects.filter(
+                producto=producto,
+                almacen__activo=True
+            ).exclude(almacen=almacen).select_related("almacen")
+
+            if not existencias_otros.exists():
+                pantalla = f"### {producto.nombre} (`{producto.codigo_interno}`)\nNo hay existencias registradas de este producto en otros almacenes diferentes a {almacen.nombre if almacen else 'el principal'}."
+                voz = f"No hay existencias registradas de {producto.nombre} en otros almacenes."
+                return {
+                    "tipo": "consulta",
+                    "mensaje_pantalla": pantalla,
+                    "mensaje_verbal": normalizar_para_tts(voz),
+                    "datos": {"producto_id": str(producto.id), "codigo": producto.codigo_interno, "otros_almacenes": []},
+                }
+
+            lineas_p = [f"### Existencias de {producto.nombre} (`{producto.codigo_interno}`) en otros almacenes:\n"]
+            lineas_v = [f"En otros almacenes, de {producto.nombre}:"]
+            datos_otros = []
+            for eo in existencias_otros:
+                lineas_p.append(f"- **{eo.almacen.nombre}:** {eo.stock_disponible} disponibles ({eo.stock_en_prestamo} en préstamo)")
+                lineas_v.append(f"En {eo.almacen.nombre}, {eo.stock_disponible} unidades disponibles.")
+                datos_otros.append({
+                    "almacen": eo.almacen.nombre,
+                    "disponible": eo.stock_disponible,
+                    "prestado": eo.stock_en_prestamo,
+                })
+
+            if estado_operativo:
+                estado_operativo.registrar_accion(
+                    "CONSULTAR_STOCK_OTROS_ALMACENES",
+                    producto=producto.nombre,
+                    producto_id=producto.id,
+                    codigo=producto.codigo_interno,
+                )
+                HakuOperationalContext.guardar(estado_operativo)
+
             return {
                 "tipo": "consulta",
-                "mensaje_pantalla": pantalla,
-                "mensaje_verbal": voz,
+                "mensaje_pantalla": "\n".join(lineas_p),
+                "mensaje_verbal": normalizar_para_tts(" ".join(lineas_v)),
                 "datos": {
+                    "producto_id": str(producto.id),
                     "codigo": producto.codigo_interno,
                     "nombre": producto.nombre,
-                    "disponible": disponible,
-                    "en_prestamo": prestado,
+                    "otros_almacenes": datos_otros,
                 },
             }
+
+        cached_stock = HakuCacheManager.obtener_o_cargar_stock(producto.id, almacen.id if almacen else None)
+        disponible = cached_stock["disponible"]
+        prestado = cached_stock["prestado"]
+        if almacen:
+            qs_ub = producto.ubicaciones.filter(almacen=almacen)
+            ubicaciones = ", ".join(u.nombre for u in qs_ub) if qs_ub.exists() else f"Sin ubicación registrada en {almacen.nombre}"
+        else:
+            ubicaciones = HakuCacheManager.obtener_o_cargar_ubicacion(producto)
+
+        if estado_operativo:
+            estado_operativo.registrar_accion(
+                "CONSULTAR_STOCK",
+                producto=producto.nombre,
+                producto_id=producto.id,
+                codigo=producto.codigo_interno,
+                cantidad=disponible,
+            )
+            HakuOperationalContext.guardar(estado_operativo)
+
+        pantalla = (
+            f"### {producto.nombre} (`{producto.codigo_interno}`)\n"
+            f"- **Stock disponible:** {disponible} unidades\n"
+            f"- **En préstamo:** {prestado} unidades\n"
+            f"- **Stock mínimo:** {producto.stock_minimo}\n"
+            f"- **Almacén:** {almacen.nombre if almacen else 'Sin almacén'}\n"
+            f"- **Ubicación:** {ubicaciones}"
+        )
+        voz = (
+            f"De {producto.nombre}, hay {disponible} unidades disponibles en {almacen.nombre if almacen else 'el almacén'}, "
+            f"y {prestado} en préstamo. Ubicación: {ubicaciones}."
+        )
+        return {
+            "tipo": "consulta",
+            "mensaje_pantalla": pantalla,
+            "mensaje_verbal": normalizar_para_tts(voz),
+            "datos": {
+                "codigo": producto.codigo_interno,
+                "nombre": producto.nombre,
+                "disponible": disponible,
+                "en_prestamo": prestado,
+            },
+        }
 
     # ─────────────────────────────────────────────────────────────────────────
     # C. MUTACIONES DE INVENTARIO (PRE-CONFIRMACIÓN OBLIGATORIA EN DOS PASOS)
     # ─────────────────────────────────────────────────────────────────────────
 
-    cantidad = _extraer_numero(texto)
-
-    # 1. Entrada de inventario
-    if re.search(r"\b(entrada|ingresar|ingreso|llegaron|recibir|aumentar)\b", texto_lower):
-        termino = re.sub(r"\b(entrada|ingresar|ingreso|llegaron|recibir|aumentar|de|unidades|unidad|al|el|la)\b", " ", texto_lower)
-        if cantidad:
-            termino = re.sub(rf"\b{cantidad}\b", " ", termino)
-        producto = _buscar_producto(termino.strip(), usuario)
+    # 6. Entrada de inventario
+    if intencion.tipo == IntencionTipo.REGISTRAR_ENTRADA:
+        producto = intencion.producto
+        cantidad = intencion.cantidad
 
         if not producto:
             msg = "Indica el nombre o código del producto para registrar la entrada."
-            return {"tipo": "conversacion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
+            return {"tipo": "aclaracion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
 
         if not cantidad or cantidad <= 0:
             msg = f"¿Cuántas unidades de {producto.nombre} vas a ingresar?"
-            return {"tipo": "conversacion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
+            return {"tipo": "aclaracion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
 
         almacen = usuario.almacen_asignado if (usuario.es_usuario_normal and usuario.almacen_asignado) else producto.categoria.almacen_principal
         if not usuario.tiene_acceso_almacen(almacen):
             raise PermissionDenied("No tienes acceso al almacén de este producto.")
+
+        if sesion is not None:
+            sesion["haku_ultimo_producto_id"] = str(producto.id)
+            sesion["haku_ultimo_acceso"] = time.time()
 
         propuesta = {
             "id": str(uuid.uuid4()),
@@ -500,8 +1615,21 @@ def procesar_comando_inventario(
             "destinatario": "",
             "motivo": "Entrada registrada por Haku",
             "creado_en": time.time(),
-            "expira_en": time.time() + 300,
+            "expira_en": time.time() + HAKU_PROPUESTA_TIMEOUT_SEGUNDOS,
         }
+
+        if estado_operativo:
+            estado_operativo.propuesta_activa = propuesta
+            estado_operativo.registrar_accion(
+                "PROPUESTA_ENTRADA",
+                producto=producto.nombre,
+                producto_id=producto.id,
+                codigo=producto.codigo_interno,
+                cantidad=cantidad,
+            )
+            HakuOperationalContext.guardar(estado_operativo)
+        if sesion is not None:
+            sesion["haku_propuesta_activa"] = propuesta
 
         verbal = (
             f"Vas a registrar la entrada de {cantidad} unidades de {producto.nombre} "
@@ -520,41 +1648,27 @@ def procesar_comando_inventario(
             "requiere_confirmacion": True,
             "propuesta": propuesta,
             "mensaje_pantalla": pantalla,
-            "mensaje_verbal": verbal,
+            "mensaje_verbal": normalizar_para_tts(verbal),
         }
 
-    # 2. Salida de inventario
-    if re.search(r"\b(salida|retirar|sacar|entregar|gastar)\b", texto_lower):
-        # Destinatario y motivo en la frase
-        match_destinatario = re.search(r"\b(?:para|a)\s+([A-Za-zÁ-ÿ\s]+?)(?:\s+(?:por|motivo)|\s*$)", texto, re.IGNORECASE)
-        destinatario = match_destinatario.group(1).strip() if match_destinatario else ""
+    # 7. Salida de inventario
+    if intencion.tipo == IntencionTipo.REGISTRAR_SALIDA:
+        producto = intencion.producto
+        cantidad = intencion.cantidad
+        destinatario = intencion.destinatario or ""
+        motivo = intencion.motivo or ""
 
-        match_motivo = re.search(r"\b(?:motivo|por)\s+([A-Za-zÁ-ÿ\s0-9]+)$", texto, re.IGNORECASE)
-        motivo = match_motivo.group(1).strip() if match_motivo else ""
-
-        # Limpiar palabras operativas para aislar producto
-        termino_prod = texto_lower
-        for w in ["registrar", "salida", "retirar", "sacar", "entregar", "gastar", "unidades", "unidad"]:
-            termino_prod = re.sub(rf"\b{w}\b", " ", termino_prod)
-        if cantidad:
-            termino_prod = re.sub(rf"\b{cantidad}\b", " ", termino_prod)
-        if destinatario:
-            termino_prod = re.sub(rf"\b(?:para|a)\s+{re.escape(destinatario.lower())}\b", " ", termino_prod)
-        if motivo:
-            termino_prod = re.sub(rf"\b(?:motivo|por)\s+{re.escape(motivo.lower())}\b", " ", termino_prod)
-
-        producto = _buscar_producto(termino_prod.strip(), usuario) or _buscar_producto(texto, usuario)
         if not producto:
             msg = "Por favor indica qué producto vas a retirar del inventario."
-            return {"tipo": "conversacion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
+            return {"tipo": "aclaracion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
 
         if not cantidad or cantidad <= 0:
             msg = f"¿Cuántas unidades de {producto.nombre} vas a retirar?"
-            return {"tipo": "conversacion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
+            return {"tipo": "aclaracion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
 
         if not destinatario:
             msg = f"Para registrar la salida de {producto.nombre}, ¿a quién se le entregan las unidades?"
-            return {"tipo": "conversacion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
+            return {"tipo": "aclaracion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
 
         if not motivo:
             motivo = f"Salida registrada por Haku para {destinatario}"
@@ -569,6 +1683,10 @@ def procesar_comando_inventario(
             msg = f"Stock insuficiente: {producto.nombre} solo tiene {disponible} disponibles en {almacen.nombre if almacen else 'el almacén'}."
             return {"tipo": "error", "mensaje_pantalla": msg, "mensaje_verbal": msg}
 
+        if sesion is not None:
+            sesion["haku_ultimo_producto_id"] = str(producto.id)
+            sesion["haku_ultimo_acceso"] = time.time()
+
         propuesta = {
             "id": str(uuid.uuid4()),
             "tipo_operacion": Movimiento.Tipo.SALIDA,
@@ -581,8 +1699,21 @@ def procesar_comando_inventario(
             "destinatario": destinatario,
             "motivo": motivo,
             "creado_en": time.time(),
-            "expira_en": time.time() + 300,
+            "expira_en": time.time() + HAKU_PROPUESTA_TIMEOUT_SEGUNDOS,
         }
+
+        if estado_operativo:
+            estado_operativo.propuesta_activa = propuesta
+            estado_operativo.registrar_accion(
+                "PROPUESTA_SALIDA",
+                producto=producto.nombre,
+                producto_id=producto.id,
+                codigo=producto.codigo_interno,
+                cantidad=cantidad,
+            )
+            HakuOperationalContext.guardar(estado_operativo)
+        if sesion is not None:
+            sesion["haku_propuesta_activa"] = propuesta
 
         verbal = (
             f"Vas a registrar la salida de {cantidad} unidades de {producto.nombre} para {destinatario}, "
@@ -603,16 +1734,12 @@ def procesar_comando_inventario(
             "requiere_confirmacion": True,
             "propuesta": propuesta,
             "mensaje_pantalla": pantalla,
-            "mensaje_verbal": verbal,
+            "mensaje_verbal": normalizar_para_tts(verbal),
         }
 
-    # 3. Devolución de préstamo (evaluar ANTES de préstamo para no capturar 'devolver préstamo')
-    if re.search(r"\b(devolver|devoluci[oó]n)\b", texto_lower):
-        # Buscar préstamo activo correspondiente
-        match_destinatario = re.search(r"\b(?:de|por|a|para)\s+([A-Za-zÁ-ÿ\s]+?)(?:\s*$)", texto, re.IGNORECASE)
-        destinatario = match_destinatario.group(1).strip() if match_destinatario else ""
-        destinatario = re.sub(r"\b(pr[eé]stamo|pr[eé]stamos|de|el|la)\b", "", destinatario, flags=re.IGNORECASE).strip()
-
+    # 8. Devolución de préstamo
+    if intencion.tipo == IntencionTipo.DEVOLUCION:
+        destinatario = intencion.destinatario or ""
         qs_prestamos = Prestamo.objects.filter(
             estado__in=[Prestamo.Estado.ABIERTO, Prestamo.Estado.DEVUELTO_PARCIAL]
         ).select_related("producto", "almacen")
@@ -628,20 +1755,23 @@ def procesar_comando_inventario(
                         prestamo = qs_prestamos.filter(destinatario__icontains=w).first()
                         if prestamo:
                             break
-        if not prestamo:
-            prod = _buscar_producto(texto, usuario)
-            if prod:
-                prestamo = qs_prestamos.filter(producto=prod).first()
+        if not prestamo and intencion.producto:
+            prestamo = qs_prestamos.filter(producto=intencion.producto).first()
         if not prestamo:
             prestamo = qs_prestamos.first()
+
         if not prestamo:
             msg = "No encontré ningún préstamo activo con esos datos para devolver."
             return {"tipo": "conversacion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
 
-        cantidad_dev = cantidad if cantidad else prestamo.cantidad_pendiente_devolucion
+        cantidad_dev = intencion.cantidad if intencion.cantidad else prestamo.cantidad_pendiente_devolucion
         if cantidad_dev > prestamo.cantidad_pendiente_devolucion:
             msg = f"La cantidad a devolver ({cantidad_dev}) excede el saldo prestado ({prestamo.cantidad_pendiente_devolucion})."
             return {"tipo": "error", "mensaje_pantalla": msg, "mensaje_verbal": msg}
+
+        if sesion is not None:
+            sesion["haku_ultimo_producto_id"] = str(prestamo.producto.id)
+            sesion["haku_ultimo_acceso"] = time.time()
 
         propuesta = {
             "id": str(uuid.uuid4()),
@@ -656,8 +1786,21 @@ def procesar_comando_inventario(
             "destinatario": prestamo.destinatario,
             "motivo": f"Devolución de préstamo por {prestamo.destinatario}",
             "creado_en": time.time(),
-            "expira_en": time.time() + 300,
+            "expira_en": time.time() + HAKU_PROPUESTA_TIMEOUT_SEGUNDOS,
         }
+
+        if estado_operativo:
+            estado_operativo.propuesta_activa = propuesta
+            estado_operativo.registrar_accion(
+                "PROPUESTA_DEVOLUCION",
+                producto=prestamo.producto.nombre,
+                producto_id=prestamo.producto.id,
+                codigo=prestamo.producto.codigo_interno,
+                cantidad=cantidad_dev,
+            )
+            HakuOperationalContext.guardar(estado_operativo)
+        if sesion is not None:
+            sesion["haku_propuesta_activa"] = propuesta
 
         verbal = (
             f"Vas a registrar la devolución de {cantidad_dev} unidades de {prestamo.producto.nombre} "
@@ -677,34 +1820,26 @@ def procesar_comando_inventario(
             "requiere_confirmacion": True,
             "propuesta": propuesta,
             "mensaje_pantalla": pantalla,
-            "mensaje_verbal": verbal,
+            "mensaje_verbal": normalizar_para_tts(verbal),
         }
 
-    # 4. Préstamo
-    if re.search(r"\b(prestar|pr[eé]stamo)\b", texto_lower) and not re.search(r"\b(devolver|devoluci[oó]n)\b", texto_lower):
-        match_destinatario = re.search(r"\b(?:para|a)\s+([A-Za-zÁ-ÿ\s]+?)(?:\s+(?:por|motivo)|\s*$)", texto, re.IGNORECASE)
-        destinatario = match_destinatario.group(1).strip() if match_destinatario else ""
+    # 9. Préstamo
+    if intencion.tipo == IntencionTipo.PRESTAMO:
+        producto = intencion.producto
+        cantidad = intencion.cantidad
+        destinatario = intencion.destinatario or ""
 
-        termino_prod = texto_lower
-        for w in ["prestar", "prestamo", "préstamo", "unidades", "unidad"]:
-            termino_prod = re.sub(rf"\b{w}\b", " ", termino_prod)
-        if cantidad:
-            termino_prod = re.sub(rf"\b{cantidad}\b", " ", termino_prod)
-        if destinatario:
-            termino_prod = re.sub(rf"\b(?:para|a)\s+{re.escape(destinatario.lower())}\b", " ", termino_prod)
-
-        producto = _buscar_producto(termino_prod.strip(), usuario) or _buscar_producto(texto, usuario)
         if not producto:
             msg = "Por favor indica qué producto deseas prestar."
-            return {"tipo": "conversacion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
+            return {"tipo": "aclaracion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
 
         if not cantidad or cantidad <= 0:
             msg = f"¿Cuántas unidades de {producto.nombre} se van a prestar?"
-            return {"tipo": "conversacion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
+            return {"tipo": "aclaracion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
 
         if not destinatario:
             msg = f"¿A quién se le van a prestar las {cantidad} unidades de {producto.nombre}?"
-            return {"tipo": "conversacion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
+            return {"tipo": "aclaracion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
 
         almacen = usuario.almacen_asignado if (usuario.es_usuario_normal and usuario.almacen_asignado) else producto.categoria.almacen_principal
         if not usuario.tiene_acceso_almacen(almacen):
@@ -715,6 +1850,10 @@ def procesar_comando_inventario(
         if disponible < cantidad:
             msg = f"Stock insuficiente para préstamo: {producto.nombre} solo tiene {disponible} disponibles."
             return {"tipo": "error", "mensaje_pantalla": msg, "mensaje_verbal": msg}
+
+        if sesion is not None:
+            sesion["haku_ultimo_producto_id"] = str(producto.id)
+            sesion["haku_ultimo_acceso"] = time.time()
 
         propuesta = {
             "id": str(uuid.uuid4()),
@@ -728,8 +1867,21 @@ def procesar_comando_inventario(
             "destinatario": destinatario,
             "motivo": f"Préstamo registrado por Haku a {destinatario}",
             "creado_en": time.time(),
-            "expira_en": time.time() + 300,
+            "expira_en": time.time() + HAKU_PROPUESTA_TIMEOUT_SEGUNDOS,
         }
+
+        if estado_operativo:
+            estado_operativo.propuesta_activa = propuesta
+            estado_operativo.registrar_accion(
+                "PROPUESTA_PRESTAMO",
+                producto=producto.nombre,
+                producto_id=producto.id,
+                codigo=producto.codigo_interno,
+                cantidad=cantidad,
+            )
+            HakuOperationalContext.guardar(estado_operativo)
+        if sesion is not None:
+            sesion["haku_propuesta_activa"] = propuesta
 
         verbal = (
             f"Vas a prestar {cantidad} unidades de {producto.nombre} a {destinatario}. "
@@ -749,22 +1901,32 @@ def procesar_comando_inventario(
             "requiere_confirmacion": True,
             "propuesta": propuesta,
             "mensaje_pantalla": pantalla,
-            "mensaje_verbal": verbal,
+            "mensaje_verbal": normalizar_para_tts(verbal),
         }
 
     # ─────────────────────────────────────────────────────────────────────────
-    # D. MENSAJE CONVERSACIONAL GENERAL (Fallback)
+    # D. LOCUCIÓN FUERA DE DOMINIO (NO_INTENCION_INVENTARIO / CONVERSACION_GENERAL)
+    # Haku Inventario NO es un chatbot general: solo gestiona almacén e inventario.
     # ─────────────────────────────────────────────────────────────────────────
-    msg_general = (
-        f"Hola {usuario.nombre_completo or usuario.username}. "
-        "Soy Haku Inventario. Puedes consultarme existencias ('¿cuántos cables hay?'), "
-        "alertas de stock bajo, préstamos activos, o dictar operaciones de entrada, salida y préstamos."
+    if intencion.tipo == IntencionTipo.SOLICITUD_NO_COMPRENDIDA:
+        msg = "Disculpa, no entendí la solicitud. ¿Puedes repetirla?"
+        return {
+            "tipo": "no_comprendido",
+            "mensaje_pantalla": msg,
+            "mensaje_verbal": normalizar_para_tts(msg),
+            "datos": {"no_comprendido": True},
+        }
+
+    msg_fuera_dominio = (
+        "Solo gestiono operaciones y consultas del inventario "
+        "(stock, ubicaciones, movimientos, préstamos y métricas del almacén)."
     )
+    msg_verbal = "Solo gestiono operaciones y consultas del inventario."
     return {
-        "tipo": "conversacion",
-        "mensaje_pantalla": msg_general,
-        "mensaje_verbal": normalizar_para_tts(msg_general),
-        "datos": {},
+        "tipo": "fuera_de_dominio",
+        "mensaje_pantalla": msg_fuera_dominio,
+        "mensaje_verbal": normalizar_para_tts(msg_verbal),
+        "datos": {"fuera_de_dominio": True},
     }
 
 
@@ -791,10 +1953,14 @@ def ejecutar_confirmacion_propuesta(
     if not propuesta:
         raise ValidationError("No hay propuesta válida para confirmar.")
 
-    # Verificar expiración de la propuesta (5 minutos)
+    # 1. Revalidar usuario activo y autorizado
+    if not usuario or not usuario.is_active:
+        raise PermissionDenied("Usuario inactivo o no autorizado.")
+
+    # 2. Verificar expiración de la propuesta (1800 segundos / 30 minutos)
     ahora = time.time()
     if ahora > propuesta.get("expira_en", 0):
-        raise ValidationError("La propuesta ha caducado. Por favor genera una nueva solicitud.")
+        raise ValidationError("La propuesta ha caducado por superar el límite de 30 minutos. Por favor genera una nueva solicitud.")
 
     tipo_op = propuesta.get("tipo_operacion")
     cantidad = int(propuesta.get("cantidad", 0))
@@ -816,154 +1982,179 @@ def ejecutar_confirmacion_propuesta(
             "mensaje_verbal": "Esta operación ya había sido confirmada previamente.",
         }
 
-    with transaction.atomic():
-        # Bloquear producto y existencia con select_for_update()
-        producto = (
-            Producto.objects.select_for_update()
-            .get(id=propuesta["producto_id"], activo=True, archivado=False)
-        )
-
-        almacen = Almacen.objects.select_for_update().get(id=propuesta["almacen_origen_id"])
-        if not usuario.tiene_acceso_almacen(almacen):
-            raise PermissionDenied("No tienes permisos para operar en este almacén.")
-
-        existencia, _ = Existencia.objects.select_for_update().get_or_create(
-            producto=producto,
-            almacen=almacen,
-            defaults={"stock_disponible": 0, "stock_en_prestamo": 0},
-        )
-
-        stock_ant = existencia.stock_disponible
-        stock_post = stock_ant
-        movimiento = None
-
-        if tipo_op == Movimiento.Tipo.ENTRADA:
-            stock_post = stock_ant + cantidad
-            existencia.stock_disponible = stock_post
-            existencia.save(update_fields=["stock_disponible"])
-
-            movimiento = Movimiento.objects.create(
-                clave_idempotencia=idempotency_key,
-                tipo=Movimiento.Tipo.ENTRADA,
-                producto=producto,
-                cantidad=cantidad,
-                almacen_origen=almacen,
-                usuario=usuario,
-                motivo=propuesta.get("motivo", "Entrada vía Haku"),
-                stock_disponible_anterior=stock_ant,
-                stock_disponible_posterior=stock_post,
-            )
-
-        elif tipo_op == Movimiento.Tipo.SALIDA:
-            if stock_ant < cantidad:
-                raise ValidationError(
-                    f"Stock insuficiente: se intentó retirar {cantidad} unidades pero solo hay {stock_ant} disponibles."
+    try:
+        with transaction.atomic():
+            # Bloquear producto con select_for_update() y revalidar que sigue activo
+            try:
+                producto = (
+                    Producto.objects.select_for_update()
+                    .get(id=propuesta["producto_id"], activo=True, archivado=False)
                 )
-            stock_post = stock_ant - cantidad
-            existencia.stock_disponible = stock_post
-            existencia.save(update_fields=["stock_disponible"])
+            except Producto.DoesNotExist:
+                raise ValidationError("El producto asociado a la propuesta ya no existe o fue dado de baja.")
 
-            movimiento = Movimiento.objects.create(
-                clave_idempotencia=idempotency_key,
-                tipo=Movimiento.Tipo.SALIDA,
-                producto=producto,
-                cantidad=cantidad,
-                almacen_origen=almacen,
-                usuario=usuario,
-                destinatario=propuesta.get("destinatario", ""),
-                motivo=propuesta.get("motivo", "Salida vía Haku"),
-                stock_disponible_anterior=stock_ant,
-                stock_disponible_posterior=stock_post,
-            )
+            # Bloquear almacén con select_for_update() y revalidar acceso
+            try:
+                almacen = Almacen.objects.select_for_update().get(id=propuesta["almacen_origen_id"], activo=True)
+            except Almacen.DoesNotExist:
+                raise ValidationError("El almacén asociado a la propuesta ya no existe o fue desactivado.")
 
-        elif tipo_op == Movimiento.Tipo.PRESTAMO:
-            if stock_ant < cantidad:
-                raise ValidationError(
-                    f"Stock insuficiente para préstamo: {stock_ant} disponibles, se solicitaron {cantidad}."
-                )
-            stock_post = stock_ant - cantidad
-            existencia.stock_disponible = stock_post
-            existencia.stock_en_prestamo += cantidad
-            existencia.save(update_fields=["stock_disponible", "stock_en_prestamo"])
+            if not usuario.tiene_acceso_almacen(almacen):
+                raise PermissionDenied("No tienes permisos para operar en este almacén.")
 
-            movimiento = Movimiento.objects.create(
-                clave_idempotencia=idempotency_key,
-                tipo=Movimiento.Tipo.PRESTAMO,
-                producto=producto,
-                cantidad=cantidad,
-                almacen_origen=almacen,
-                usuario=usuario,
-                destinatario=propuesta.get("destinatario", ""),
-                motivo=propuesta.get("motivo", "Préstamo vía Haku"),
-                stock_disponible_anterior=stock_ant,
-                stock_disponible_posterior=stock_post,
-            )
-
-            # Crear registro de préstamo
-            Prestamo.objects.create(
-                movimiento=movimiento,
+            existencia, _ = Existencia.objects.select_for_update().get_or_create(
                 producto=producto,
                 almacen=almacen,
-                destinatario=propuesta.get("destinatario", ""),
-                cantidad_original=cantidad,
-                cantidad_pendiente_devolucion=cantidad,
-                estado=Prestamo.Estado.ABIERTO,
-                usuario=usuario,
+                defaults={"stock_disponible": 0, "stock_en_prestamo": 0},
             )
 
-        elif tipo_op == Movimiento.Tipo.DEVOLUCION:
-            prestamo = Prestamo.objects.select_for_update().get(id=propuesta["prestamo_id"])
-            if cantidad > prestamo.cantidad_pendiente_devolucion:
-                raise ValidationError("La cantidad a devolver excede el saldo pendiente del préstamo.")
+            stock_ant = existencia.stock_disponible
+            stock_post = stock_ant
+            movimiento = None
 
-            stock_post = stock_ant + cantidad
-            existencia.stock_disponible = stock_post
-            existencia.stock_en_prestamo = max(0, existencia.stock_en_prestamo - cantidad)
-            existencia.save(update_fields=["stock_disponible", "stock_en_prestamo"])
+            if tipo_op == Movimiento.Tipo.ENTRADA:
+                stock_post = stock_ant + cantidad
+                existencia.stock_disponible = stock_post
+                existencia.save(update_fields=["stock_disponible"])
 
-            prestamo.cantidad_pendiente_devolucion -= cantidad
-            if prestamo.cantidad_pendiente_devolucion == 0:
-                prestamo.estado = Prestamo.Estado.CERRADO
+                movimiento = Movimiento.objects.create(
+                    clave_idempotencia=idempotency_key,
+                    tipo=Movimiento.Tipo.ENTRADA,
+                    producto=producto,
+                    cantidad=cantidad,
+                    almacen_origen=almacen,
+                    usuario=usuario,
+                    motivo=propuesta.get("motivo", "Entrada vía Haku"),
+                    stock_disponible_anterior=stock_ant,
+                    stock_disponible_posterior=stock_post,
+                )
+
+            elif tipo_op == Movimiento.Tipo.SALIDA:
+                if stock_ant < cantidad:
+                    raise ValidationError(
+                        f"Stock insuficiente: se intentó retirar {cantidad} unidades pero solo hay {stock_ant} disponibles."
+                    )
+                stock_post = stock_ant - cantidad
+                existencia.stock_disponible = stock_post
+                existencia.save(update_fields=["stock_disponible"])
+
+                movimiento = Movimiento.objects.create(
+                    clave_idempotencia=idempotency_key,
+                    tipo=Movimiento.Tipo.SALIDA,
+                    producto=producto,
+                    cantidad=cantidad,
+                    almacen_origen=almacen,
+                    usuario=usuario,
+                    destinatario=propuesta.get("destinatario", ""),
+                    motivo=propuesta.get("motivo", "Salida vía Haku"),
+                    stock_disponible_anterior=stock_ant,
+                    stock_disponible_posterior=stock_post,
+                )
+
+            elif tipo_op == Movimiento.Tipo.PRESTAMO:
+                if stock_ant < cantidad:
+                    raise ValidationError(
+                        f"Stock insuficiente para préstamo: {stock_ant} disponibles, se solicitaron {cantidad}."
+                    )
+                stock_post = stock_ant - cantidad
+                existencia.stock_disponible = stock_post
+                existencia.stock_en_prestamo += cantidad
+                existencia.save(update_fields=["stock_disponible", "stock_en_prestamo"])
+
+                movimiento = Movimiento.objects.create(
+                    clave_idempotencia=idempotency_key,
+                    tipo=Movimiento.Tipo.PRESTAMO,
+                    producto=producto,
+                    cantidad=cantidad,
+                    almacen_origen=almacen,
+                    usuario=usuario,
+                    destinatario=propuesta.get("destinatario", ""),
+                    motivo=propuesta.get("motivo", "Préstamo vía Haku"),
+                    stock_disponible_anterior=stock_ant,
+                    stock_disponible_posterior=stock_post,
+                )
+
+                # Crear registro de préstamo
+                Prestamo.objects.create(
+                    movimiento=movimiento,
+                    producto=producto,
+                    almacen=almacen,
+                    destinatario=propuesta.get("destinatario", ""),
+                    cantidad_original=cantidad,
+                    cantidad_pendiente_devolucion=cantidad,
+                    estado=Prestamo.Estado.ABIERTO,
+                    usuario=usuario,
+                )
+
+            elif tipo_op == Movimiento.Tipo.DEVOLUCION:
+                prestamo = Prestamo.objects.select_for_update().get(id=propuesta["prestamo_id"])
+                if cantidad > prestamo.cantidad_pendiente_devolucion:
+                    raise ValidationError("La cantidad a devolver excede el saldo pendiente del préstamo.")
+
+                stock_post = stock_ant + cantidad
+                existencia.stock_disponible = stock_post
+                existencia.stock_en_prestamo = max(0, existencia.stock_en_prestamo - cantidad)
+                existencia.save(update_fields=["stock_disponible", "stock_en_prestamo"])
+
+                prestamo.cantidad_pendiente_devolucion -= cantidad
+                if prestamo.cantidad_pendiente_devolucion == 0:
+                    prestamo.estado = Prestamo.Estado.CERRADO
+                else:
+                    prestamo.estado = Prestamo.Estado.DEVUELTO_PARCIAL
+                prestamo.save(update_fields=["cantidad_pendiente_devolucion", "estado"])
+
+                movimiento = Movimiento.objects.create(
+                    clave_idempotencia=idempotency_key,
+                    tipo=Movimiento.Tipo.DEVOLUCION,
+                    producto=producto,
+                    cantidad=cantidad,
+                    almacen_origen=almacen,
+                    usuario=usuario,
+                    destinatario=prestamo.destinatario,
+                    motivo=propuesta.get("motivo", "Devolución vía Haku"),
+                    stock_disponible_anterior=stock_ant,
+                    stock_disponible_posterior=stock_post,
+                )
+
+                DevolucionPrestamo.objects.create(
+                    prestamo=prestamo,
+                    cantidad=cantidad,
+                    tipo=DevolucionPrestamo.Tipo.DEVOLUCION,
+                    motivo=propuesta.get("motivo", "Devolución vía Haku"),
+                    usuario=usuario,
+                    movimiento=movimiento,
+                )
             else:
-                prestamo.estado = Prestamo.Estado.DEVUELTO_PARCIAL
-            prestamo.save(update_fields=["cantidad_pendiente_devolucion", "estado"])
+                raise ValidationError(f"Tipo de operación '{tipo_op}' no soportado vía Haku.")
 
-            movimiento = Movimiento.objects.create(
-                clave_idempotencia=idempotency_key,
-                tipo=Movimiento.Tipo.DEVOLUCION,
-                producto=producto,
-                cantidad=cantidad,
-                almacen_origen=almacen,
+            # Registro inmutable de auditoría
+            Auditoria.objects.create(
                 usuario=usuario,
-                destinatario=prestamo.destinatario,
-                motivo=propuesta.get("motivo", "Devolución vía Haku"),
-                stock_disponible_anterior=stock_ant,
-                stock_disponible_posterior=stock_post,
+                accion=tipo_op,
+                tipo_entidad="Producto",
+                id_entidad=str(producto.id),
+                valores_anteriores={"stock_disponible": stock_ant},
+                valores_nuevos={"stock_disponible": stock_post},
+                motivo=f"Operación confirmada vía Haku desde IP {ip_origen}: {propuesta.get('motivo', '')}",
+                resultado="OK",
+                via_haku=True,
             )
+    except IntegrityError:
+        # Colisión por concurrencia: otra petición simultánea con la misma clave se adelantó y confirmó
+        existente = Movimiento.objects.filter(clave_idempotencia=idempotency_key).first()
+        if existente:
+            return {
+                "exito": True,
+                "idempotente": True,
+                "movimiento_id": str(existente.id),
+                "mensaje_pantalla": f"Operación previamente confirmada (Movimiento #{existente.id}).",
+                "mensaje_verbal": "Esta operación ya había sido confirmada previamente.",
+            }
+        raise
 
-            DevolucionPrestamo.objects.create(
-                prestamo=prestamo,
-                cantidad=cantidad,
-                tipo=DevolucionPrestamo.Tipo.DEVOLUCION,
-                motivo=propuesta.get("motivo", "Devolución vía Haku"),
-                usuario=usuario,
-                movimiento=movimiento,
-            )
-        else:
-            raise ValidationError(f"Tipo de operación '{tipo_op}' no soportado vía Haku.")
-
-        # Registro inmutable de auditoría
-        Auditoria.objects.create(
-            usuario=usuario,
-            accion=tipo_op,
-            tipo_entidad="Producto",
-            id_entidad=str(producto.id),
-            valores_anteriores={"stock_disponible": stock_ant},
-            valores_nuevos={"stock_disponible": stock_post},
-            motivo=f"Operación confirmada vía Haku desde IP {ip_origen}: {propuesta.get('motivo', '')}",
-            resultado="OK",
-            via_haku=True,
-        )
+    # Invalidar caché de stock inmediatamente tras confirmación exitosa
+    from .cache import HakuCacheManager
+    HakuCacheManager.invalidar_stock(producto.id, almacen.id)
 
     mensaje_exito = (
         f"Transacción confirmada con éxito. Movimiento #{movimiento.id} registrado. "

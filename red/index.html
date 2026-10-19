@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AudacIA — Diagnóstico de Red, HTTPS y Micrófono</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #38bdf8;
+      --primary-hover: #0284c7;
+      --success: #22c55e;
+      --success-bg: rgba(34, 197, 94, 0.15);
+      --danger: #ef4444;
+      --danger-bg: rgba(239, 68, 68, 0.15);
+      --warning: #f59e0b;
+      --warning-bg: rgba(245, 158, 11, 0.15);
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      line-height: 1.6;
+      padding: 24px 16px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .container {
+      max-width: 820px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    header {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 20px 24px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      color: var(--primary);
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+
+    .badge-bar {
+      margin-top: 12px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    .badge-ok {
+      background: var(--success-bg);
+      color: var(--success);
+      border: 1px solid var(--success);
+    }
+
+    .badge-bad {
+      background: var(--danger-bg);
+      color: var(--danger);
+      border: 1px solid var(--danger);
+    }
+
+    .badge-warn {
+      background: var(--warning-bg);
+      color: var(--warning);
+      border: 1px solid var(--warning);
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 20px 24px;
+    }
+
+    .card h2 {
+      font-size: 1.25rem;
+      color: #e2e8f0;
+      margin-bottom: 14px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 8px;
+    }
+
+    .table-diag {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.95rem;
+    }
+
+    .table-diag th, .table-diag td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid #334155;
+    }
+
+    .table-diag th {
+      color: var(--text-muted);
+      font-weight: 500;
+      width: 45%;
+    }
+
+    .val-code {
+      font-family: Consolas, monospace;
+      background: #090d16;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+
+    button {
+      background: var(--primary);
+      color: #0f172a;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 18px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.2s, transform 0.1s;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    button:hover:not(:disabled) {
+      background: var(--primary-hover);
+      color: #fff;
+    }
+
+    button:active:not(:disabled) {
+      transform: scale(0.98);
+    }
+
+    button:disabled {
+      background: #475569;
+      color: #94a3b8;
+      cursor: not-allowed;
+    }
+
+    .btn-stop {
+      background: var(--danger);
+      color: #fff;
+    }
+
+    .btn-stop:hover:not(:disabled) {
+      background: #dc2626;
+    }
+
+    .btn-sec {
+      background: #334155;
+      color: #f8fafc;
+    }
+
+    .btn-sec:hover:not(:disabled) {
+      background: #475569;
+    }
+
+    .vu-meter-box {
+      margin-top: 18px;
+      padding: 14px;
+      background: #090d16;
+      border-radius: 8px;
+      border: 1px solid #334155;
+    }
+
+    .vu-meter-label {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .vu-bar-outer {
+      width: 100%;
+      height: 16px;
+      background: #1e293b;
+      border-radius: 8px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .vu-bar-inner {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(to right, #22c55e, #eab308 70%, #ef4444 95%);
+      transition: width 0.05s ease-out;
+      border-radius: 8px;
+    }
+
+    .player-box {
+      margin-top: 16px;
+      padding: 14px;
+      background: #090d16;
+      border-radius: 8px;
+      border: 1px solid #334155;
+    }
+
+    audio {
+      width: 100%;
+      margin-top: 8px;
+    }
+
+    .log-box {
+      margin-top: 14px;
+      background: #090d16;
+      color: #cbd5e1;
+      padding: 12px;
+      border-radius: 6px;
+      font-family: Consolas, monospace;
+      font-size: 0.85rem;
+      max-height: 160px;
+      overflow-y: auto;
+      border: 1px solid #334155;
+      white-space: pre-wrap;
+    }
+
+    .notice {
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      margin-top: 12px;
+    }
+
+    .notice-warn {
+      background: var(--warning-bg);
+      border: 1px solid var(--warning);
+      color: #fde68a;
+    }
+
+    .notice-info {
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid var(--primary);
+      color: #bae6fd;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>AudacIA — Diagnóstico de Red, HTTPS y Micrófono</h1>
+      <p class="subtitle">Prueba aislada de contexto seguro y captura de voz en la red universitaria</p>
+      <div class="badge-bar">
+        <span id="badge-scheme" class="badge badge-warn">Esquema: ...</span>
+        <span id="badge-secure" class="badge badge-bad">isSecureContext: ...</span>
+        <span id="badge-mic" class="badge badge-bad">Micrófono: ...</span>
+      </div>
+    </header>
+
+    <div class="card">
+      <h2>1. Diagnóstico del Navegador y Contexto de Red</h2>
+      <table class="table-diag">
+        <tbody>
+          <tr>
+            <th>URL Actual</th>
+            <td><span id="diag-url" class="val-code">Cargando...</span></td>
+          </tr>
+          <tr>
+            <th>Protocolo / Esquema</th>
+            <td><span id="diag-proto" class="val-code">Cargando...</span></td>
+          </tr>
+          <tr>
+            <th>Host / Dirección IP</th>
+            <td><span id="diag-host" class="val-code">Cargando...</span></td>
+          </tr>
+          <tr>
+            <th>window.isSecureContext</th>
+            <td><span id="diag-secure">Cargando...</span></td>
+          </tr>
+          <tr>
+            <th>navigator.mediaDevices</th>
+            <td><span id="diag-nav-media">Cargando...</span></td>
+          </tr>
+          <tr>
+            <th>navigator.mediaDevices.getUserMedia</th>
+            <td><span id="diag-get-user-media">Cargando...</span></td>
+          </tr>
+          <tr>
+            <th>MediaRecorder (W3C)</th>
+            <td><span id="diag-media-recorder">Cargando...</span></td>
+          </tr>
+          <tr>
+            <th>Estado de Permiso (Query API)</th>
+            <td><span id="diag-perm-state">No consultado</span></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div id="notice-context" class="notice notice-info" style="display: none;">
+        <strong>Información:</strong> Evaluando compatibilidad...
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>2. Prueba Práctica de Captura y Reproducción Local</h2>
+      <p style="color: var(--text-muted); font-size: 0.9rem;">
+        Esta prueba verifica si el navegador permite capturar audio de forma real. 
+        <strong>El audio nunca se envía al servidor</strong>; permanece 100% en la memoria RAM del navegador.
+      </p>
+
+      <div class="btn-group">
+        <button id="btn-request-mic" onclick="solicitarPermiso()">
+          🎤 1. Solicitar Permiso de Micrófono
+        </button>
+        <button id="btn-start-rec" onclick="iniciarGrabacion()" disabled>
+          🔴 2. Iniciar Grabación de Prueba
+        </button>
+        <button id="btn-stop-rec" class="btn-stop" onclick="detenerGrabacion()" disabled>
+          ⏹️ Detener Grabación
+        </button>
+        <button id="btn-release-mic" class="btn-sec" onclick="liberarPistas()" disabled>
+          ❌ Liberar Micrófono
+        </button>
+      </div>
+
+      <div class="vu-meter-box">
+        <div class="vu-meter-label">
+          <span>Nivel de entrada de audio (VU Meter en tiempo real)</span>
+          <span id="vu-db">-∞ dB</span>
+        </div>
+        <div class="vu-bar-outer">
+          <div id="vu-bar" class="vu-bar-inner"></div>
+        </div>
+      </div>
+
+      <div class="player-box">
+        <label style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">
+          Reproductor Local (Audio Grabado):
+        </label>
+        <audio id="audio-player" controls></audio>
+      </div>
+
+      <div class="log-box" id="log-console">Registro de eventos inicializado.</div>
+    </div>
+  </div>
+
+  <script>
+    let streamActual = null;
+    let audioContext = null;
+    let analyserNode = null;
+    let animFrameId = null;
+    let mediaRecorder = null;
+    let fragmentosAudio = [];
+
+    function log(msg) {
+      const box = document.getElementById("log-console");
+      const timestamp = new Date().toLocaleTimeString();
+      box.textContent += `\n[${timestamp}] ${msg}`;
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function actualizarDiagnostico() {
+      const url = window.location.href;
+      const proto = window.location.protocol;
+      const host = window.location.host;
+      const isSec = window.isSecureContext === true;
+      const hasMediaDevices = !!(navigator.mediaDevices);
+      const hasGetUserMedia = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+      const hasMediaRecorder = typeof MediaRecorder !== "undefined";
+
+      document.getElementById("diag-url").textContent = url;
+      document.getElementById("diag-proto").textContent = proto;
+      document.getElementById("diag-host").textContent = host;
+
+      const badgeScheme = document.getElementById("badge-scheme");
+      badgeScheme.textContent = `Esquema: ${proto.replace(':', '').toUpperCase()}`;
+      if (proto === "https:") {
+        badgeScheme.className = "badge badge-ok";
+      } else {
+        badgeScheme.className = "badge badge-warn";
+      }
+
+      const badgeSec = document.getElementById("badge-secure");
+      const diagSec = document.getElementById("diag-secure");
+      if (isSec) {
+        badgeSec.textContent = "isSecureContext: TRUE";
+        badgeSec.className = "badge badge-ok";
+        diagSec.innerHTML = '<span class="badge badge-ok">true (Seguro)</span>';
+      } else {
+        badgeSec.textContent = "isSecureContext: FALSE";
+        badgeSec.className = "badge badge-bad";
+        diagSec.innerHTML = '<span class="badge badge-bad">false (Inseguro)</span>';
+      }
+
+      const diagNavMedia = document.getElementById("diag-nav-media");
+      diagNavMedia.innerHTML = hasMediaDevices 
+        ? '<span class="badge badge-ok">Disponible</span>' 
+        : '<span class="badge badge-bad">No disponible (undefined)</span>';
+
+      const diagGUM = document.getElementById("diag-get-user-media");
+      diagGUM.innerHTML = hasGetUserMedia 
+        ? '<span class="badge badge-ok">Disponible</span>' 
+        : '<span class="badge badge-bad">No disponible</span>';
+
+      const diagMR = document.getElementById("diag-media-recorder");
+      diagMR.innerHTML = hasMediaRecorder 
+        ? '<span class="badge badge-ok">Disponible</span>' 
+        : '<span class="badge badge-bad">No disponible</span>';
+
+      const noticeBox = document.getElementById("notice-context");
+      noticeBox.style.display = "block";
+      if (!isSec) {
+        noticeBox.className = "notice notice-warn";
+        noticeBox.innerHTML = "⚠️ <strong>Contexto Inseguro Detectado:</strong> Estás accediendo por HTTP plano sobre una dirección de red. Los navegadores modernos bloquean o degradan deliberadamente <code>getUserMedia()</code> bajo este esquema por especificación W3C.";
+      } else {
+        noticeBox.className = "notice notice-info";
+        noticeBox.innerHTML = "✅ <strong>Contexto Seguro Activo:</strong> El navegador reconoce el origen como seguro. La API de micrófono está completamente disponible.";
+      }
+
+      // Consultar estado de permisos mediante Permissions API si está soportada
+      if (navigator.permissions && navigator.permissions.query) {
+        navigator.permissions.query({ name: "microphone" })
+          .then(res => {
+            const el = document.getElementById("diag-perm-state");
+            el.innerHTML = `<span class="val-code">${res.state}</span>`;
+            actualizarBadgeMic(res.state);
+            res.onchange = () => {
+              el.innerHTML = `<span class="val-code">${res.state}</span>`;
+              actualizarBadgeMic(res.state);
+              log(`Estado de permiso cambiado a: ${res.state}`);
+            };
+          })
+          .catch(err => {
+            document.getElementById("diag-perm-state").textContent = "No consultable (" + err.message + ")";
+          });
+      } else {
+        document.getElementById("diag-perm-state").textContent = "Permissions API no soportada";
+      }
+    }
+
+    function actualizarBadgeMic(estado) {
+      const badge = document.getElementById("badge-mic");
+      if (estado === "granted") {
+        badge.textContent = "Micrófono: CONCEDIDO";
+        badge.className = "badge badge-ok";
+      } else if (estado === "denied") {
+        badge.textContent = "Micrófono: BLOQUEADO";
+        badge.className = "badge badge-bad";
+      } else {
+        badge.textContent = `Micrófono: ${estado.toUpperCase()}`;
+        badge.className = "badge badge-warn";
+      }
+    }
+
+    async function solicitarPermiso() {
+      log("Solicitando acceso a getUserMedia()...");
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        log("ERROR FATAL: navigator.mediaDevices.getUserMedia no existe en este navegador/contexto.");
+        alert("Error: navigator.mediaDevices.getUserMedia no está disponible en este contexto. Si estás en HTTP plano sobre IP, el navegador lo bloquea por seguridad.");
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        streamActual = stream;
+        log("✅ Permiso de micrófono CONCEDIDO exitosamente.");
+        actualizarBadgeMic("granted");
+
+        document.getElementById("btn-request-mic").disabled = true;
+        document.getElementById("btn-start-rec").disabled = false;
+        document.getElementById("btn-release-mic").disabled = false;
+
+        iniciarVUMeter(stream);
+      } catch (err) {
+        log(`❌ Error al solicitar micrófono: [${err.name}] ${err.message}`);
+        actualizarBadgeMic("denied");
+        alert(`Error al solicitar micrófono:\nTipo: ${err.name}\nDetalle: ${err.message}`);
+      }
+    }
+
+    function iniciarVUMeter(stream) {
+      try {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) return;
+        audioContext = new AudioContextClass();
+        const source = audioContext.createMediaStreamSource(stream);
+        analyserNode = audioContext.createAnalyser();
+        analyserNode.fftSize = 256;
+        source.connect(analyserNode);
+
+        const dataArray = new Uint8Array(analyserNode.frequencyBinCount);
+        const bar = document.getElementById("vu-bar");
+        const dbLabel = document.getElementById("vu-db");
+
+        function updateMeter() {
+          analyserNode.getByteFrequencyData(dataArray);
+          let sum = 0;
+          for (let i = 0; i < dataArray.length; i++) {
+            sum += dataArray[i];
+          }
+          const avg = sum / dataArray.length;
+          const percent = Math.min(100, Math.round((avg / 128) * 100));
+          bar.style.width = percent + "%";
+          dbLabel.textContent = percent > 0 ? `${percent}% señal` : "Silencio";
+          animFrameId = requestAnimationFrame(updateMeter);
+        }
+        updateMeter();
+        log("Medidor VU de audio activado.");
+      } catch (e) {
+        log("No se pudo iniciar el VU meter: " + e.message);
+      }
+    }
+
+    function iniciarGrabacion() {
+      if (!streamActual) {
+        log("Error: No hay stream de audio activo.");
+        return;
+      }
+
+      fragmentosAudio = [];
+      try {
+        mediaRecorder = new MediaRecorder(streamActual);
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) fragmentosAudio.push(e.data);
+        };
+        mediaRecorder.onstop = () => {
+          log(`Grabación finalizada. Fragmentos recibidos: ${fragmentosAudio.length}`);
+          const blob = new Blob(fragmentosAudio, { type: mediaRecorder.mimeType || "audio/webm" });
+          const audioUrl = URL.createObjectURL(blob);
+          const player = document.getElementById("audio-player");
+          player.src = audioUrl;
+          log(`Audio cargado en reproductor local (Tamaño: ${blob.size} bytes). Listo para reproducir.`);
+        };
+
+        mediaRecorder.start();
+        log("Grabando audio localmente (di algo al micrófono)...");
+        document.getElementById("btn-start-rec").disabled = true;
+        document.getElementById("btn-stop-rec").disabled = false;
+      } catch (err) {
+        log("Error al iniciar MediaRecorder: " + err.message);
+      }
+    }
+
+    function detenerGrabacion() {
+      if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+        document.getElementById("btn-start-rec").disabled = false;
+        document.getElementById("btn-stop-rec").disabled = true;
+      }
+    }
+
+    function liberarPistas() {
+      detenerGrabacion();
+      if (animFrameId) {
+        cancelAnimationFrame(animFrameId);
+        animFrameId = null;
+      }
+      if (audioContext && audioContext.state !== "closed") {
+        audioContext.close();
+      }
+      if (streamActual) {
+        streamActual.getTracks().forEach(track => {
+          track.stop();
+          log(`Pista de audio [${track.label}] detenida y liberada.`);
+        });
+        streamActual = null;
+      }
+
+      document.getElementById("vu-bar").style.width = "0%";
+      document.getElementById("vu-db").textContent = "-∞ dB";
+      document.getElementById("btn-request-mic").disabled = false;
+      document.getElementById("btn-start-rec").disabled = true;
+      document.getElementById("btn-stop-rec").disabled = true;
+      document.getElementById("btn-release-mic").disabled = true;
+      log("Todos los recursos de hardware de audio han sido liberados.");
+    }
+
+    window.addEventListener("DOMContentLoaded", actualizarDiagnostico);
+    window.addEventListener("beforeunload", liberarPistas);
+  </script>
+</body>
+</html>

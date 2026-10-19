@@ -28,8 +28,10 @@ from .serializers import (
     ValidadorSintesisVoz,
 )
 from .services import (
+    HakuOcupadoError,
     ejecutar_confirmacion_propuesta,
     normalizar_para_tts,
+    procesar_audio_y_transcribir,
     procesar_comando_inventario,
     sintetizar_audio_bytes,
     transcribir_audio_bytes,
@@ -76,13 +78,23 @@ class MensajeHakuView(HakuApiBaseView):
             return JsonResponse({"error": err.message_dict if hasattr(err, "message_dict") else str(err)}, status=400)
 
         mensaje = validados["mensaje"]
-        propuesta_activa = request.session.get("haku_propuesta_activa")
+        session_key = request.session.session_key
+        if not session_key:
+            request.session.save()
+            session_key = request.session.session_key
+
+        from .contexto import HakuOperationalContext
+        almacen_id = getattr(request.user, "almacen_asignado_id", None)
+        estado_op = HakuOperationalContext.obtener_o_crear(request.user.id, session_key, almacen_id)
+        propuesta_activa = estado_op.propuesta_activa or request.session.get("haku_propuesta_activa")
 
         try:
             resultado = procesar_comando_inventario(
                 usuario=request.user,
                 mensaje=mensaje,
                 propuesta_activa=propuesta_activa,
+                sesion=request.session,
+                estado_operativo=estado_op,
             )
 
             tipo = resultado.get("tipo")
@@ -94,6 +106,8 @@ class MensajeHakuView(HakuApiBaseView):
                     propuesta=propuesta_activa,
                     ip_origen=request.META.get("REMOTE_ADDR", "127.0.0.1"),
                 )
+                estado_op.propuesta_activa = None
+                HakuOperationalContext.guardar(estado_op)
                 request.session["haku_propuesta_activa"] = None
                 return JsonResponse({
                     "tipo": "confirmacion_ejecutada",
@@ -105,6 +119,8 @@ class MensajeHakuView(HakuApiBaseView):
 
             # 2. El usuario canceló por voz la propuesta activa
             if tipo == "accion_cancelar" and propuesta_activa:
+                estado_op.propuesta_activa = None
+                HakuOperationalContext.guardar(estado_op)
                 request.session["haku_propuesta_activa"] = None
                 return JsonResponse({
                     "tipo": "propuesta_cancelada",
@@ -115,6 +131,8 @@ class MensajeHakuView(HakuApiBaseView):
 
             # 3. Se generó una nueva propuesta que requiere confirmación
             if tipo == "propuesta" and resultado.get("requiere_confirmacion"):
+                estado_op.propuesta_activa = resultado["propuesta"]
+                HakuOperationalContext.guardar(estado_op)
                 request.session["haku_propuesta_activa"] = resultado["propuesta"]
                 return JsonResponse({
                     "tipo": "propuesta",
@@ -131,16 +149,24 @@ class MensajeHakuView(HakuApiBaseView):
                 "mensaje_pantalla": resultado.get("mensaje_pantalla", ""),
                 "mensaje_verbal": resultado.get("mensaje_verbal", ""),
                 "datos": resultado.get("datos", {}),
-                "propuesta_activa": request.session.get("haku_propuesta_activa") is not None,
+                "propuesta_activa": estado_op.propuesta_activa is not None,
             })
 
+        except HakuOcupadoError:
+            resp = JsonResponse({
+                "error": "El servicio de asistencia se encuentra ocupado. Por favor intente nuevamente.",
+                "mensaje_pantalla": "Haku ocupado procesando otra solicitud. Intenta nuevamente.",
+                "mensaje_verbal": "Haku ocupado procesando otra solicitud. Intenta nuevamente.",
+            }, status=503)
+            resp["Retry-After"] = "5"
+            return resp
         except PermissionDenied as err:
             return JsonResponse({"error": str(err)}, status=403)
         except ValidationError as err:
             return JsonResponse({"error": str(err)}, status=400)
         except Exception as exc:
             logger.exception("Error procesando mensaje en Haku: %s", exc)
-            return JsonResponse({"error": f"Error interno al procesar comando: {str(exc)}"}, status=500)
+            return JsonResponse({"error": "Error interno al procesar comando. Intente nuevamente más tarde."}, status=500)
 
 
 class ConfirmarPropuestaView(HakuApiBaseView):
@@ -157,7 +183,11 @@ class ConfirmarPropuestaView(HakuApiBaseView):
         except ValidationError as err:
             return JsonResponse({"error": err.message_dict if hasattr(err, "message_dict") else str(err)}, status=400)
 
-        propuesta_activa = request.session.get("haku_propuesta_activa")
+        session_key = request.session.session_key or ""
+        from .contexto import HakuOperationalContext
+        estado_op = HakuOperationalContext.obtener(request.user.id, session_key)
+        propuesta_activa = (estado_op.propuesta_activa if estado_op else None) or request.session.get("haku_propuesta_activa")
+
         if not propuesta_activa:
             return JsonResponse({"error": "No hay ninguna propuesta pendiente de confirmación."}, status=404)
 
@@ -171,6 +201,9 @@ class ConfirmarPropuestaView(HakuApiBaseView):
                 idempotency_key=validados["idempotency_key"],
                 ip_origen=request.META.get("REMOTE_ADDR", "127.0.0.1"),
             )
+            if estado_op:
+                estado_op.propuesta_activa = None
+                HakuOperationalContext.guardar(estado_op)
             request.session["haku_propuesta_activa"] = None
             return JsonResponse({
                 "exito": True,
@@ -183,7 +216,7 @@ class ConfirmarPropuestaView(HakuApiBaseView):
             return JsonResponse({"error": str(err)}, status=400)
         except Exception as exc:
             logger.exception("Error al confirmar propuesta: %s", exc)
-            return JsonResponse({"error": f"Error al ejecutar transacción: {str(exc)}"}, status=500)
+            return JsonResponse({"error": "Error al ejecutar transacción. Intente nuevamente más tarde."}, status=500)
 
 
 class CancelarPropuestaView(HakuApiBaseView):
@@ -194,11 +227,13 @@ class CancelarPropuestaView(HakuApiBaseView):
     """
 
     def post(self, request):
-        datos = self._obtener_json(request)
-        propuesta_activa = request.session.get("haku_propuesta_activa")
-
-        if propuesta_activa:
-            request.session["haku_propuesta_activa"] = None
+        session_key = request.session.session_key or ""
+        from .contexto import HakuOperationalContext
+        estado_op = HakuOperationalContext.obtener(request.user.id, session_key)
+        if estado_op:
+            estado_op.propuesta_activa = None
+            HakuOperationalContext.guardar(estado_op)
+        request.session["haku_propuesta_activa"] = None
 
         return JsonResponse({
             "exito": True,
@@ -330,12 +365,60 @@ class TranscribirVozView(HakuApiBaseView):
         if not audio_bytes:
             return JsonResponse({"error": "No se recibió archivo de audio."}, status=400)
 
+        fname = getattr(audio_file, "name", "raw") if audio_file else "raw"
+        logger.debug("Recibido audio STT: filename='%s', bytes=%d", fname, len(audio_bytes))
+
         try:
-            texto = transcribir_audio_bytes(audio_bytes)
-            return JsonResponse({"texto": texto, "longitud_bytes": len(audio_bytes)})
+            res_audio = procesar_audio_y_transcribir(audio_bytes)
+            logger.debug(
+                "Resultado STT: estado=%s, motivo=%s, texto='%s'",
+                res_audio.get("estado"),
+                res_audio.get("motivo"),
+                res_audio.get("texto"),
+            )
+
+            if res_audio.get("estado") == "SIN_VOZ":
+                return JsonResponse({
+                    "status": "silencio",
+                    "estado": "SIN_VOZ",
+                    "motivo": res_audio.get("motivo", "AUDIO_SILENCIOSO"),
+                    "texto": "",
+                    "mensaje_pantalla": "No se detectó voz audible en el micrófono.",
+                    "mensaje_verbal": "No escuché ningún comando. Por favor intenta hablar de nuevo.",
+                    "metricas": res_audio.get("metricas", {}),
+                })
+
+            if res_audio.get("estado") == "ERROR_TRANSCRIPCION":
+                return JsonResponse({
+                    "status": "error_transcripcion",
+                    "estado": "ERROR_TRANSCRIPCION",
+                    "motivo": res_audio.get("motivo", "ERROR_STT"),
+                    "texto": "",
+                    "mensaje_pantalla": "Hubo un problema al transcribir el audio en el servidor.",
+                    "mensaje_verbal": "Hubo un error de transcripción. Por favor intenta de nuevo.",
+                    "error": res_audio.get("error", "Error en motor STT"),
+                    "metricas": res_audio.get("metricas", {}),
+                })
+
+            return JsonResponse({
+                "status": "ok",
+                "estado": "VOZ_DETECTADA",
+                "texto": res_audio.get("texto", ""),
+                "longitud_bytes": len(audio_bytes),
+                "metricas": res_audio.get("metricas", {}),
+            })
+        except HakuOcupadoError:
+            resp = JsonResponse({
+                "estado": "HAKU_OCUPADO",
+                "mensaje_pantalla": "Haku ocupado procesando otra solicitud. Intenta nuevamente.",
+                "mensaje_verbal": "Haku ocupado procesando otra solicitud. Intenta nuevamente.",
+                "error": "El servicio de audio se encuentra ocupado. Por favor intente nuevamente.",
+            }, status=503)
+            resp["Retry-After"] = "5"
+            return resp
         except Exception as exc:
             logger.exception("Error al transcribir audio: %s", exc)
-            return JsonResponse({"error": f"Error en transcripción: {str(exc)}"}, status=500)
+            return JsonResponse({"error": "Error interno en transcripción de audio."}, status=500)
 
 
 class SintetizarVozView(HakuApiBaseView):
@@ -357,14 +440,27 @@ class SintetizarVozView(HakuApiBaseView):
 
         texto = validados["texto"]
         try:
+            from .audio.synthesizer import HakuSynthesizerError
             wav_bytes = sintetizar_audio_bytes(texto)
             response = HttpResponse(wav_bytes, content_type="audio/wav")
             response["Content-Disposition"] = 'inline; filename="haku_voz.wav"'
             response["Cache-Control"] = "no-cache, no-store, must-revalidate"
             return response
+        except HakuSynthesizerError as exc:
+            logger.error("Error en síntesis TTS de Haku: %s", exc)
+            resp = JsonResponse({
+                "status": "error_tts",
+                "mensaje": "La síntesis de voz no está disponible actualmente.",
+                "error": "Servicio de síntesis de voz temporalmente no disponible.",
+            }, status=503)
+            resp["Retry-After"] = "5"
+            return resp
         except Exception as exc:
-            logger.exception("Error en síntesis de voz: %s", exc)
-            return JsonResponse({"error": f"Error al sintetizar voz: {str(exc)}"}, status=500)
+            logger.exception("Error inesperado en síntesis de voz: %s", exc)
+            return JsonResponse({
+                "status": "error_tts",
+                "mensaje": "La síntesis de voz no está disponible actualmente.",
+            }, status=500)
 
 
 class EstadoHakuView(HakuApiBaseView):
@@ -374,7 +470,12 @@ class EstadoHakuView(HakuApiBaseView):
     """
 
     def get(self, request):
-        propuesta_activa = request.session.get("haku_propuesta_activa")
+        session_key = request.session.session_key or ""
+        from .contexto import HakuOperationalContext
+        estado_op = HakuOperationalContext.obtener(request.user.id, session_key)
+        propuesta_activa = (estado_op.propuesta_activa if estado_op else None) or request.session.get("haku_propuesta_activa")
+        contexto_expirado = estado_op is None or estado_op.producto_id is None
+
         almacen_nombre = (
             request.user.almacen_asignado.nombre
             if (request.user.es_usuario_normal and request.user.almacen_asignado)
@@ -387,7 +488,7 @@ class EstadoHakuView(HakuApiBaseView):
             "almacen": almacen_nombre,
             "tiene_propuesta_activa": propuesta_activa is not None,
             "propuesta_activa": propuesta_activa,
-            "contexto_expirado": request.session.get("haku_contexto_expirado", False),
+            "contexto_expirado": contexto_expirado,
         })
 
 

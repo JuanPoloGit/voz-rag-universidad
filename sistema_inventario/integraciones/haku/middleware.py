@@ -16,7 +16,7 @@ from django.contrib.auth import logout
 from django.http import JsonResponse
 from django.shortcuts import redirect
 
-HAKU_TIMEOUT_SEGUNDOS = getattr(settings, "HAKU_SESSION_TIMEOUT_SECONDS", 1800)  # 30 minutos
+HAKU_TIMEOUT_SEGUNDOS = getattr(settings, "HAKU_SESSION_TIMEOUT_SECONDS", 7200)  # 2 horas (7200 segundos)
 
 
 class HakuSessionMiddleware:
@@ -37,25 +37,28 @@ class HakuSessionMiddleware:
                     )
                 return redirect("cuentas:login" if "cuentas" in settings.INSTALLED_APPS else "/")
 
-            # Regla 12.2: Timeout de 30 minutos para el contexto de Haku
+            # Regla 12.2: Contexto conversacional efímero en RAM (30 min sin actividad)
+            session_key = request.session.session_key
+            if not session_key:
+                request.session.save()
+                session_key = request.session.session_key
+
+            # Retrocompatibilidad: Limpieza de claves residuales de sesión si expira
             ahora = time.time()
-            ultimo_acceso = request.session.get("haku_ultimo_acceso")
+            ultimo_acceso_sesion = request.session.get("haku_ultimo_acceso")
+            if ultimo_acceso_sesion and (ahora - ultimo_acceso_sesion) > HAKU_TIMEOUT_SEGUNDOS:
+                request.session["haku_conversacion"] = []
+                request.session["haku_propuesta_activa"] = None
+                request.session["haku_ultimo_producto_id"] = None
+                request.session["haku_contexto_expirado"] = True
 
-            if ultimo_acceso is not None:
-                diferencia = ahora - ultimo_acceso
-                if diferencia > HAKU_TIMEOUT_SEGUNDOS:
-                    # El contexto de Haku ha caducado
-                    request.session["haku_conversacion"] = []
-                    request.session["haku_propuesta_activa"] = None
-                    request.session["haku_contexto_expirado"] = True
-                else:
-                    request.session["haku_contexto_expirado"] = False
-            else:
-                request.session["haku_contexto_expirado"] = False
+            from .contexto import HakuOperationalContext
+            contexto = HakuOperationalContext.obtener(request.user.id, session_key)
 
-            # Si la petición actual es hacia la API de Haku, refrescar la actividad
             if request.path.startswith("/api/haku/"):
-                request.session["haku_ultimo_acceso"] = ahora
+                if contexto is None:
+                    almacen_id = getattr(request.user, "almacen_asignado_id", None)
+                    HakuOperationalContext.obtener_o_crear(request.user.id, session_key, almacen_id)
 
         response = self.get_response(request)
         return response
