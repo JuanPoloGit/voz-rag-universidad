@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block title %}Categorías — Inventario AudacIA{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h1 class="card-title">Categorías</h1>
+            <p style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.25rem;">
+                Clasificación de productos y asignación por defecto a almacenes principales.
+            </p>
+        </div>
+        <div>
+            <a href="{% url 'inventario:categoria-crear' %}" class="btn btn-primary">
+                + Nueva Categoría
+            </a>
+        </div>
+    </div>
+
+    {% if not user.es_usuario_normal and almacenes %}
+        <div style="margin-bottom: 1rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            <span style="font-size: 0.875rem; font-weight: 600; color: var(--text-muted);">Filtrar por almacén principal:</span>
+            <a href="{% url 'inventario:categoria-lista' %}" class="btn btn-sm {% if not almacen_seleccionado %}btn-primary{% else %}btn-secondary{% endif %}">
+                Todos
+            </a>
+            {% for alm in almacenes %}
+                <a href="{% url 'inventario:categoria-lista' %}?almacen_id={{ alm.id }}"
+                   class="btn btn-sm {% if almacen_seleccionado == alm.id|stringformat:'s' %}btn-primary{% else %}btn-secondary{% endif %}">
+                    {{ alm.nombre }}
+                </a>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <div class="table-responsive">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Nombre</th>
+                    <th>Prefijo Código</th>
+                    <th>Almacén Principal</th>
+                    <th>Estado</th>
+                    <th style="text-align: right;">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for cat in categorias %}
+                    <tr>
+                        <td>
+                            <strong>{{ cat.nombre }}</strong>
+                        </td>
+                        <td>
+                            <code style="background: #f1f5f9; padding: 0.2rem 0.4rem; border-radius: 4px; font-weight: 600;">
+                                {{ cat.prefijo_codigo }}-XXXX
+                            </code>
+                        </td>
+                        <td>{{ cat.almacen_principal.nombre }}</td>
+                        <td>
+                            {% if cat.activo %}
+                                <span style="display: inline-block; padding: 0.2rem 0.5rem; background: var(--success-bg); color: var(--success); border-radius: 9999px; font-size: 0.75rem; font-weight: 600;">
+                                    Activa
+                                </span>
+                            {% else %}
+                                <span style="display: inline-block; padding: 0.2rem 0.5rem; background: #f1f5f9; color: var(--text-muted); border-radius: 9999px; font-size: 0.75rem; font-weight: 600;">
+                                    Inactiva
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td style="text-align: right;">
+                            <a href="{% url 'inventario:categoria-editar' cat.id %}" class="btn btn-sm btn-secondary">
+                                Editar
+                            </a>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="5" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                            No hay categorías registradas en este almacén.
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}Desactivar Almacén: {{ almacen.nombre }} — Inventario AudacIA{% endblock %}
+
+{% block content %}
+<div style="max-width: 680px; margin: 0 auto;">
+    <div class="card">
+        <div class="card-header">
+            <div>
+                <h1 class="card-title" style="color: #b91c1c;">
+                    Desactivar Almacén: {{ almacen.nombre }}
+                </h1>
+                <p style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.25rem;">
+                    Confirmación de retiro operativo de bodega o depósito.
+                </p>
+            </div>
+        </div>
+
+        {% if tiene_stock %}
+            <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem;">
+                <h3 style="font-size: 1rem; color: #92400e; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                    ⚠️ Traslado Estructural Requerido (§7.1)
+                </h3>
+                <p style="font-size: 0.875rem; color: #92400e; margin-bottom: 0.75rem;">
+                    Este almacén contiene existencias activas. Ningún producto puede quedar sin almacén asignado.
+                    Debe seleccionar el almacén receptor al que se trasladarán todas las unidades antes de desactivar.
+                </p>
+
+                <div class="table-responsive" style="max-height: 200px; overflow-y: auto;">
+                    <table class="data-table" style="font-size: 0.85rem;">
+                        <thead>
+                            <tr>
+                                <th>Código</th>
+                                <th>Producto</th>
+                                <th style="text-align: right;">Stock Disponible</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for ex in existencias %}
+                                <tr>
+                                    <td><code>{{ ex.producto.codigo_interno }}</code></td>
+                                    <td>{{ ex.producto.nombre }}</td>
+                                    <td style="text-align: right; font-weight: 700;">{{ ex.stock_disponible }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        {% else %}
+            <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem; color: #166534; font-size: 0.875rem;">
+                ✓ Este almacén no contiene existencias activas. Puede ser desactivado directamente.
+            </div>
+        {% endif %}
+
+        <form method="post" novalidate>
+            {% csrf_token %}
+
+            {% if tiene_stock %}
+                <div class="form-group">
+                    <label for="almacen_destino"><strong>Almacén Destino del Traslado *</strong></label>
+                    <select name="almacen_destino" id="almacen_destino" class="form-control" required>
+                        <option value="">-- Selecciona el almacén receptor --</option>
+                        {% for alm in almacenes_destino %}
+                            <option value="{{ alm.id }}">{{ alm.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="form-help">Todas las existencias y categorías asociadas se reasignarán a este almacén.</div>
+                </div>
+            {% endif %}
+
+            <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                <a href="{% url 'inventario:almacen-lista' %}" class="btn btn-secondary">
+                    Cancelar
+                </a>
+                <button type="submit" class="btn btn-danger" style="background: #dc2626; color: white;">
+                    Confirmar Desactivación
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}Almacenes — Inventario AudacIA{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h1 class="card-title">Almacenes</h1>
+            <p style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.25rem;">
+                Gestión de bodegas y depósitos físicos autorizados.
+            </p>
+        </div>
+        <div>
+            {% if user.es_administrador %}
+                <a href="{% url 'inventario:almacen-crear' %}" class="btn btn-primary">
+                    + Nuevo Almacén
+                </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <div style="margin-bottom: 1rem; display: flex; justify-content: flex-end; font-size: 0.875rem;">
+        {% if mostrar_inactivos %}
+            <a href="{% url 'inventario:almacen-lista' %}" class="btn btn-sm btn-secondary">
+                Ocultar inactivos
+            </a>
+        {% else %}
+            <a href="{% url 'inventario:almacen-lista' %}?mostrar_inactivos=1" class="btn btn-sm btn-secondary">
+                Mostrar inactivos
+            </a>
+        {% endif %}
+    </div>
+
+    <div class="table-responsive">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Nombre</th>
+                    <th>Descripción</th>
+                    <th>Estado</th>
+                    <th>Fecha Registro</th>
+                    {% if user.es_administrador %}
+                        <th style="text-align: right;">Acciones</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for almacen in almacenes %}
+                    <tr>
+                        <td>
+                            <strong>{{ almacen.nombre }}</strong>
+                        </td>
+                        <td>{{ almacen.descripcion|default:"—" }}</td>
+                        <td>
+                            {% if almacen.activo %}
+                                <span style="display: inline-block; padding: 0.2rem 0.5rem; background: var(--success-bg); color: var(--success); border-radius: 9999px; font-size: 0.75rem; font-weight: 600;">
+                                    Activo
+                                </span>
+                            {% else %}
+                                <span style="display: inline-block; padding: 0.2rem 0.5rem; background: var(--danger-bg); color: var(--danger); border-radius: 9999px; font-size: 0.75rem; font-weight: 600;">
+                                    Inactivo
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td style="font-size: 0.8rem; color: var(--text-muted);">
+                            {{ almacen.fecha_creacion|date:"d/m/Y H:i" }}
+                        </td>
+                        {% if user.es_administrador %}
+                            <td style="text-align: right;">
+                                <a href="{% url 'inventario:almacen-editar' almacen.id %}" class="btn btn-sm btn-secondary">
+                                    Editar
+                                </a>
+                            </td>
+                        {% endif %}
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="5" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                            No hay almacenes registrados{% if not mostrar_inactivos %} activos{% endif %}.
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

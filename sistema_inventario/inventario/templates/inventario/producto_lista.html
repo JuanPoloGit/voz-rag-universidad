@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block title %}Productos — Inventario AudacIA{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h1 class="card-title">Catálogo de Productos</h1>
+            <p style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.25rem;">
+                Control de inventario, existencias en almacén y búsqueda por código de barras.
+            </p>
+        </div>
+        <div>
+            <a href="{% url 'inventario:producto-crear' %}" class="btn btn-primary">
+                + Nuevo Producto
+            </a>
+        </div>
+    </div>
+
+    <!-- Buscador y escáner de código de barras -->
+    <div style="margin-bottom: 1.5rem; display: flex; gap: 1rem; flex-wrap: wrap;">
+        <form method="get" action="{% url 'inventario:producto-lista' %}" style="display: flex; gap: 0.5rem; flex: 1; max-width: 500px;">
+            <input type="text" name="q" value="{{ q }}" class="form-control"
+                   placeholder="Buscar por nombre, código interno (CAB-0001) o código de barras..."
+                   autofocus>
+            <button type="submit" class="btn btn-primary">Buscar</button>
+            {% if q %}
+                <a href="{% url 'inventario:producto-lista' %}" class="btn btn-secondary">Limpiar</a>
+            {% endif %}
+        </form>
+
+        {% if categorias %}
+            <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                <span style="font-size: 0.875rem; color: var(--text-muted); font-weight: 600;">Categoría:</span>
+                <a href="{% url 'inventario:producto-lista' %}{% if q %}?q={{ q }}{% endif %}"
+                   class="btn btn-sm {% if not categoria_seleccionada %}btn-primary{% else %}btn-secondary{% endif %}">
+                    Todas
+                </a>
+                {% for cat in categorias %}
+                    <a href="{% url 'inventario:producto-lista' %}?categoria_id={{ cat.id }}{% if q %}&q={{ q }}{% endif %}"
+                       class="btn btn-sm {% if categoria_seleccionada == cat.id|stringformat:'s' %}btn-primary{% else %}btn-secondary{% endif %}">
+                        {{ cat.nombre }}
+                    </a>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
+
+    <div class="table-responsive">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Código</th>
+                    <th>Nombre</th>
+                    <th>Categoría</th>
+                    <th>Código Barras</th>
+                    <th style="text-align: center;">Disponible</th>
+                    <th style="text-align: center;">En Préstamo</th>
+                    <th>Estado Stock</th>
+                    <th style="text-align: right;">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for prod in productos %}
+                    <tr>
+                        <td>
+                            <a href="{% url 'inventario:producto-detalle' prod.id %}" style="font-family: monospace; font-weight: 700; color: var(--primary);">
+                                {{ prod.codigo_interno }}
+                            </a>
+                        </td>
+                        <td>
+                            <strong>{{ prod.nombre }}</strong>
+                            {% if prod.nombre_empaque %}
+                                <div style="font-size: 0.75rem; color: var(--text-muted);">
+                                    Empaque: {{ prod.nombre_empaque }} ({{ prod.unidades_por_empaque|default:"—" }} unid.)
+                                </div>
+                            {% endif %}
+                        </td>
+                        <td>{{ prod.categoria.nombre }}</td>
+                        <td>
+                            {% if prod.codigo_barras %}
+                                <code style="font-size: 0.8rem; background: #f1f5f9; padding: 0.2rem 0.4rem; border-radius: 4px;">{{ prod.codigo_barras }}</code>
+                            {% else %}
+                                <span style="color: var(--text-muted); font-size: 0.8rem;">—</span>
+                            {% endif %}
+                        </td>
+                        <td style="text-align: center; font-weight: 700;">
+                            {% with stock_disp=prod.existencias.first.stock_disponible|default:0 %}
+                                {{ stock_disp }}
+                            {% endwith %}
+                        </td>
+                        <td style="text-align: center; color: var(--text-muted);">
+                            {% with stock_prest=prod.existencias.first.stock_en_prestamo|default:0 %}
+                                {{ stock_prest }}
+                            {% endwith %}
+                        </td>
+                        <td>
+                            {% with stock_disp=prod.existencias.first.stock_disponible|default:0 %}
+                                {% if stock_disp == 0 %}
+                                    <span style="display: inline-block; padding: 0.2rem 0.5rem; background: #fee2e2; color: #b91c1c; border-radius: 9999px; font-size: 0.75rem; font-weight: 600;">
+                                        Sin Stock
+                                    </span>
+                                {% elif stock_disp < prod.stock_minimo %}
+                                    <span style="display: inline-block; padding: 0.2rem 0.5rem; background: #fef3c7; color: #b45309; border-radius: 9999px; font-size: 0.75rem; font-weight: 600;">
+                                        Stock Bajo (< {{ prod.stock_minimo }})
+                                    </span>
+                                {% else %}
+                                    <span style="display: inline-block; padding: 0.2rem 0.5rem; background: var(--success-bg); color: var(--success); border-radius: 9999px; font-size: 0.75rem; font-weight: 600;">
+                                        Óptimo
+                                    </span>
+                                {% endif %}
+                            {% endwith %}
+                        </td>
+                        <td style="text-align: right; white-space: nowrap;">
+                            <a href="{% url 'inventario:producto-detalle' prod.id %}" class="btn btn-sm btn-secondary">
+                                Ver
+                            </a>
+                            <a href="{% url 'inventario:producto-editar' prod.id %}" class="btn btn-sm btn-secondary">
+                                Editar
+                            </a>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="8" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                            No se encontraron productos registrados en este almacén.
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

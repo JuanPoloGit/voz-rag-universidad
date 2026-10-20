@@ -102,7 +102,7 @@ class PrestamoAdmin(admin.ModelAdmin):
         "fecha_creacion",
     )
     list_filter = ("estado", "almacen")
-    search_fields = ("producto__nombre", "destinatario", "motivo")
+    search_fields = ("producto__nombre", "destinatario", "movimiento__motivo")
 
 
 @admin.register(DevolucionPrestamo)

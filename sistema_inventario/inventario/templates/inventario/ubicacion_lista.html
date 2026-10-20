@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Ubicaciones — Inventario AudacIA{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h1 class="card-title">Ubicaciones Físicas</h1>
+            <p style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.25rem;">
+                Estanterías, gavetas y secciones registradas dentro de los almacenes.
+            </p>
+        </div>
+        <div>
+            <a href="{% url 'inventario:ubicacion-crear' %}" class="btn btn-primary">
+                + Nueva Ubicación
+            </a>
+        </div>
+    </div>
+
+    {% if almacenes %}
+        <div style="margin-bottom: 1.25rem; display: flex; align-items: center; gap: 0.75rem; font-size: 0.875rem;">
+            <span style="font-weight: 600; color: var(--text-muted);">Filtrar por almacén:</span>
+            <a href="{% url 'inventario:ubicacion-lista' %}" class="btn btn-sm {% if not almacen_seleccionado %}btn-primary{% else %}btn-secondary{% endif %}">
+                Todos
+            </a>
+            {% for alm in almacenes %}
+                <a href="{% url 'inventario:ubicacion-lista' %}?almacen_id={{ alm.id }}" class="btn btn-sm {% if almacen_seleccionado == alm.id|stringformat:'s' %}btn-primary{% else %}btn-secondary{% endif %}">
+                    {{ alm.nombre }}
+                </a>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <div class="table-responsive">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Nombre de Ubicación</th>
+                    <th>Almacén</th>
+                    <th>Descripción</th>
+                    <th style="text-align: right;">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ubic in ubicaciones %}
+                    <tr>
+                        <td>
+                            <strong>{{ ubic.nombre }}</strong>
+                        </td>
+                        <td>
+                            <span style="display: inline-block; padding: 0.2rem 0.5rem; background: var(--primary-light); color: var(--primary); border-radius: 0.25rem; font-size: 0.775rem; font-weight: 600;">
+                                {{ ubic.almacen.nombre }}
+                            </span>
+                        </td>
+                        <td>{{ ubic.descripcion|default:"—" }}</td>
+                        <td style="text-align: right;">
+                            <a href="{% url 'inventario:ubicacion-editar' ubic.id %}" class="btn btn-sm btn-secondary">
+                                Editar
+                            </a>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="4" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                            No hay ubicaciones registradas en este almacén.
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

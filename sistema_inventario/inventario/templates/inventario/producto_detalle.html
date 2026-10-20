@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+
+{% block title %}{{ producto.codigo_interno }} — {{ producto.nombre }} — Inventario AudacIA{% endblock %}
+
+{% block content %}
+<div style="display: flex; flex-direction: column; gap: 1.5rem;">
+    <!-- Encabezado del Producto -->
+    <div class="card">
+        <div class="card-header" style="align-items: flex-start;">
+            <div>
+                <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
+                    <span style="font-family: monospace; font-size: 1.25rem; font-weight: 700; background: #e0e7ff; color: #3730a3; padding: 0.25rem 0.6rem; border-radius: 6px;">
+                        {{ producto.codigo_interno }}
+                    </span>
+                    {% if producto.codigo_barras %}
+                        <span style="font-family: monospace; font-size: 0.85rem; background: #f1f5f9; color: var(--text-muted); padding: 0.25rem 0.5rem; border-radius: 4px;">
+                            EAN: {{ producto.codigo_barras }}
+                        </span>
+                    {% endif %}
+                    {% if producto.archivado %}
+                        <span style="background: #fee2e2; color: #b91c1c; font-size: 0.75rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: 9999px;">
+                            Archivado
+                        </span>
+                    {% endif %}
+                </div>
+                <h1 class="card-title" style="font-size: 1.75rem;">{{ producto.nombre }}</h1>
+                <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 0.25rem;">
+                    Categoría: <strong>{{ producto.categoria.nombre }}</strong> (Almacén principal: {{ producto.categoria.almacen_principal.nombre }})
+                </p>
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+                <a href="{% url 'inventario:producto-lista' %}" class="btn btn-secondary">
+                    ← Volver al Catálogo
+                </a>
+                <a href="{% url 'inventario:producto-editar' producto.id %}" class="btn btn-primary">
+                    Editar Producto
+                </a>
+            </div>
+        </div>
+
+        {% if producto.descripcion %}
+            <div style="margin-top: 1rem; padding: 1rem; background: #f8fafc; border-radius: 6px; font-size: 0.9rem; color: var(--text);">
+                {{ producto.descripcion }}
+            </div>
+        {% endif %}
+    </div>
+
+    <!-- Indicadores de Stock -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+        <div class="card" style="text-align: center;">
+            <div style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">
+                Stock Disponible Total
+            </div>
+            <div style="font-size: 2.25rem; font-weight: 700; color: var(--primary); margin-top: 0.25rem;">
+                {% with total_disp=existencias.0.stock_disponible|default:0 %}
+                    {{ total_disp }}
+                {% endwith %}
+            </div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Unidades físicas</div>
+        </div>
+
+        <div class="card" style="text-align: center;">
+            <div style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">
+                En Préstamo
+            </div>
+            <div style="font-size: 2.25rem; font-weight: 700; color: #d97706; margin-top: 0.25rem;">
+                {% with total_prest=existencias.0.stock_en_prestamo|default:0 %}
+                    {{ total_prest }}
+                {% endwith %}
+            </div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Unidades prestadas</div>
+        </div>
+
+        <div class="card" style="text-align: center;">
+            <div style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">
+                Stock Mínimo
+            </div>
+            <div style="font-size: 2.25rem; font-weight: 700; color: var(--text); margin-top: 0.25rem;">
+                {{ producto.stock_minimo }}
+            </div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Umbral de alerta</div>
+        </div>
+
+        {% if producto.nombre_empaque %}
+            <div class="card" style="text-align: center;">
+                <div style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">
+                    Conversión de Empaque
+                </div>
+                <div style="font-size: 1.5rem; font-weight: 700; color: var(--text); margin-top: 0.5rem;">
+                    1 {{ producto.nombre_empaque }}
+                </div>
+                <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem;">
+                    = {{ producto.unidades_por_empaque|default:"—" }} unidades
+                </div>
+            </div>
+        {% endif %}
+    </div>
+
+    <!-- Existencias y Ubicaciones -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+        <!-- Existencias por Almacén -->
+        <div class="card">
+            <h2 class="card-title" style="margin-bottom: 1rem; font-size: 1.15rem;">Existencias por Almacén</h2>
+            <div class="table-responsive">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Almacén</th>
+                            <th style="text-align: right;">Disponible</th>
+                            <th style="text-align: right;">Préstamo</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ex in existencias %}
+                            <tr>
+                                <td><strong>{{ ex.almacen.nombre }}</strong></td>
+                                <td style="text-align: right; font-weight: 600;">{{ ex.stock_disponible }}</td>
+                                <td style="text-align: right; color: var(--text-muted);">{{ ex.stock_en_prestamo }}</td>
+                            </tr>
+                        {% empty %}
+                            <tr>
+                                <td colspan="3" style="text-align: center; color: var(--text-muted);">Sin existencias registradas.</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Ubicaciones Físicas -->
+        <div class="card">
+            <h2 class="card-title" style="margin-bottom: 1rem; font-size: 1.15rem;">Ubicaciones Físicas</h2>
+            <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem;">
+                {% for ub in ubicaciones %}
+                    <li style="padding: 0.6rem 0.8rem; background: #f8fafc; border-radius: 6px; border: 1px solid var(--border); display: flex; justify-content: space-between;">
+                        <span><strong>{{ ub.nombre }}</strong></span>
+                        <span style="font-size: 0.8rem; color: var(--text-muted);">{{ ub.almacen.nombre }}</span>
+                    </li>
+                {% empty %}
+                    <li style="color: var(--text-muted); font-size: 0.9rem; padding: 1rem 0;">
+                        No tiene ubicaciones físicas asignadas.
+                    </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+
+    <!-- Historial de Movimientos -->
+    <div class="card">
+        <h2 class="card-title" style="margin-bottom: 1rem; font-size: 1.15rem;">Historial de Movimientos Recientes</h2>
+        <div class="table-responsive">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Tipo</th>
+                        <th>Almacén Destino</th>
+                        <th style="text-align: right;">Cantidad</th>
+                        <th style="text-align: right;">Stock Resultante</th>
+                        <th>Responsable</th>
+                        <th>Motivo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for mov in movimientos %}
+                        <tr>
+                            <td style="font-size: 0.85rem; white-space: nowrap;">{{ mov.fecha_hora|date:"d/m/Y H:i" }}</td>
+                            <td>
+                                <span style="font-size: 0.75rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: 4px; background: #e0e7ff; color: #3730a3;">
+                                    {{ mov.get_tipo_display }}
+                                </span>
+                            </td>
+                            <td>{{ mov.almacen_destino.nombre|default:"—" }}</td>
+                            <td style="text-align: right; font-weight: 600;">+{{ mov.cantidad }}</td>
+                            <td style="text-align: right;">{{ mov.stock_disponible_posterior }}</td>
+                            <td style="font-size: 0.85rem;">{{ mov.usuario.username }}</td>
+                            <td style="font-size: 0.85rem; color: var(--text-muted);">{{ mov.motivo|default:"—" }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="7" style="text-align: center; padding: 1.5rem; color: var(--text-muted);">
+                                No hay movimientos registrados para este producto.
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

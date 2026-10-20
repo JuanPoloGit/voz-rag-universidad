@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}Trasladar Categoría: {{ categoria.nombre }} — Inventario AudacIA{% endblock %}
+
+{% block content %}
+<div style="max-width: 680px; margin: 0 auto;">
+    <div class="card">
+        <div class="card-header">
+            <div>
+                <h1 class="card-title">
+                    Trasladar Productos de Categoría: {{ categoria.nombre }}
+                </h1>
+                <p style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.25rem;">
+                    Almacén principal actual: <strong>{{ categoria.almacen_principal.nombre }}</strong>
+                </p>
+            </div>
+        </div>
+
+        <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem;">
+            <h3 style="font-size: 1rem; color: #92400e; margin-bottom: 0.5rem;">
+                ⚠️ Traslado Estructural de Categoría (§7.3)
+            </h3>
+            <p style="font-size: 0.875rem; color: #92400e; margin-bottom: 0.75rem;">
+                Cambiar el almacén principal de una categoría traslada automáticamente todas las existencias disponibles
+                de sus productos asociados al nuevo almacén, generando los movimientos correspondientes.
+            </p>
+
+            <ul style="max-height: 150px; overflow-y: auto; padding-left: 1.25rem; font-size: 0.85rem; color: var(--text);">
+                {% for prod in productos %}
+                    <li><code>{{ prod.codigo_interno }}</code> — {{ prod.nombre }}</li>
+                {% empty %}
+                    <li>No hay productos activos en esta categoría.</li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <form method="post" novalidate>
+            {% csrf_token %}
+
+            <div class="form-group">
+                <label for="almacen_destino"><strong>Nuevo Almacén Principal *</strong></label>
+                <select name="almacen_destino" id="almacen_destino" class="form-control" required>
+                    <option value="">-- Selecciona el nuevo almacén --</option>
+                    {% for alm in almacenes_destino %}
+                        <option value="{{ alm.id }}">{{ alm.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                <a href="{% url 'inventario:categoria-lista' %}" class="btn btn-secondary">
+                    Cancelar
+                </a>
+                <button type="submit" class="btn btn-primary">
+                    Confirmar Traslado
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
