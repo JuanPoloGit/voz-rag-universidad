@@ -1,0 +1,139 @@
+{
+  "suite": "AUDACIA — Benchmark Integral de Rendimiento, Consumo y Estabilidad",
+  "fecha_generacion": "2026-10-15 12:35:39",
+  "auditoria_hardware": {
+    "gpu_desarrollo": "NVIDIA RTX 2000 Ada Generation Laptop GPU (8.188 MiB VRAM / Driver 596.58)",
+    "ram_fisica_instalada": "16 GB DDR5 5600 MHz (1x 16GB Samsung M425R2GA3PB0-CWMOL)",
+    "ram_utilizable_windows": "15.51 GiB (15.881 MiB)",
+    "resolucion_discrepancia_ram": "El equipo físico cuenta exactamente con un módulo SODIMM de 16 GB, no 32 GB. Windows dispone de 15,51 GiB debido a memoria reservada por hardware y UEFI."
+  },
+  "matriz_comparativa_componentes": [
+    {
+      "componente": "Sistema en Reposo (Baseline)",
+      "proceso_pid": "N/A (Global OS)",
+      "memoria_ram_usada_gib": 9.57,
+      "vram_usada_mib": 232.0,
+      "vram_proceso_atribuida_mib": 0.0,
+      "latencia_p50_s": 0.0,
+      "rendimiento": "N/A",
+      "observaciones": "Consumo basal de Windows 11 sin modelos de IA cargados."
+    },
+    {
+      "componente": "LLM Aislado (Llama 3.1 8B Q4_K_M)",
+      "proceso_pid": 30388,
+      "memoria_ram_usada_gib": 9.8,
+      "vram_usada_mib": 5177.0,
+      "vram_proceso_atribuida_mib": 4847.6,
+      "latencia_p50_s": 2.95,
+      "rendimiento": "33.83 tokens/s",
+      "observaciones": "33 capas offloaded a CUDA, KV Cache Q8, Flash Attention ON."
+    },
+    {
+      "componente": "STT Aislado (Faster-Whisper base float16)",
+      "proceso_pid": "Python Runner",
+      "memoria_ram_usada_gib": 9.6,
+      "vram_usada_mib": 325.0,
+      "vram_proceso_atribuida_mib": 200.6,
+      "latencia_p50_s": 0.1033,
+      "rendimiento": "RTF: 0.0408 (25x más rápido que tiempo real)",
+      "observaciones": "Inferencia de audio en GPU CTranslate2 float16."
+    },
+    {
+      "componente": "Aplicación Web (Django + Uvicorn HTTPS)",
+      "proceso_pid": 30796,
+      "memoria_ram_usada_gib": 9.5,
+      "vram_usada_mib": 0.0,
+      "vram_proceso_atribuida_mib": 28.65,
+      "latencia_p50_s": 0.0239,
+      "rendimiento": "34.0 req/s",
+      "observaciones": "Worker ASGI sirviendo peticiones HTTPS sin modelos de IA cargados en su proceso."
+    },
+    {
+      "componente": "Concurrencia Simultánea LLM + STT",
+      "proceso_pid": "Múltiple (llama-server + Python)",
+      "memoria_ram_usada_gib": 10.2,
+      "vram_usada_mib": 5502.0,
+      "vram_proceso_atribuida_mib": 5048.2,
+      "latencia_p50_s": 2.538,
+      "rendimiento": "LLM: 37.8 t/s | STT RTF: 0.063",
+      "observaciones": "Coexistencia en la misma GPU de 8GB sin fallos de OOM ni contención destructiva."
+    }
+  ],
+  "limites_operativos_y_presupuesto": {
+    "estacion_desarrollo_rtx2000ada": {
+      "vram_total_mib": 8188.0,
+      "vram_consumo_fijo_sistema_mib": 232.0,
+      "vram_llm_8b_q4_km_mib": 5177.0,
+      "vram_stt_whisper_base_mib": 325.0,
+      "vram_coexistencia_medida_mib": 5502.0,
+      "vram_margen_seguridad_libre_mib": 2686.0,
+      "vram_margen_seguridad_pct": 32.8,
+      "concurrencia_max_recomendada_llm": 1,
+      "tamano_max_contexto_seguro_tokens": 8192,
+      "cuello_de_botella_principal": "Cómputo en ráfagas simultáneas (encolamiento FIFO de solicitudes LLM)."
+    },
+    "servidor_definitivo_rtx5070ti_previsto": {
+      "vram_total_mib": 16384.0,
+      "vram_consumo_fijo_estimado_mib": 500.0,
+      "vram_llm_8b_q4_km_mib": 5177.0,
+      "vram_stt_whisper_medium_fp16_estimado_mib": 1500.0,
+      "vram_total_estimada_mib": 7177.0,
+      "vram_margen_seguridad_libre_mib": 9207.0,
+      "vram_margen_seguridad_pct": 56.2,
+      "concurrencia_max_sugerida_llm": 4,
+      "tamano_max_contexto_tokens": 16384,
+      "estado_validacion": "PENDIENTE_CALIBRACION_FISICA (Requiere hardware físico al recibir el servidor)"
+    }
+  },
+  "resumen_pruebas": {
+    "prueba_a_reposo": {
+      "estado": "COMPLETA",
+      "vram_baseline_mib": 0.0,
+      "ram_usada_promedio_gib": 9.57,
+      "cpu_promedio_pct": 11.03
+    },
+    "prueba_b_llm_aislado": {
+      "estado": "COMPLETA",
+      "tiempo_carga_s": 17.821,
+      "working_set_llm_mib": 4847.59,
+      "velocidad_promedio_tokens_s": 33.83,
+      "latencia_p50_s": 2.95,
+      "latencia_p95_s": 6.262
+    },
+    "prueba_c_stt_aislado": {
+      "estado": "COMPLETA",
+      "modelo": "faster-whisper base float16",
+      "latencia_media_beam1_ms": 557.5,
+      "latencia_media_beam3_ms": 103.3,
+      "rtf_medio_beam3": 0.0408
+    },
+    "prueba_d_web_aislado": {
+      "estado": "COMPLETA",
+      "working_set_web_mib": 28.65,
+      "private_bytes_web_mib": 41.8,
+      "latencia_http_media_ms": 29.4
+    },
+    "prueba_e_concurrencia_llm_stt": {
+      "estado": "COMPLETA",
+      "estabilidad_coexistencia": "100% EXITOSA (0 OOM)",
+      "latencia_llm_en_concurrencia_s": 2.538,
+      "velocidad_llm_en_concurrencia_t_s": 37.82,
+      "stt_en_concurrencia_ms": 191.7
+    },
+    "prueba_f_carga_recuperacion": {
+      "estado": "COMPLETA",
+      "rafaga_4_clientes_s": 4.772,
+      "cola_fifo_respetada": true,
+      "resiliencia_timeout_cliente": true,
+      "reinicio_limpio_confirmado": true
+    }
+  },
+  "archivos_resultados_completos": {
+    "prueba_a_reposo": "C:\\Users\\AudacIA\\Documents\\inventario\\voz-rag-universidad\\cerebro_audacia\\benchmark_recursos\\resultados\\prueba_a_reposo.json",
+    "prueba_b_llm_aislado": "C:\\Users\\AudacIA\\Documents\\inventario\\voz-rag-universidad\\cerebro_audacia\\benchmark_recursos\\resultados\\prueba_b_llm_aislado.json",
+    "prueba_c_stt_aislado": "C:\\Users\\AudacIA\\Documents\\inventario\\voz-rag-universidad\\cerebro_audacia\\benchmark_recursos\\resultados\\prueba_c_stt_aislado.json",
+    "prueba_d_web_aislado": "C:\\Users\\AudacIA\\Documents\\inventario\\voz-rag-universidad\\cerebro_audacia\\benchmark_recursos\\resultados\\prueba_d_web_aislado.json",
+    "prueba_e_concurrencia_llm_stt": "C:\\Users\\AudacIA\\Documents\\inventario\\voz-rag-universidad\\cerebro_audacia\\benchmark_recursos\\resultados\\prueba_e_concurrencia_llm_stt.json",
+    "prueba_f_carga_recuperacion": "C:\\Users\\AudacIA\\Documents\\inventario\\voz-rag-universidad\\cerebro_audacia\\benchmark_recursos\\resultados\\prueba_f_carga_recuperacion.json"
+  }
+}

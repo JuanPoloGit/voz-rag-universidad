@@ -13,6 +13,14 @@ models/*.gguf
 models/*.bin
 models/voz/
 .cache/huggingface/
+*.onnx
+*.onnx.json
+*.zip
+
+# Binarios y DLLs descargables de llama-server y CUDA (ver cerebro_audacia/proveedor_modelo/descargar_binarios.py)
+cerebro_audacia/proveedor_modelo/bin/
+*.dll
+*.exe
 
 # ------------------------------------------- datos generados en ejecucion
 # Indice vectorial: se reconstruye solo desde documents/ en cada arranque.
@@ -21,6 +29,8 @@ chroma_db/
 hacu_memory.db
 hacu_memory.db-wal
 hacu_memory.db-shm
+*.sqlite3
+db.sqlite3
 logs/
 # Informes de las baterias y los guiones: miden una version concreta del
 # corpus, asi que envejecen mal y no sirven como referencia despues.

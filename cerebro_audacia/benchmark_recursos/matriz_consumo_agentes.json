@@ -1,0 +1,156 @@
+{
+  "version": "1.0.0",
+  "fecha_auditoria": "2026-10-15",
+  "descripcion": "Matriz técnica de consumo de recursos, dependencias y riesgos de concurrencia por agente en AudacIA",
+  "arquitectura_central": {
+    "servidor_llm_compartido": {
+      "tipo": "Servicio HTTP Central Desacoplado",
+      "binario": "llama-server.exe (b11669 CUDA 12.4)",
+      "modelo": "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+      "puerto": 8080,
+      "endpoints": ["/v1/chat/completions", "/health", "/slots", "/v1/models"],
+      "vram_base_medida_mib": 5177.0,
+      "ram_working_set_medido_mib": 4847.6
+    },
+    "politica_comparticion": "Todos los agentes deben consumir el LLM central via HTTP (/v1/chat/completions) sin instanciar pesos locales ni duplicar el runtime en memoria."
+  },
+  "agentes": [
+    {
+      "id": "agente_visitante_hacu",
+      "nombre": "Agente Visitante (HACU)",
+      "estado_implementacion": "IMPLEMENTADO",
+      "ubicacion_codigo": "hacu/",
+      "responsabilidad_real": "Atención conversacional al visitante de la exhibición AudacIA y la Universidad. Provee respuestas contextualizadas sobre proyectos, personas, historia y servicios institucionales.",
+      "instrucciones_y_contexto": {
+        "system_prompt": "Definido en hacu/prompts.py (personalidad HACU, reglas de exhibición, empatía y brevedad).",
+        "gestion_contexto": "hacu/context.py (ensamblador modular: saludo, hechos de memoria SQLite, fragmentos RAG, historial reciente y regla de cierre).",
+        "longitud_contexto_estimada_tokens": "800 a 2.400 tokens según el tipo de turno."
+      },
+      "herramientas_y_fuentes": {
+        "fuente_primaria": "Corpus documental Markdown en disco (hacu/corpus/).",
+        "motor_busqueda_rag": "LocalRAGEngine (hacu/rag.py) con ChromaDB persistente en disco (hacu/data/chroma/).",
+        "memoria_episodica": "HacuMemoryDB (hacu/memory.py) sobre SQLite (hacu/data/hacu_memory.db).",
+        "busqueda_web": "Módulo opcional de búsqueda DuckDuckGo/HTTP aislado (hacu/web.py), invocado condicionalmente si no hay respuesta en el corpus."
+      },
+      "consultas_modificaciones_backend": {
+        "acceso_bd_django": "Ninguno. Funciona desacoplado del ORM de Django.",
+        "modificaciones_locales": "Lectura/escritura de perfiles y mensajes en SQLite local (hacu_memory.db) y ChromaDB."
+      },
+      "permisos_necesarios": "Público / Visitante anónimo o registrado mediante nombre de pila en el diálogo. Sin permisos administrativos ni credenciales Django.",
+      "forma_invocar_llm": {
+        "mecanismo_actual": "LlmService (hacu/llm.py) mediante enlace nativo directo llama_cpp.Llama en el mismo proceso Python.",
+        "diagnostico_arquitectonico": "RIESGO CRÍTICO DE DUPLICACIÓN: Si HACU corre como proceso independiente o dentro de Django y carga llama_cpp.Llama mientras llama-server está activo en la GPU, se intentará cargar el modelo dos veces, provocando CUDA Out-Of-Memory inmediato.",
+        "solucion_requerida": "Refactorizar LlmService para actuar como cliente HTTP contra http://127.0.0.1:8080/v1/chat/completions."
+      },
+      "dependencias_externas": [
+        "chromadb",
+        "langchain-text-splitters",
+        "sentence-transformers (opcional, para embeddings multilingües)",
+        "sqlite3"
+      ],
+      "posibles_modelos_adicionales": {
+        "embeddings": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 (~470 MB de descarga, ~120 MiB en RAM/GPU si activo).",
+        "voz_tts": "Piper TTS local (CPU, ligero ~80 MB en RAM)."
+      },
+      "riesgo_duplicacion_inferencia": "ALTO si no se migra a cliente HTTP. NULO una vez desacoplado hacia llama-server.",
+      "aislamiento_usuarios": {
+        "sesiones": "Aisladas por clave de usuario en IdentityResolver (hacu/identity.py).",
+        "historial": "Filtrado estrictamente por usuario_id en SQLite.",
+        "documentos": "Corpus compartido de solo lectura institucional.",
+        "permisos": "Sin elevación de privilegios."
+      }
+    },
+    {
+      "id": "agente_inventario_haku",
+      "nombre": "Agente de Inventario (HAKU)",
+      "estado_implementacion": "EN_DESARROLLO",
+      "ubicacion_codigo": "sistema_inventario/integraciones/haku/",
+      "responsabilidad_real": "Gestión asistida por voz y texto del inventario universitario: consultas de existencia, préstamos de material, movimientos de entrada/salida y desambiguación de códigos técnicos.",
+      "instrucciones_y_contexto": {
+        "system_prompt": "Normalización determinista y reglas fonéticas regionales en lenguaje/costeno.py y lenguaje/normalizador.py.",
+        "gestion_contexto": "HakuContextManager (contexto.py) y caché temporal de propuestas transaccionales (cache.py).",
+        "longitud_contexto_estimada_tokens": "350 a 900 tokens (esquemas JSON de inventario y estado transaccional)."
+      },
+      "herramientas_y_fuentes": {
+        "fuente_primaria": "Base de datos relacional de Django (PostgreSQL / SQLite) mediante ORM: Producto, Existencia, Movimiento, Prestamo, Ubicacion.",
+        "motor_stt": "HakuTranscriber (audio/transcriber.py) usando Faster-Whisper base (CUDA float16).",
+        "normalizacion": "InterpretadorCosteno y NormalizadorSiglasTecnicas.",
+        "sintesis_voz": "Normalizador fonético para Piper TTS."
+      },
+      "consultas_modificaciones_backend": {
+        "acceso_bd_django": "Acceso completo transaccional vía HakuProposalService.",
+        "consultas": "Búsqueda de productos, stock, ubicaciones, préstamos activos.",
+        "modificaciones": "Creación diferida de Movimiento y Prestamo bajo confirmación explícita (sistema de propuesta en dos fases)."
+      },
+      "permisos_necesarios": "Usuario autenticado en Django (Cookie de sesión / Token) con permisos sobre la aplicación inventario (is_staff o permisos específicos de almacén).",
+      "forma_invocar_llm": {
+        "mecanismo_actual": "Actualmente procesa intenciones de forma determinista y sintáctica; cuenta con HAKU_GPU_LOCK (threading.RLock) preparado para serializar llamadas al LLM.",
+        "diagnostico_arquitectonico": "HAKU_GPU_LOCK es un lock en memoria de un solo hilo/proceso. No protege contra concurrencia multi-proceso (Uvicorn workers). Debe invocar el LLM central compartido vía HTTP.",
+        "solucion_requerida": "Adaptador HTTP a http://127.0.0.1:8080/v1/chat/completions gobernado por ConcurrencyGovernor."
+      },
+      "dependencias_externas": [
+        "faster-whisper (CTranslate2)",
+        "django-orm",
+        "numpy"
+      ],
+      "posibles_modelos_adicionales": {
+        "stt": "Faster-Whisper base en CUDA float16 (~325 MiB VRAM medidos).",
+        "tts": "Piper TTS local en CPU."
+      },
+      "riesgo_duplicacion_inferencia": "MEDIO EN STT: Cada trabajador web ASGI que instancie HakuTranscriber cargará una copia independiente de Faster-Whisper en GPU (~325 MiB cada uno). Si se configuran 4 workers, STT consumirá ~1.300 MiB de VRAM. Debe considerarse un microservicio STT centralizado o worker único para transcripción.",
+      "aislamiento_usuarios": {
+        "sesiones": "Aislamiento nativo por sesión de Django (request.session y request.user).",
+        "historial": "Caché de propuestas por clave de sesión de usuario.",
+        "documentos": "Control de acceso a nivel de fila y permisos Django.",
+        "permisos": "Imposibilidad de confirmar propuestas ajenas entre usuarios concurrentes."
+      }
+    },
+    {
+      "id": "agente_auditoria_futuro",
+      "nombre": "Agente de Auditoría (Futuro)",
+      "estado_implementacion": "SIMULADO_FUTURO",
+      "ubicacion_codigo": "No implementado (previsto en arquitectura cerebro_audacia/agentes/)",
+      "responsabilidad_real": "Auditoría automatizada de transacciones, detección de discrepancias de inventario, análisis de logs de eventos y generación de informes de cumplimiento.",
+      "instrucciones_y_contexto": {
+        "system_prompt": "Instrucciones de análisis forense, conciliación de saldos y detección de anomalías.",
+        "gestion_contexto": "Tablas de auditoría formateadas en Markdown/JSON con historial de transacciones.",
+        "longitud_contexto_estimada_tokens": "1.500 a 4.000 tokens (lotes de registros de auditoría)."
+      },
+      "herramientas_y_fuentes": {
+        "fuente_primaria": "Logs de auditoría (django-auditlog / Transaccion / Movimiento).",
+        "analisis_estadistico": "Consultas agregadas SQL / ORM de solo lectura."
+      },
+      "consultas_modificaciones_backend": {
+        "acceso_bd_django": "Solo lectura (SELECT). Sin facultades de modificación ni escritura.",
+        "modificaciones_locales": "Generación de informes de auditoría exportables."
+      },
+      "permisos_necesarios": "Rol administrativo o de auditor (superuser o auditor_group). Restringido a personal de control interno.",
+      "forma_invocar_llm": {
+        "mecanismo_actual": "No existe. Se diseñará sobre AgentContract y ResilientAgentExecutor.",
+        "solucion_requerida": "Cliente HTTP contra el LLM central compartiendo el pool de inferencia."
+      },
+      "dependencias_externas": [
+        "cerebro_audacia.agentes.contrato.AgentContract",
+        "cerebro_audacia.agentes.resiliencia.ResilientAgentExecutor"
+      ],
+      "posibles_modelos_adicionales": {
+        "modelos_adicionales": "Ninguno. Utiliza estrictamente el LLM central compartido."
+      },
+      "riesgo_duplicacion_inferencia": "NULO si se implementa consumiendo el endpoint central HTTP.",
+      "aislamiento_usuarios": {
+        "sesiones": "Aisladas por solicitud de auditoría y token de sesión administrativa.",
+        "historial": "Informes asociados al auditor solicitante.",
+        "documentos": "Acceso restringido por permisos RBAC de Django."
+      }
+    }
+  ],
+  "resumen_recursos_compartidos": {
+    "vram_llm_central_fijo_mib": 5177.0,
+    "vram_stt_whisper_base_fijo_mib": 325.0,
+    "vram_sistema_escritorio_mib": 232.0,
+    "vram_total_comprometida_base_mib": 5734.0,
+    "vram_total_hardware_rtx2000ada_mib": 8188.0,
+    "vram_margen_disponible_desarrollo_mib": 2454.0,
+    "conclusion_arquitectonica": "La GPU de desarrollo (8 GB) admite holgadamente el LLM central (5.177 MiB) + STT (325 MiB) + Sistema (232 MiB) dejando 2.454 MiB de margen. La arquitectura DEBE prohibir que los agentes instancien librerías de inferencia locales (llama_cpp.Llama) y canalizar toda inferencia a través de llama-server."
+  }
+}

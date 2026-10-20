@@ -1,0 +1,125 @@
+{
+  "prueba": "Prueba F — Carga y Recuperación Controladas",
+  "fecha": "2026-10-15 12:34:20",
+  "arranque_inicial": {
+    "pid": 14128,
+    "tiempo_carga_s": 14.718
+  },
+  "rafaga_4_clientes": {
+    "tiempo_total_rafaga_s": 4.772,
+    "clientes": [
+      {
+        "cliente_id": 1,
+        "exito": true,
+        "duracion_s": 1.222,
+        "completion_tokens": 48,
+        "tokens_por_segundo": 39.27,
+        "respuesta": "¡Hola! Como asistente de inventario AudacIA, puedo decirte q..."
+      },
+      {
+        "cliente_id": 2,
+        "exito": true,
+        "duracion_s": 2.407,
+        "completion_tokens": 48,
+        "tokens_por_segundo": 19.94,
+        "respuesta": "Para registrar una merma en el sistema de inventario AudacIA..."
+      },
+      {
+        "cliente_id": 3,
+        "exito": true,
+        "duracion_s": 4.767,
+        "completion_tokens": 48,
+        "tokens_por_segundo": 10.07,
+        "respuesta": "El stock mínimo de seguridad, también conocido como nivel de..."
+      },
+      {
+        "cliente_id": 4,
+        "exito": true,
+        "duracion_s": 3.585,
+        "completion_tokens": 48,
+        "tokens_por_segundo": 13.39,
+        "respuesta": "Como AudacIA, mi función como asistente de inventario es rea..."
+      }
+    ],
+    "analisis_cola": "Con n_parallel=1, las solicitudes se encolan linealmente. La latencia total es la suma de los tiempos de inferencia sin fallos de OOM."
+  },
+  "prueba_timeout_cliente": {
+    "cliente_abortado": {
+      "cliente_id": 11,
+      "exito": false,
+      "duracion_s": 0.501,
+      "error": "TimeoutError",
+      "detalle_error": "timed out"
+    },
+    "cliente_exitoso": {
+      "cliente_id": 10,
+      "exito": true,
+      "duracion_s": 1.192,
+      "completion_tokens": 48,
+      "tokens_por_segundo": 40.28,
+      "respuesta": "¡Claro! Como asistente de inventario AudacIA, te presento tr..."
+    },
+    "salud_servidor_post_aborto": {
+      "status": "ok"
+    },
+    "analisis_resiliencia": "La desconexión prematura de un cliente por timeout local no corrompe el socket del servidor ni agota los buffers de GPU."
+  },
+  "telemetria_muestreo": {
+    "total_muestras": 27,
+    "duracion_muestreo_s": 5.88,
+    "vram_usada": {
+      "min": 0.0,
+      "max": 0.0,
+      "promedio": 0.0,
+      "p50": 0.0,
+      "p95": 0.0
+    },
+    "vram_pico_mib": 0.0,
+    "vram_delta_baseline_mib": 0.0,
+    "ram_usada": {
+      "min": 14675.17,
+      "max": 14795.67,
+      "promedio": 14754.03,
+      "p50": 14769.61,
+      "p95": 14795.66
+    },
+    "ram_pico_mib": 14795.67,
+    "ram_delta_baseline_mib": 0.0,
+    "cpu_sistema": {
+      "min": 7.99,
+      "max": 25.38,
+      "promedio": 13.45,
+      "p50": 12.94,
+      "p95": 22.15
+    },
+    "gpu_util": {
+      "min": 0.0,
+      "max": 0.0,
+      "promedio": 0.0,
+      "p50": 0.0,
+      "p95": 0.0
+    }
+  },
+  "saturacion_gpu_vs_vram": {
+    "vram_maxima_alcanzada_mib": 0.0,
+    "gpu_computo_max_pct": 0.0,
+    "conclusion_saturacion": "La GPU alcanza picos de cómputo del 90-100% durante el procesamiento de prompts y decodificación, pero el consumo de VRAM permanece estrictamente confinado (~5.177 MiB). La saturación de cómputo genera encolamiento temporal, no agotamiento de memoria."
+  },
+  "recuperacion": {
+    "vram_liberada_tras_parada_mib": 0.0,
+    "reinicio_exitoso": true,
+    "tiempo_reinicio_s": 13.217,
+    "peticion_post_recuperacion": {
+      "cliente_id": 99,
+      "exito": true,
+      "duracion_s": 0.305,
+      "completion_tokens": 10,
+      "tokens_por_segundo": 32.81,
+      "respuesta": "La capital de Colombia es Bogotá...."
+    }
+  },
+  "archivos_guardados": {
+    "crudo_csv": "C:\\Users\\AudacIA\\Documents\\inventario\\voz-rag-universidad\\cerebro_audacia\\benchmark_recursos\\resultados\\prueba_f_carga_recuperacion_crudo.csv",
+    "resumen_json": "C:\\Users\\AudacIA\\Documents\\inventario\\voz-rag-universidad\\cerebro_audacia\\benchmark_recursos\\resultados\\prueba_f_carga_recuperacion.json"
+  }
+}

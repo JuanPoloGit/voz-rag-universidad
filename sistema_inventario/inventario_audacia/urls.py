@@ -11,5 +11,6 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("cuentas/", include("cuentas.urls")),
     path("inventario/", include("inventario.urls")),
+    path("api/haku/", include("integraciones.haku.urls")),
     path("", include("web.urls")),
 ]

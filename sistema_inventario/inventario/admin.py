@@ -8,6 +8,7 @@ from .models import (
     Categoria,
     ConteoFisico,
     DevolucionPrestamo,
+    Existencia,
     Movimiento,
     Prestamo,
     Producto,
@@ -25,15 +26,15 @@ class AlmacenAdmin(admin.ModelAdmin):
 
 @admin.register(Ubicacion)
 class UbicacionAdmin(admin.ModelAdmin):
-    list_display = ("nombre", "almacen", "activa", "eliminada")
-    list_filter = ("almacen", "activa", "eliminada")
+    list_display = ("nombre", "almacen", "activo", "eliminado")
+    list_filter = ("almacen", "activo", "eliminado")
     search_fields = ("nombre", "descripcion")
 
 
 @admin.register(Categoria)
 class CategoriaAdmin(admin.ModelAdmin):
-    list_display = ("nombre", "almacen_principal", "activa", "eliminada")
-    list_filter = ("almacen_principal", "activa", "eliminada")
+    list_display = ("nombre", "prefijo_codigo", "almacen_principal", "activo", "eliminado")
+    list_filter = ("almacen_principal", "activo", "eliminado")
     search_fields = ("nombre", "descripcion")
 
 
@@ -42,22 +43,28 @@ class ProductoAdmin(admin.ModelAdmin):
     list_display = (
         "codigo_interno",
         "nombre",
-        "almacen",
         "categoria",
-        "stock_disponible",
-        "stock_en_prestamo",
+        "stock_inicial",
         "stock_minimo",
         "activo",
+        "archivado",
     )
-    list_filter = ("almacen", "categoria", "activo", "eliminado")
+    list_filter = ("categoria", "activo", "archivado")
     search_fields = ("codigo_interno", "codigo_barras", "nombre")
     readonly_fields = ("codigo_interno", "stock_inicial", "fecha_creacion", "fecha_modificacion")
 
 
+@admin.register(Existencia)
+class ExistenciaAdmin(admin.ModelAdmin):
+    list_display = ("producto", "almacen", "stock_disponible", "stock_en_prestamo")
+    list_filter = ("almacen",)
+    search_fields = ("producto__nombre", "producto__codigo_interno", "almacen__nombre")
+
+
 @admin.register(ProductoUbicacion)
 class ProductoUbicacionAdmin(admin.ModelAdmin):
-    list_display = ("producto", "ubicacion", "es_principal")
-    list_filter = ("ubicacion__almacen", "es_principal")
+    list_display = ("producto", "ubicacion")
+    list_filter = ("ubicacion__almacen",)
     search_fields = ("producto__nombre", "producto__codigo_interno", "ubicacion__nombre")
 
 
@@ -72,12 +79,11 @@ class MovimientoAdmin(admin.ModelAdmin):
         "usuario",
         "fecha_hora",
         "estado",
-        "via_haku",
     )
-    list_filter = ("tipo", "estado", "almacen_origen", "via_haku")
+    list_filter = ("tipo", "estado", "almacen_origen")
     search_fields = ("producto__nombre", "producto__codigo_interno", "destinatario", "motivo")
     readonly_fields = (
-        "idempotency_key",
+        "clave_idempotencia",
         "stock_disponible_anterior",
         "stock_disponible_posterior",
         "fecha_hora",
@@ -90,10 +96,10 @@ class PrestamoAdmin(admin.ModelAdmin):
         "producto",
         "almacen",
         "destinatario",
-        "cantidad_prestada",
+        "cantidad_original",
         "cantidad_pendiente_devolucion",
         "estado",
-        "fecha_prestamo",
+        "fecha_creacion",
     )
     list_filter = ("estado", "almacen")
     search_fields = ("producto__nombre", "destinatario", "motivo")
@@ -101,8 +107,8 @@ class PrestamoAdmin(admin.ModelAdmin):
 
 @admin.register(DevolucionPrestamo)
 class DevolucionPrestamoAdmin(admin.ModelAdmin):
-    list_display = ("prestamo", "tipo_cierre", "cantidad", "usuario", "fecha_hora")
-    list_filter = ("tipo_cierre",)
+    list_display = ("prestamo", "tipo", "cantidad", "usuario", "fecha")
+    list_filter = ("tipo",)
     search_fields = ("prestamo__destinatario", "motivo")
 
 
@@ -112,14 +118,14 @@ class ConteoFisicoAdmin(admin.ModelAdmin):
         "producto",
         "almacen",
         "cantidad_contada",
-        "stock_sistema_en_conteo",
+        "stock_sistema",
         "diferencia",
-        "estado",
+        "confirmado",
         "usuario_conteo",
         "usuario_confirmacion",
     )
-    list_filter = ("estado", "almacen")
-    search_fields = ("producto__nombre", "observaciones")
+    list_filter = ("confirmado", "almacen")
+    search_fields = ("producto__nombre", "motivo")
 
 
 @admin.register(Auditoria)

@@ -1,0 +1,60 @@
+{
+  "version": "1.1.0",
+  "servicio": {
+    "host": "127.0.0.1",
+    "puerto": 8080,
+    "url_salud": "http://127.0.0.1:8080/health",
+    "url_modelos": "http://127.0.0.1:8080/v1/models",
+    "url_chat": "http://127.0.0.1:8080/v1/chat/completions"
+  },
+  "perfiles": {
+    "desarrollo_rtx2000ada": {
+      "descripcion": "Entorno de desarrollo local (Portatil con NVIDIA RTX 2000 Ada - 8.0 GB VRAM / 8188 MiB)",
+      "modelo_archivo": "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+      "modelo_ruta_relativa": "models/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+      "cuantizacion": "Q4_K_M",
+      "n_ctx": 8192,
+      "n_gpu_layers": 33,
+      "n_batch": 512,
+      "n_threads": 8,
+      "flash_attn": true,
+      "kv_8bits": true,
+      "parallel": 1,
+      "presupuesto_vram_esperado_mb": 5700,
+      "presupuesto_desglose_mb": {
+        "pesos_modelo_mb": 4692,
+        "buffer_computo_mb": 460,
+        "kv_cache_8k_q8_mb": 512,
+        "total_llama_server_mb": 5664,
+        "margen_libre_gpu_mb": 2292
+      },
+      "temperatura_defecto": 0.3,
+      "top_p_defecto": 0.9,
+      "max_tokens_defecto": 512
+    },
+    "servidor_rtx5070ti": {
+      "descripcion": "Servidor central institucional definitivo (NVIDIA RTX 5070 Ti - 16.0 GB VRAM / 16384 MiB)",
+      "modelo_archivo": "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+      "modelo_ruta_relativa": "models/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+      "cuantizacion": "Q4_K_M",
+      "n_ctx": 16384,
+      "n_gpu_layers": 33,
+      "n_batch": 512,
+      "n_threads": 12,
+      "flash_attn": true,
+      "kv_8bits": true,
+      "parallel": 2,
+      "presupuesto_vram_esperado_mb": 6320,
+      "presupuesto_desglose_mb": {
+        "pesos_modelo_mb": 4692,
+        "buffer_computo_mb": 600,
+        "kv_cache_16k_q8_mb": 1024,
+        "total_llama_server_mb": 6316,
+        "margen_libre_gpu_mb": 10068
+      },
+      "temperatura_defecto": 0.3,
+      "top_p_defecto": 0.9,
+      "max_tokens_defecto": 1024
+    }
+  }
+}

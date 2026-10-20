@@ -1,0 +1,155 @@
+{
+  "prueba": "Prueba C — STT de Forma Aislada",
+  "fecha": "2026-10-15 12:28:54",
+  "configuracion": {
+    "modelo": "faster-whisper base",
+    "backend": "CTranslate2",
+    "dispositivo": "cuda",
+    "compute_type": "float16",
+    "modelo_servidor_definitivo": "medium / large-v3 en RTX 5070 Ti 16GB"
+  },
+  "carga_modelo": {
+    "tiempo_carga_s": 2.708,
+    "vram_delta_carga_mib": 0.0,
+    "working_set_proceso_mib": 200.61,
+    "private_bytes_proceso_mib": 1113.03
+  },
+  "resumen_beam_1": {
+    "latencia_promedio_s": 0.5575,
+    "latencia_min_s": 0.074,
+    "latencia_max_s": 2.4462,
+    "rtf_promedio": 0.2068,
+    "rtf_min": 0.0287,
+    "detalles": [
+      {
+        "archivo": "1_movimientos.wav",
+        "duracion_audio_s": 2.74,
+        "latencia_s": 2.4462,
+        "rtf": 0.8928,
+        "transcripcion": "que movimiento se hicieron hoy en el almacén.",
+        "idioma_prob": 1
+      },
+      {
+        "archivo": "2_stock.wav",
+        "duracion_audio_s": 2.368,
+        "latencia_s": 0.0782,
+        "rtf": 0.033,
+        "transcripcion": "Cuanto stock, queda de cable HDMI.",
+        "idioma_prob": 1
+      },
+      {
+        "archivo": "3_orden.wav",
+        "duracion_audio_s": 3.042,
+        "latencia_s": 0.0874,
+        "rtf": 0.0287,
+        "transcripcion": "Sacar 5 unidades de ponchadora para carlos.",
+        "idioma_prob": 1
+      },
+      {
+        "archivo": "4_costeno.wav",
+        "duracion_audio_s": 1.532,
+        "latencia_s": 0.074,
+        "rtf": 0.0483,
+        "transcripcion": "Como ba la baina, voy.",
+        "idioma_prob": 1
+      },
+      {
+        "archivo": "5_codigo.wav",
+        "duracion_audio_s": 3.274,
+        "latencia_s": 0.1016,
+        "rtf": 0.031,
+        "transcripcion": "¿Dónde está guardado el código se averguió en 1-0-0-1?",
+        "idioma_prob": 1
+      }
+    ]
+  },
+  "resumen_beam_3": {
+    "latencia_promedio_s": 0.1033,
+    "latencia_min_s": 0.0753,
+    "latencia_max_s": 0.1347,
+    "rtf_promedio": 0.0408,
+    "rtf_min": 0.0325,
+    "detalles": [
+      {
+        "archivo": "1_movimientos.wav",
+        "duracion_audio_s": 2.74,
+        "latencia_s": 0.1134,
+        "rtf": 0.0414,
+        "transcripcion": "que movimientos se hicieron hoy en el almacén.",
+        "idioma_prob": 1
+      },
+      {
+        "archivo": "2_stock.wav",
+        "duracion_audio_s": 2.368,
+        "latencia_s": 0.0943,
+        "rtf": 0.0398,
+        "transcripcion": "¿Cuánto stock queda de cable HDMI?",
+        "idioma_prob": 1
+      },
+      {
+        "archivo": "3_orden.wav",
+        "duracion_audio_s": 3.042,
+        "latencia_s": 0.0988,
+        "rtf": 0.0325,
+        "transcripcion": "Sacar 5 unidades de ponchadora para carlos.",
+        "idioma_prob": 1
+      },
+      {
+        "archivo": "4_costeno.wav",
+        "duracion_audio_s": 1.532,
+        "latencia_s": 0.0753,
+        "rtf": 0.0492,
+        "transcripcion": "Como ba la baina, voy.",
+        "idioma_prob": 1
+      },
+      {
+        "archivo": "5_codigo.wav",
+        "duracion_audio_s": 3.274,
+        "latencia_s": 0.1347,
+        "rtf": 0.0411,
+        "transcripcion": "¿Dónde está guardado el código se abeguió en 1-0-0-1?",
+        "idioma_prob": 1
+      }
+    ]
+  },
+  "telemetria_muestreo": {
+    "total_muestras": 16,
+    "duracion_muestreo_s": 3.2,
+    "vram_usada": {
+      "min": 0.0,
+      "max": 0.0,
+      "promedio": 0.0,
+      "p50": 0.0,
+      "p95": 0.0
+    },
+    "vram_pico_mib": 0.0,
+    "vram_delta_baseline_mib": 0.0,
+    "ram_usada": {
+      "min": 9935.98,
+      "max": 10328.82,
+      "promedio": 10121.86,
+      "p50": 10146.56,
+      "p95": 10328.82
+    },
+    "ram_pico_mib": 10328.82,
+    "ram_delta_baseline_mib": 531.22,
+    "cpu_sistema": {
+      "min": 9.56,
+      "max": 19.44,
+      "promedio": 13.89,
+      "p50": 13.8,
+      "p95": 19.44
+    },
+    "gpu_util": {
+      "min": 0.0,
+      "max": 0.0,
+      "promedio": 0.0,
+      "p50": 0.0,
+      "p95": 0.0
+    }
+  },
+  "archivos_guardados": {
+    "crudo_csv": "C:\\Users\\AudacIA\\Documents\\inventario\\voz-rag-universidad\\cerebro_audacia\\benchmark_recursos\\resultados\\prueba_c_stt_aislado_crudo.csv",
+    "resumen_json": "C:\\Users\\AudacIA\\Documents\\inventario\\voz-rag-universidad\\cerebro_audacia\\benchmark_recursos\\resultados\\prueba_c_stt_aislado.json"
+  }
+}

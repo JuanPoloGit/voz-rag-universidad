@@ -1,0 +1,9 @@
+# Ignorar certificados, claves privadas y temporales de red
+certificados/*.pem
+certificados/*.key
+certificados/*.crt
+certificados/*.pfx
+certificados/*.csr
+certificados/*.cnf
+*.log
+__pycache__/
