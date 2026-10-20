@@ -263,6 +263,11 @@ class HacuSession:
         segundos = time.perf_counter() - inicio
 
         respuesta = "".join(emitido).strip()
+        es_error = not respuesta and motivo[-1] is None
+        if es_error:
+            self._log.warning("El modelo no devolvio contenido (posible saturacion o indisponibilidad de LLM)")
+            respuesta = "El servicio de asistencia se encuentra temporalmente ocupado. Por favor, intenta de nuevo en unos momentos."
+            emitir(respuesta)
         if retenedor.descartada:
             self._log.debug("Coletilla de cierre descartada (regla 12)")
         if retenedor.adulaciones_quitadas:
@@ -280,18 +285,21 @@ class HacuSession:
                 "Respuesta cortada por tope de tokens (extenso=%s); se descarto la frase "
                 "incompleta. Si se repite, subir chat_max_tokens_extenso.", extenso
             )
-        self._db.add_message(usuario, "user", texto)
-        self._db.add_message(usuario, "assistant", respuesta)
-        # Lo que alguien cuenta de su salud mental no se convierte en un "hecho"
-        # de su perfil. La cola de extraccion no lo ve.
-        #
-        # Los cierres y elogios tampoco: un "gracias, ha sido muy interesante"
-        # no dice NADA del visitante, y el extractor lo convertia en un hecho de
-        # perfil —"Ha sido un gusto y le encanta haber conocido mas sobre los
-        # proyectos de AudacIA"— que ademas ocupa sitio en el maximo de doce.
-        # Visto en la corrida de 100 turnos del 21/09.
-        if cuidado is Cuidado.NINGUNO and not social:
-            self._extractor.encolar(usuario, texto)
+
+        # Solo persistir en historial y memoria si la interacción fue exitosa y no un fallo de contingencia.
+        # Esto previene que un mensaje de error temporal contamine silenciosamente los turnos futuros del LLM.
+        if not es_error:
+            self._db.add_message(usuario, "user", texto)
+            self._db.add_message(usuario, "assistant", respuesta)
+            # Lo que alguien cuenta de su salud mental no se convierte en un "hecho"
+            # de su perfil. La cola de extraccion no lo ve.
+            #
+            # Los cierres y elogios tampoco: un "gracias, ha sido muy interesante"
+            # no dice NADA del visitante, y el extractor lo convertia en un hecho de
+            # perfil —"Ha sido un gusto y le encanta haber conocido mas sobre los
+            # proyectos de AudacIA"— que ademas ocupa sitio en el maximo de doce.
+            if cuidado is Cuidado.NINGUNO and not social and self._extractor is not None:
+                self._extractor.encolar(usuario, texto)
 
         return ResultadoTurno(
             entrada=texto,

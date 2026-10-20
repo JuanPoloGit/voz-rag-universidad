@@ -1,0 +1,4 @@
+cliente_id,clase_prompt,timestamp_envio,codigo_http,exito,error,ttft_s,latencia_total_s,tiempo_generacion_s,tokens_generados,tokens_por_segundo_generacion,tokens_por_segundo_efectivo,respuesta_resumida,ronda,num_clientes,config_paralelismo
+0,A_corta,2026-10-15T13:13:39.888101,200,True,,0.2524,1.3394,1.087,45,41.4,33.6,"La misión principal de AudacIA es fomentar la innovación y el emprendimiento en la comunidad universitaria, impulsando l",1,1,parallel_1
+0,A_corta,2026-10-15T13:13:42.330526,200,True,,0.0291,1.3522,1.3232,55,41.57,40.67,La misión principal de AudacIA es desarrollar y aplicar tecnologías de inteligencia artificial y aprendizaje automático ,2,1,parallel_1
+0,A_corta,2026-10-15T13:13:44.723107,200,True,,0.0426,1.5551,1.5125,64,42.32,41.16,"La misión principal de AudacIA es promover la innovación y el emprendimiento en la universidad, fomentando la creativida",3,1,parallel_1

@@ -427,10 +427,14 @@ class AppConfig:
 
         ruta = os.getenv("HACU_MODELO", "").strip()
         if ruta:
-            candidata = Path(ruta)
-            if not candidata.is_absolute():
-                candidata = PROJECT_ROOT / "models" / candidata
-            modelo = replace(modelo, model_path=candidata)
+            import warnings
+            warnings.warn(
+                "La variable de entorno HACU_MODELO está deprecada y es ignorada en AudacIA. "
+                "Los agentes tienen terminantemente prohibido seleccionar o especificar modelos locales; "
+                "el modelo es gobernado exclusivamente por la infraestructura del Cerebro Central.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         ctx = _entero("HACU_CTX")
         if ctx is not None:
             modelo = replace(modelo, n_ctx=ctx)

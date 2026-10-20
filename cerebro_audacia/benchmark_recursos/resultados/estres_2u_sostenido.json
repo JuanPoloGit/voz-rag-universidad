@@ -1,0 +1,45 @@
+{
+  "timestamp": "2026-10-15T14:36:20.442900",
+  "configuracion": {
+    "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
+    "usuarios_simulados": 2,
+    "duracion_segundos": 4,
+    "modo": "sostenido",
+    "safe_dev": true
+  },
+  "volumen": {
+    "solicitudes_totales": 2,
+    "solicitudes_completadas_ok": 2,
+    "solicitudes_rechazadas_saturacion": 0,
+    "solicitudes_timeout": 0,
+    "solicitudes_error": 0,
+    "tasa_exito_pct": 100.0
+  },
+  "latencia_segundos": {
+    "ttft_p50": 5.2147,
+    "ttft_p95": 9.5169,
+    "latencia_p50": 12.4589,
+    "latencia_p90": 14.4728,
+    "latencia_p95": 14.7246,
+    "latencia_p99": 14.926
+  },
+  "rendimiento_tokens": {
+    "total_tokens_generados": 584,
+    "tokens_por_segundo_promedio_individual": 25.99,
+    "throughput_agregado_tokens_por_segundo": 38.99
+  },
+  "hardware": {
+    "vram_max_observada_mib": 5187.0,
+    "gpu_temp_max_c": 54.0,
+    "ram_uso_max_pct": 91,
+    "ram_usada_gib": 14.18,
+    "memoria_comprometida_mib": 23633.0,
+    "cpu_pct": 6.4,
+    "aborto_de_seguridad": false,
+    "motivo_aborto": ""
+  },
+  "estadistica": {
+    "muestras_exitosas": 2,
+    "advertencia_validez_percentiles": "Muestras insuficientes (<20) para P95/P99 estadísticamente rigurosos; valores interpolados sobre muestra pequeña."
+  }
+}

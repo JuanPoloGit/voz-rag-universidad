@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     # --- Apps del proyecto ---
     "cuentas",
     "inventario",
+    "integraciones.haku",
     "web",
 ]
 
@@ -48,6 +49,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "integraciones.haku.middleware.HakuSessionMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -72,23 +74,32 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "inventario_audacia.wsgi.application"
 
-# ─── Base de datos (PostgreSQL local) ────────────────────────────────────────
+# ─── Base de datos (PostgreSQL local o SQLite configurable) ───────────────────
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("DB_NAME", "inventario_audacia"),
-        "USER": os.getenv("DB_USER", "inventario"),
-        "PASSWORD": os.getenv("DB_PASSWORD", ""),
-        "HOST": os.getenv("DB_HOST", "localhost"),
-        "PORT": os.getenv("DB_PORT", "5432"),
-        # Aislamiento SERIALIZABLE garantiza que las transacciones con
-        # select_for_update() no generen anomalías en los movimientos.
-        "OPTIONS": {
-            "options": "-c default_transaction_isolation=read\\ committed",
-        },
+DB_ENGINE = os.getenv("DB_ENGINE", "postgresql").lower()
+if "sqlite" in DB_ENGINE:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.getenv("DB_NAME", "inventario_audacia"),
+            "USER": os.getenv("DB_USER", "inventario"),
+            "PASSWORD": os.getenv("DB_PASSWORD", ""),
+            "HOST": os.getenv("DB_HOST", "localhost"),
+            "PORT": os.getenv("DB_PORT", "5432"),
+            # Aislamiento SERIALIZABLE garantiza que las transacciones con
+            # select_for_update() no generen anomalías en los movimientos.
+            "OPTIONS": {
+                "options": "-c default_transaction_isolation=read\\ committed",
+            },
+        }
+    }
 
 # ─── Modelo de usuario personalizado ─────────────────────────────────────────
 
@@ -107,6 +118,50 @@ AUTH_PASSWORD_VALIDATORS = [
 LOGIN_MAX_ATTEMPTS = int(os.getenv("LOGIN_MAX_ATTEMPTS", "5"))
 LOGIN_LOCKOUT_MINUTES = int(os.getenv("LOGIN_LOCKOUT_MINUTES", "15"))
 
+# ─── Cachés en RAM (LocMemCache) para Haku Inventario ─────────────────────────
+# LocMemCache es nativo de Django, seguro para subprocesos y opera 100% en RAM
+# sin requerir Redis, Memcached ni servicios externos.
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "haku-inventario-default",
+    },
+    "haku_contexto": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "haku-inventario-contexto",
+        "TIMEOUT": 7200,  # 2 horas sin actividad (7200 segundos)
+        "OPTIONS": {
+            "MAX_ENTRIES": 50,  # Máximo 50 contextos simultáneos
+            "CULL_FREQUENCY": 2,  # Desalojo fraccional LRU al alcanzar MAX_ENTRIES
+        },
+    },
+    "haku_catalogo": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "haku-inventario-catalogo",
+        "TIMEOUT": 1800,  # 30 minutos
+        "OPTIONS": {
+            "MAX_ENTRIES": 500,
+        },
+    },
+    "haku_ubicaciones": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "haku-inventario-ubicaciones",
+        "TIMEOUT": 900,  # 15 minutos
+        "OPTIONS": {
+            "MAX_ENTRIES": 500,
+        },
+    },
+    "haku_stock": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "haku-inventario-stock",
+        "TIMEOUT": 15,  # 15 segundos máximo (stock temporal orientativo)
+        "OPTIONS": {
+            "MAX_ENTRIES": 200,
+        },
+    },
+}
+
 # ─── Sesiones ────────────────────────────────────────────────────────────────
 
 SESSION_ENGINE = "django.contrib.sessions.backends.db"
@@ -116,13 +171,20 @@ SESSION_COOKIE_AGE = SESSION_COOKIE_AGE_DAYS * 86400
 # Si no se marca "recordar", la sesión caduca al cerrar el navegador.
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 SESSION_COOKIE_HTTPONLY = True
-SESSION_COOKIE_SECURE = True  # Requiere HTTPS (mkcert en red local).
+SESSION_COOKIE_SECURE = not DEBUG if os.getenv("COOKIE_SECURE") is None else os.getenv("COOKIE_SECURE").lower() in ("true", "1")
 SESSION_COOKIE_SAMESITE = "Lax"
 
 # ─── CSRF ────────────────────────────────────────────────────────────────────
 
-CSRF_COOKIE_HTTPONLY = True
-CSRF_COOKIE_SECURE = True
+CSRF_COOKIE_HTTPONLY = False  # Permitir que JS lea el csrftoken para peticiones fetch/AJAX
+CSRF_COOKIE_SECURE = not DEBUG if os.getenv("COOKIE_SECURE") is None else os.getenv("COOKIE_SECURE").lower() in ("true", "1")
+CSRF_TRUSTED_ORIGINS = [
+    f"https://{h}:8000" for h in ALLOWED_HOSTS if h not in ("*", "")
+] + [
+    f"https://{h}" for h in ALLOWED_HOSTS if h not in ("*", "")
+] + [
+    f"http://{h}:8000" for h in ALLOWED_HOSTS if h not in ("*", "")
+]
 
 # ─── Internacionalización ────────────────────────────────────────────────────
 
@@ -150,11 +212,15 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # ─── Login ───────────────────────────────────────────────────────────────────
 
-LOGIN_URL = "/cuentas/login/"
-LOGIN_REDIRECT_URL = "/"
-LOGOUT_REDIRECT_URL = "/cuentas/login/"
+# Si cuentas/login aún no está implementada por Integrante 1, fallback a /admin/login/
+LOGIN_URL = os.getenv("LOGIN_URL", "/admin/login/")
+LOGIN_REDIRECT_URL = "/api/haku/panel/"
+LOGOUT_REDIRECT_URL = "/admin/login/"
 
 # ─── Haku Inventario ─────────────────────────────────────────────────────────
+
+HAKU_CONTEXT_TIMEOUT = int(os.getenv("HAKU_CONTEXT_TIMEOUT", "7200"))  # 2 horas
+HAKU_PROPOSAL_TIMEOUT = int(os.getenv("HAKU_PROPOSAL_TIMEOUT", "1800"))  # 30 minutos
 
 HAKU_VOICE_CONTEXT_TIMEOUT_MINUTES = int(
     os.getenv("HAKU_VOICE_CONTEXT_TIMEOUT_MINUTES", "30")
@@ -162,3 +228,4 @@ HAKU_VOICE_CONTEXT_TIMEOUT_MINUTES = int(
 HAKU_TRANSCRIPTION_LOG_RETENTION_DAYS = int(
     os.getenv("HAKU_TRANSCRIPTION_LOG_RETENTION_DAYS", "30")
 )
+

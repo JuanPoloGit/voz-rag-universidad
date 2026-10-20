@@ -17,7 +17,24 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+try:
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+except ImportError:
+    class RecursiveCharacterTextSplitter:  # type: ignore[no-redef]
+        """Fallback divisor en caso de que langchain_text_splitters no este instalado."""
+        def __init__(self, chunk_size: int = 800, chunk_overlap: int = 150):
+            self.chunk_size = chunk_size
+            self.chunk_overlap = chunk_overlap
+
+        def split_text(self, text: str) -> list[str]:
+            chunks = []
+            inicio = 0
+            while inicio < len(text):
+                fin = inicio + self.chunk_size
+                chunks.append(text[inicio:fin])
+                paso = max(1, self.chunk_size - self.chunk_overlap)
+                inicio += paso
+            return chunks
 
 from .config import RagConfig
 from .lexico import IndiceLexico

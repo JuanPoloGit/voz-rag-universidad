@@ -41,6 +41,30 @@ from .routing import (
 Mensaje = dict[str, str]
 
 
+class ContextoExcedidoError(ValueError):
+    """Lanzada cuando el contenido obligatorio excede el contexto disponible o no deja margen operacional."""
+    pass
+
+
+def estimar_tokens_texto(texto: str) -> int:
+    """Estimación conservadora de tokens para LLaMA 3.1 sin desbordar el contexto."""
+    if not texto:
+        return 0
+    simbolos = sum(1 for c in texto if not c.isalnum() and not c.isspace())
+    digitos = sum(1 for c in texto if c.isdigit())
+    cjk = sum(2 for c in texto if ord(c) > 0x2E80)
+    otros_no_ascii = sum(1 for c in texto if 127 < ord(c) <= 0x2E80)
+    palabras = [w for w in re.split(r"[^a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]+", texto) if w]
+    tokens_palabras = sum(max(1, int(len(w) / 3.0)) for w in palabras)
+    estimacion = tokens_palabras + simbolos + int(digitos * 0.8) + cjk + otros_no_ascii
+    return max(estimacion, int(len(texto) / 2.5) + 1)
+
+
+def estimar_tokens_prompt(mensajes: list[Mensaje]) -> int:
+    """Calcula los tokens estimados de una lista de mensajes incluyendo delimitadores LLaMA-3."""
+    return sum(estimar_tokens_texto(m.get("content", "")) + 6 for m in mensajes)
+
+
 class Profundidad(str, Enum):
     """Cuanto material hace falta traer para poder responder bien.
 
@@ -312,12 +336,28 @@ class ContextBuilder:
         rag_config: RagConfig,
         memory_config: MemoryConfig,
         usuario_anonimo: str = "visitante",
+        max_prompt_chars: int = 18000,
+        n_ctx: int = 8192,
+        margen_salida_tokens: int = 1500,
     ) -> None:
+        if n_ctx <= 0:
+            raise ValueError(f"n_ctx debe ser un entero positivo, recibido: {n_ctx}")
+        if margen_salida_tokens <= 0:
+            raise ValueError(f"margen_salida_tokens debe ser un entero positivo, recibido: {margen_salida_tokens}")
+        if max_prompt_chars <= 0:
+            raise ValueError(f"max_prompt_chars debe ser un entero positivo, recibido: {max_prompt_chars}")
+        if margen_salida_tokens >= n_ctx:
+            raise ValueError(f"margen_salida_tokens ({margen_salida_tokens}) debe ser menor que n_ctx ({n_ctx})")
+
         self._db = db
         self._rag = rag
         self._rag_cfg = rag_config
         self._mem_cfg = memory_config
         self._anonimo = usuario_anonimo
+        self._max_prompt_chars = max_prompt_chars
+        self._n_ctx = n_ctx
+        self._margen_salida_tokens = margen_salida_tokens
+        self._max_prompt_tokens = max(512, self._n_ctx - self._margen_salida_tokens)
         # Solo para saber si el mensaje nombra su propio tema. Es sin estado y
         # cuesta microsegundos; la sesion usa su propia instancia para enrutar.
         self._router = FastRouter()
@@ -427,19 +467,82 @@ class ContextBuilder:
                 "Lo que ya sabes de esta persona, de lo mas antiguo a lo mas reciente:\n"
                 + "\n".join(f"- {e}" for e in episodios)
             )
-        if contexto and intencion_fuente is not None:
-            notas.append(f"{_FUENTES[intencion_fuente]}:\n{contexto}")
-
-        partes: list[str] = [
-            "NOTAS PRIVADAS PARA TI (no las menciones, no las cites, no las repitas):",
-            "\n\n".join(notas),
-            "FIN DE LAS NOTAS PRIVADAS.",
-            f"Comentario del visitante: {mensaje_usuario}",
-        ]
-
         historial: list[Mensaje] = [{"role": "system", "content": self._sistema(estado)}]
-        historial.extend(recientes)
-        historial.append({"role": "user", "content": "\n\n".join(partes)})
+        mensajes_recientes = list(recientes)
+
+        def _armar_mensaje_usuario(texto_contexto: str | None) -> Mensaje:
+            notas_locales = list(notas)
+            if texto_contexto and intencion_fuente is not None:
+                notas_locales.append(f"{_FUENTES[intencion_fuente]}:\n{texto_contexto}")
+            partes_loc = [
+                "NOTAS PRIVADAS PARA TI (no las menciones, no las cites, no las repitas):",
+                "\n\n".join(notas_locales),
+                "FIN DE LAS NOTAS PRIVADAS.",
+                f"Comentario del visitante: {mensaje_usuario}",
+            ]
+            return {"role": "user", "content": "\n\n".join(partes_loc)}
+
+        mensaje_usuario_final = _armar_mensaje_usuario(contexto)
+        max_tokens = getattr(self, "_max_prompt_tokens", 6692)
+        max_chars = getattr(self, "_max_prompt_chars", 18000)
+
+        # 1. Poda de historial preservando parejas (user + assistant) para coherencia conversacional
+        while mensajes_recientes:
+            total_tokens = estimar_tokens_prompt(historial + mensajes_recientes + [mensaje_usuario_final])
+            total_chars = len(historial[0]["content"]) + sum(len(m["content"]) for m in mensajes_recientes) + len(mensaje_usuario_final["content"])
+            if total_tokens <= max_tokens and total_chars <= max_chars:
+                break
+
+            if len(mensajes_recientes) >= 2 and mensajes_recientes[0].get("role") == "user" and mensajes_recientes[1].get("role") == "assistant":
+                mensajes_recientes.pop(0)
+                mensajes_recientes.pop(0)
+            else:
+                mensajes_recientes.pop(0)
+
+            # Evitar dejar un turno inicial huérfano de asistente
+            while mensajes_recientes and mensajes_recientes[0].get("role") != "user":
+                mensajes_recientes.pop(0)
+
+        # 2. Si aún sin historial reciente se supera el presupuesto, podar el contexto RAG manteniendo fijas las instrucciones esenciales y la pregunta
+        total_tokens = estimar_tokens_prompt(historial + mensajes_recientes + [mensaje_usuario_final])
+        total_chars = len(historial[0]["content"]) + sum(len(m["content"]) for m in mensajes_recientes) + len(mensaje_usuario_final["content"])
+        if (total_tokens > max_tokens or total_chars > max_chars) and contexto:
+            msg_usuario_base = _armar_mensaje_usuario(None)
+            tokens_base = estimar_tokens_prompt(historial + mensajes_recientes + [msg_usuario_base])
+            tokens_disp_rag = max(0, max_tokens - tokens_base)
+            if tokens_disp_rag <= 20:
+                mensaje_usuario_final = _armar_mensaje_usuario("[...documentación RAG omitida por presupuesto de contexto]")
+            else:
+                max_chars_rag = max(50, int(tokens_disp_rag * 2.0))
+                contexto_podado = contexto[:max_chars_rag].rsplit(" ", 1)[0] + "\n[...fragmentos adicionales omitidos por presupuesto de contexto]"
+                mensaje_usuario_final = _armar_mensaje_usuario(contexto_podado)
+                while estimar_tokens_prompt(historial + mensajes_recientes + [mensaje_usuario_final]) > max_tokens and max_chars_rag > 50:
+                    max_chars_rag = int(max_chars_rag * 0.8)
+                    contexto_podado = contexto[:max_chars_rag].rsplit(" ", 1)[0] + "\n[...fragmentos adicionales omitidos por presupuesto de contexto]"
+                    mensaje_usuario_final = _armar_mensaje_usuario(contexto_podado)
+                if estimar_tokens_prompt(historial + mensajes_recientes + [mensaje_usuario_final]) > max_tokens:
+                    mensaje_usuario_final = _armar_mensaje_usuario("[...documentación RAG omitida por presupuesto de contexto]")
+
+        # 3. Comprobación final y garantía de invariantes: si aún supera max_tokens, podar el resto de historial y RAG
+        total_tokens = estimar_tokens_prompt(historial + mensajes_recientes + [mensaje_usuario_final])
+        if total_tokens > max_tokens and mensajes_recientes:
+            mensajes_recientes.clear()
+            total_tokens = estimar_tokens_prompt(historial + [mensaje_usuario_final])
+
+        if total_tokens > max_tokens and contexto:
+            mensaje_usuario_final = _armar_mensaje_usuario(None)
+            total_tokens = estimar_tokens_prompt(historial + [mensaje_usuario_final])
+
+        # Invariante D: Si el contenido obligatorio por sí solo (sistema + consulta) supera el contexto de la ranura, fallar de forma controlada
+        limite_contexto = getattr(self, "_n_ctx", 8192)
+        if total_tokens > limite_contexto:
+            raise ContextoExcedidoError(
+                f"Contenido obligatorio ({total_tokens} tokens estimados) supera el contexto "
+                f"máximo de la ranura ({limite_contexto} tokens). Reduzca la longitud de la consulta o de las instrucciones."
+            )
+
+        historial.extend(mensajes_recientes)
+        historial.append(mensaje_usuario_final)
         return historial
 
     # ---------------------------------------------------------------- internos
