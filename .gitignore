@@ -55,3 +55,17 @@ Claude outputs/
 .env
 .vscode/
 .idea/
+
+# -------------------------------------------------- sistema_inventario
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+sistema_inventario/certificados/
+sistema_inventario/certs/
+*.pem
+*.key
+*.sha256
+sistema_inventario/backups/
+sistema_inventario/staticfiles/
+sistema_inventario/media/
+
