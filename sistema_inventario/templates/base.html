@@ -358,10 +358,23 @@
                 <a href="{% url 'inventario:ubicacion-lista' %}">Ubicaciones</a>
                 <a href="{% url 'inventario:categoria-lista' %}">Categorías</a>
                 <a href="{% url 'inventario:producto-lista' %}">Productos</a>
+                <a href="{% url 'inventario:movimiento-lista' %}">Movimientos</a>
+                <a href="{% url 'inventario:prestamo-lista' %}">Préstamos</a>
+                <a href="{% url 'inventario:conteo-lista' %}">Conteos</a>
             </nav>
         </div>
         <div class="user-nav">
             {% if user.is_authenticated %}
+                <!-- Notificaciones y Alertas de Stock Bajo / Crítico -->
+                <a href="{% url 'inventario:alertas-lista' %}" class="notification-bell" title="Alertas de Stock" style="position: relative; text-decoration: none; font-size: 1.15rem; display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; background: #f1f5f9; border: 1px solid var(--border);">
+                    🔔
+                    {% if alertas_resumen.total_alertas > 0 %}
+                        <span style="position: absolute; top: -5px; right: -5px; background: {% if alertas_resumen.total_criticas > 0 %}var(--danger){% else %}var(--warning){% endif %}; color: white; border-radius: 9999px; font-size: 0.7rem; font-weight: 700; padding: 0.1rem 0.4rem; min-width: 18px; text-align: center; border: 2px solid white;">
+                            {{ alertas_resumen.total_alertas }}
+                        </span>
+                    {% endif %}
+                </a>
+
                 <div class="user-badge">
                     <span>{{ user.nombre_completo|default:user.username }}</span>
                     <span class="badge-role">{{ user.rol }}</span>

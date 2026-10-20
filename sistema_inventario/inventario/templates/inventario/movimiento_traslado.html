@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Registrar Traslado de Stock{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 650px; margin: 0 auto;">
+    <h2 style="margin-bottom: 0.5rem;">Registrar Traslado</h2>
+    <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">
+        Permite transferir existencias entre almacenes o reubicar productos en el mismo almacén (§9.5).
+    </p>
+
+    <form method="post">
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+            <div class="alert alert-error" style="margin-bottom: 1.25rem;">
+                {{ form.non_field_errors }}
+            </div>
+        {% endif %}
+
+        <div class="form-group" style="margin-bottom: 1.25rem;">
+            <label><strong>{{ form.producto.label }}</strong> *</label>
+            {{ form.producto }}
+            {{ form.producto.errors }}
+        </div>
+
+        {% if not user.es_usuario_normal %}
+            <div class="form-group" style="margin-bottom: 1.25rem;">
+                <label><strong>{{ form.almacen_origen.label }}</strong> *</label>
+                {{ form.almacen_origen }}
+                {{ form.almacen_origen.errors }}
+            </div>
+        {% else %}
+            {{ form.almacen_origen }}
+        {% endif %}
+
+        <div class="form-group" style="margin-bottom: 1.25rem;">
+            <label><strong>{{ form.almacen_destino.label }}</strong></label>
+            {{ form.almacen_destino }}
+            <small style="color: var(--text-muted);">Dejar vacío si es un traslado interno dentro del mismo almacén.</small>
+            {{ form.almacen_destino.errors }}
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.25rem;">
+            <div class="form-group">
+                <label><strong>{{ form.ubicacion_origen.label }}</strong></label>
+                {{ form.ubicacion_origen }}
+                {{ form.ubicacion_origen.errors }}
+            </div>
+            <div class="form-group">
+                <label><strong>{{ form.ubicacion_destino.label }}</strong></label>
+                {{ form.ubicacion_destino }}
+                {{ form.ubicacion_destino.errors }}
+            </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1.25rem;">
+            <label><strong>{{ form.cantidad.label }}</strong> *</label>
+            {{ form.cantidad }}
+            {{ form.cantidad.errors }}
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1.5rem;">
+            <label><strong>{{ form.motivo.label }}</strong></label>
+            {{ form.motivo }}
+            {{ form.motivo.errors }}
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+            <a href="{% url 'inventario:movimiento-lista' %}" class="btn btn-secondary">Cancelar</a>
+            <button type="submit" class="btn btn-primary">Ejecutar Traslado</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

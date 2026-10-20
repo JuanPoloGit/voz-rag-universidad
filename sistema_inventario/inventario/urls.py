@@ -36,4 +36,26 @@ urlpatterns = [
     path("productos/<int:pk>/editar/", views.ProductoEditarView.as_view(), name="producto-editar"),
     path("productos/<int:pk>/archivar/", views.ProductoArchivarView.as_view(), name="producto-archivar"),
     path("productos/<int:pk>/fusionar/", views.ProductoFusionarView.as_view(), name="producto-fusionar"),
+
+    # Alertas y Notificaciones de Stock
+    path("alertas/", views.AlertasStockListaView.as_view(), name="alertas-lista"),
+    path("alertas/json/", views.AlertasStockJSONView.as_view(), name="alertas-json"),
+
+    # Movimientos
+    path("movimientos/", views.MovimientoListaView.as_view(), name="movimiento-lista"),
+    path("movimientos/entrada/", views.EntradaCrearView.as_view(), name="movimiento-entrada"),
+    path("movimientos/salida/", views.SalidaCrearView.as_view(), name="movimiento-salida"),
+    path("movimientos/traslado/", views.TrasladoCrearView.as_view(), name="movimiento-traslado"),
+    path("movimientos/<uuid:pk>/revertir/", views.MovimientoRevertirView.as_view(), name="movimiento-revertir"),
+
+    # Préstamos
+    path("prestamos/", views.PrestamoListaView.as_view(), name="prestamo-lista"),
+    path("prestamos/crear/", views.PrestamoCrearView.as_view(), name="prestamo-crear"),
+    path("prestamos/<uuid:pk>/devolver/", views.PrestamoDevolucionView.as_view(), name="prestamo-devolver"),
+    path("prestamos/<uuid:pk>/baja/", views.PrestamoBajaView.as_view(), name="prestamo-baja"),
+
+    # Conteos Físicos
+    path("conteos/", views.ConteoFisicoListaView.as_view(), name="conteo-lista"),
+    path("conteos/crear/", views.ConteoFisicoCrearView.as_view(), name="conteo-crear"),
+    path("conteos/<uuid:pk>/confirmar/", views.ConteoFisicoConfirmarView.as_view(), name="conteo-confirmar"),
 ]

@@ -192,3 +192,333 @@ class ProductoForm(forms.ModelForm):
     def clean_codigo_barras(self):
         cb = self.cleaned_data.get("codigo_barras")
         return (cb or "").strip() or None
+
+
+class EntradaForm(forms.Form):
+    """Formulario para registrar entradas de inventario."""
+
+    producto = forms.ModelChoiceField(
+        queryset=Producto.objects.filter(archivado=False, activo=True),
+        widget=forms.Select(attrs={"class": "form-control"}),
+        label="Producto",
+    )
+    almacen = forms.ModelChoiceField(
+        queryset=Almacen.objects.filter(activo=True, eliminado=False),
+        widget=forms.Select(attrs={"class": "form-control"}),
+        label="Almacén",
+    )
+    es_empaque = forms.BooleanField(
+        required=False,
+        label="¿Ingresar en paquetes/empaques?",
+        widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
+    )
+    cantidad = forms.IntegerField(
+        required=False,
+        min_value=1,
+        label="Cantidad en unidades base",
+        widget=forms.NumberInput(attrs={"class": "form-control", "placeholder": "Ej. 10"}),
+    )
+    cantidad_empaques = forms.IntegerField(
+        required=False,
+        min_value=1,
+        label="Cantidad de empaques",
+        widget=forms.NumberInput(attrs={"class": "form-control", "placeholder": "Ej. 2"}),
+    )
+    ubicacion = forms.ModelChoiceField(
+        queryset=Ubicacion.objects.filter(activo=True, eliminado=False),
+        required=False,
+        widget=forms.Select(attrs={"class": "form-control"}),
+        label="Ubicación física (opcional)",
+    )
+    motivo = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ej. Recepción de lote, compra local"}),
+        label="Motivo de la entrada",
+    )
+    observacion = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"class": "form-control", "rows": 2, "placeholder": "Detalles adicionales (opcional)"}),
+        label="Observación",
+    )
+
+    def __init__(self, *args, usuario=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.usuario = usuario
+        if usuario and getattr(usuario, "es_usuario_normal", False):
+            self.fields["almacen"].queryset = Almacen.objects.filter(id=usuario.almacen_asignado_id)
+            self.fields["almacen"].initial = usuario.almacen_asignado
+            self.fields["almacen"].widget = forms.HiddenInput()
+            self.fields["producto"].queryset = Producto.objects.filter(
+                archivado=False, activo=True, categoria__almacen_principal=usuario.almacen_asignado
+            )
+            self.fields["ubicacion"].queryset = Ubicacion.objects.filter(
+                activo=True, eliminado=False, almacen=usuario.almacen_asignado
+            )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        es_empaque = cleaned_data.get("es_empaque")
+        cantidad = cleaned_data.get("cantidad")
+        cantidad_empaques = cleaned_data.get("cantidad_empaques")
+        producto = cleaned_data.get("producto")
+
+        if es_empaque:
+            if not cantidad_empaques:
+                self.add_error("cantidad_empaques", "Debe indicar el número de empaques.")
+            if producto and not producto.unidades_por_empaque:
+                self.add_error("es_empaque", f"El producto '{producto.nombre}' no tiene unidades por empaque definidas.")
+        else:
+            if not cantidad:
+                self.add_error("cantidad", "Debe indicar la cantidad de unidades base.")
+        return cleaned_data
+
+
+class SalidaForm(forms.Form):
+    """Formulario para registrar salidas operativas de inventario."""
+
+    producto = forms.ModelChoiceField(
+        queryset=Producto.objects.filter(archivado=False, activo=True),
+        widget=forms.Select(attrs={"class": "form-control"}),
+        label="Producto",
+    )
+    almacen = forms.ModelChoiceField(
+        queryset=Almacen.objects.filter(activo=True, eliminado=False),
+        widget=forms.Select(attrs={"class": "form-control"}),
+        label="Almacén",
+    )
+    cantidad = forms.IntegerField(
+        min_value=1,
+        label="Cantidad a retirar",
+        widget=forms.NumberInput(attrs={"class": "form-control", "placeholder": "Ej. 3"}),
+    )
+    destinatario = forms.CharField(
+        required=True,
+        max_length=255,
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Persona que recibe el artículo"}),
+        label="Destinatario / Responsable",
+    )
+    motivo = forms.CharField(
+        required=True,
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ej. Práctica de laboratorio, consumo técnico"}),
+        label="Motivo obligatorio",
+    )
+    ubicacion = forms.ModelChoiceField(
+        queryset=Ubicacion.objects.filter(activo=True, eliminado=False),
+        required=False,
+        widget=forms.Select(attrs={"class": "form-control"}),
+        label="Ubicación de origen (opcional)",
+    )
+    observacion = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"class": "form-control", "rows": 2, "placeholder": "Observación autogenerada o personalizada (opcional)"}),
+        label="Observación adicional",
+    )
+
+    def __init__(self, *args, usuario=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.usuario = usuario
+        if usuario and getattr(usuario, "es_usuario_normal", False):
+            self.fields["almacen"].queryset = Almacen.objects.filter(id=usuario.almacen_asignado_id)
+            self.fields["almacen"].initial = usuario.almacen_asignado
+            self.fields["almacen"].widget = forms.HiddenInput()
+            self.fields["producto"].queryset = Producto.objects.filter(
+                archivado=False, activo=True, categoria__almacen_principal=usuario.almacen_asignado
+            )
+            self.fields["ubicacion"].queryset = Ubicacion.objects.filter(
+                activo=True, eliminado=False, almacen=usuario.almacen_asignado
+            )
+
+
+class PrestamoForm(forms.Form):
+    """Formulario para entrega de artículos en préstamo."""
+
+    producto = forms.ModelChoiceField(
+        queryset=Producto.objects.filter(archivado=False, activo=True),
+        widget=forms.Select(attrs={"class": "form-control"}),
+        label="Producto",
+    )
+    almacen = forms.ModelChoiceField(
+        queryset=Almacen.objects.filter(activo=True, eliminado=False),
+        widget=forms.Select(attrs={"class": "form-control"}),
+        label="Almacén",
+    )
+    cantidad = forms.IntegerField(
+        min_value=1,
+        label="Cantidad a prestar",
+        widget=forms.NumberInput(attrs={"class": "form-control", "placeholder": "Ej. 1"}),
+    )
+    destinatario = forms.CharField(
+        required=True,
+        max_length=255,
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Nombre completo del solicitante/responsable"}),
+        label="Destinatario / Responsable",
+    )
+    motivo = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ej. Proyecto de grado, práctica"}),
+        label="Motivo del préstamo",
+    )
+    ubicacion = forms.ModelChoiceField(
+        queryset=Ubicacion.objects.filter(activo=True, eliminado=False),
+        required=False,
+        widget=forms.Select(attrs={"class": "form-control"}),
+        label="Ubicación de origen (opcional)",
+    )
+    observacion = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"class": "form-control", "rows": 2}),
+        label="Observación adicional",
+    )
+
+    def __init__(self, *args, usuario=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.usuario = usuario
+        if usuario and getattr(usuario, "es_usuario_normal", False):
+            self.fields["almacen"].queryset = Almacen.objects.filter(id=usuario.almacen_asignado_id)
+            self.fields["almacen"].initial = usuario.almacen_asignado
+            self.fields["almacen"].widget = forms.HiddenInput()
+            self.fields["producto"].queryset = Producto.objects.filter(
+                archivado=False, activo=True, categoria__almacen_principal=usuario.almacen_asignado
+            )
+
+
+class DevolucionPrestamoForm(forms.Form):
+    """Formulario para registrar devoluciones (totales o parciales)."""
+
+    cantidad = forms.IntegerField(
+        min_value=1,
+        label="Cantidad a devolver",
+        widget=forms.NumberInput(attrs={"class": "form-control"}),
+    )
+    motivo = forms.CharField(
+        required=True,
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ej. Devolución en buen estado"}),
+        label="Motivo / Estado del bien recibido",
+    )
+    observacion = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"class": "form-control", "rows": 2}),
+        label="Observación adicional",
+    )
+
+
+class BajaPrestamoForm(forms.Form):
+    """Formulario para baja de préstamo por daño o pérdida."""
+
+    cantidad = forms.IntegerField(
+        min_value=1,
+        label="Cantidad a dar de baja",
+        widget=forms.NumberInput(attrs={"class": "form-control"}),
+    )
+    motivo = forms.CharField(
+        required=True,
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ej. Pantalla rota irreparablemente, extravío"}),
+        label="Motivo obligatorio del incidente",
+    )
+    observacion = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"class": "form-control", "rows": 2}),
+        label="Observación adicional",
+    )
+
+
+class TrasladoForm(forms.Form):
+    """Formulario para traslados internos y entre almacenes."""
+
+    producto = forms.ModelChoiceField(
+        queryset=Producto.objects.filter(archivado=False, activo=True),
+        widget=forms.Select(attrs={"class": "form-control"}),
+        label="Producto",
+    )
+    almacen_origen = forms.ModelChoiceField(
+        queryset=Almacen.objects.filter(activo=True, eliminado=False),
+        widget=forms.Select(attrs={"class": "form-control"}),
+        label="Almacén de origen",
+    )
+    almacen_destino = forms.ModelChoiceField(
+        queryset=Almacen.objects.filter(activo=True, eliminado=False),
+        widget=forms.Select(attrs={"class": "form-control"}),
+        label="Almacén de destino (solo para traslado entre almacenes)",
+        required=False,
+    )
+    ubicacion_origen = forms.ModelChoiceField(
+        queryset=Ubicacion.objects.filter(activo=True, eliminado=False),
+        required=False,
+        widget=forms.Select(attrs={"class": "form-control"}),
+        label="Ubicación física de origen",
+    )
+    ubicacion_destino = forms.ModelChoiceField(
+        queryset=Ubicacion.objects.filter(activo=True, eliminado=False),
+        required=False,
+        widget=forms.Select(attrs={"class": "form-control"}),
+        label="Ubicación física de destino",
+    )
+    cantidad = forms.IntegerField(
+        min_value=1,
+        label="Cantidad a trasladar",
+        widget=forms.NumberInput(attrs={"class": "form-control", "placeholder": "Ej. 5"}),
+    )
+    motivo = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ej. Redistribución de stock"}),
+        label="Motivo del traslado",
+    )
+
+    def __init__(self, *args, usuario=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.usuario = usuario
+        if usuario and getattr(usuario, "es_usuario_normal", False):
+            self.fields["almacen_origen"].queryset = Almacen.objects.filter(id=usuario.almacen_asignado_id)
+            self.fields["almacen_origen"].initial = usuario.almacen_asignado
+            self.fields["almacen_origen"].widget = forms.HiddenInput()
+            self.fields["almacen_destino"].queryset = Almacen.objects.filter(activo=True, eliminado=False).exclude(id=usuario.almacen_asignado_id)
+            self.fields["producto"].queryset = Producto.objects.filter(
+                archivado=False, activo=True, categoria__almacen_principal=usuario.almacen_asignado
+            )
+
+
+class ConteoFisicoForm(forms.Form):
+    """Formulario para registro preliminar de conteo físico."""
+
+    producto = forms.ModelChoiceField(
+        queryset=Producto.objects.filter(archivado=False, activo=True),
+        widget=forms.Select(attrs={"class": "form-control"}),
+        label="Producto",
+    )
+    almacen = forms.ModelChoiceField(
+        queryset=Almacen.objects.filter(activo=True, eliminado=False),
+        widget=forms.Select(attrs={"class": "form-control"}),
+        label="Almacén",
+    )
+    cantidad_contada = forms.IntegerField(
+        min_value=0,
+        label="Cantidad física verificada",
+        widget=forms.NumberInput(attrs={"class": "form-control"}),
+    )
+    motivo = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"class": "form-control", "rows": 2, "placeholder": "Notas de la inspección física"}),
+        label="Observación / Justificación",
+    )
+
+    def __init__(self, *args, usuario=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.usuario = usuario
+        if usuario and getattr(usuario, "es_usuario_normal", False):
+            self.fields["almacen"].queryset = Almacen.objects.filter(id=usuario.almacen_asignado_id)
+            self.fields["almacen"].initial = usuario.almacen_asignado
+            self.fields["almacen"].widget = forms.HiddenInput()
+            self.fields["producto"].queryset = Producto.objects.filter(
+                archivado=False, activo=True, categoria__almacen_principal=usuario.almacen_asignado
+            )
+
+
+class ReversionForm(forms.Form):
+    """Formulario para revertir un movimiento previo."""
+
+    motivo = forms.CharField(
+        required=True,
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Justificación obligatoria de la reversión"}),
+        label="Motivo de la corrección",
+    )
+

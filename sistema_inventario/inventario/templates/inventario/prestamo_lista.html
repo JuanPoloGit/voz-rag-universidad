@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}Préstamos de Inventario{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+        <div>
+            <h2>Gestión y Seguimiento de Préstamos</h2>
+            <p style="color: var(--text-muted); font-size: 0.9rem;">
+                Control de artículos entregados temporalmente con seguimiento de devoluciones parciales y bajas (§9.4).
+            </p>
+        </div>
+        <div>
+            <a href="{% url 'inventario:prestamo-crear' %}" class="btn btn-primary">+ Entregar Préstamo</a>
+        </div>
+    </div>
+
+    <!-- Filtros -->
+    <form method="get" style="display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
+        <input type="text" name="q" value="{{ q }}" placeholder="Buscar por destinatario o producto..." class="form-control" style="flex: 2; min-width: 250px;">
+        <select name="estado" class="form-control" style="flex: 1; min-width: 180px;">
+            <option value="">-- Todos los estados --</option>
+            {% for val, label in estados %}
+                <option value="{{ val }}" {% if estado_seleccionado == val %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-primary">Filtrar</button>
+        {% if q or estado_seleccionado %}
+            <a href="{% url 'inventario:prestamo-lista' %}" class="btn btn-secondary">Limpiar</a>
+        {% endif %}
+    </form>
+
+    {% if prestamos %}
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Fecha</th>
+                    <th>Destinatario / Responsable</th>
+                    <th>Producto</th>
+                    <th>Almacén</th>
+                    <th>Original</th>
+                    <th>Pendiente</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in prestamos %}
+                    <tr>
+                        <td style="font-size: 0.85rem; white-space: nowrap;">{{ p.fecha_creacion|date:"Y-m-d H:i" }}</td>
+                        <td><strong>{{ p.destinatario }}</strong></td>
+                        <td>
+                            <code>{{ p.producto.codigo_interno }}</code><br>
+                            <small>{{ p.producto.nombre|truncatechars:25 }}</small>
+                        </td>
+                        <td>{{ p.almacen.nombre }}</td>
+                        <td>{{ p.cantidad_original }}</td>
+                        <td><strong style="color: {% if p.cantidad_pendiente_devolucion > 0 %}var(--danger){% else %}var(--success){% endif %};">{{ p.cantidad_pendiente_devolucion }}</strong></td>
+                        <td>
+                            <span class="badge" style="
+                                {% if p.estado == 'ABIERTO' %}background: #6366f1; color: white;
+                                {% elif p.estado == 'DEVUELTO_PARCIAL' %}background: var(--warning); color: white;
+                                {% else %}background: var(--success); color: white;{% endif %}
+                            ">
+                                {{ p.get_estado_display }}
+                            </span>
+                        </td>
+                        <td>
+                            {% if p.estado != 'CERRADO' %}
+                                <div style="display: flex; gap: 0.25rem;">
+                                    <a href="{% url 'inventario:prestamo-devolver' p.pk %}" class="btn btn-sm btn-primary">Devolver</a>
+                                    <a href="{% url 'inventario:prestamo-baja' p.pk %}" class="btn btn-sm btn-secondary" style="color: var(--danger);">Baja daño</a>
+                                </div>
+                            {% else %}
+                                <span style="font-size: 0.8rem; color: var(--text-muted);">Cerrado el {{ p.fecha_cierre|date:"Y-m-d" }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        {% if is_paginated %}
+            <div style="display: flex; justify-content: center; gap: 0.5rem; margin-top: 1.5rem;">
+                {% if page_obj.has_previous %}
+                    <a href="?page={{ page_obj.previous_page_number }}{% if q %}&q={{ q }}{% endif %}{% if estado_seleccionado %}&estado={{ estado_seleccionado }}{% endif %}" class="btn btn-sm btn-secondary">&laquo; Anterior</a>
+                {% endif %}
+                <span style="align-self: center; font-size: 0.85rem; color: var(--text-muted);">
+                    Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
+                </span>
+                {% if page_obj.has_next %}
+                    <a href="?page={{ page_obj.next_page_number }}{% if q %}&q={{ q }}{% endif %}{% if estado_seleccionado %}&estado={{ estado_seleccionado }}{% endif %}" class="btn btn-sm btn-secondary">Siguiente &raquo;</a>
+                {% endif %}
+            </div>
+        {% endif %}
+    {% else %}
+        <p style="text-align: center; color: var(--text-muted); margin: 3rem 0;">
+            No hay registros de préstamos que coincidan con la búsqueda.
+        </p>
+    {% endif %}
+</div>
+{% endblock %}

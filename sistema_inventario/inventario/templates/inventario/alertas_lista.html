@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+
+{% block title %}Centro de Notificaciones y Alertas de Stock{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border); padding-bottom: 1rem;">
+        <div>
+            <h2>🔔 Centro de Notificaciones y Alertas de Stock</h2>
+            <p style="color: var(--text-muted); font-size: 0.9rem;">
+                Monitoreo en tiempo real de productos agotados y por debajo del umbral mínimo de inventario (§8.4).
+            </p>
+        </div>
+        <div>
+            <a href="{% url 'inventario:movimiento-entrada' %}" class="btn btn-primary">+ Registrar Entrada de Stock</a>
+        </div>
+    </div>
+
+    <!-- Resumen de alertas -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+        <div style="background: var(--danger-bg); border: 1px solid #fca5a5; padding: 1.25rem; border-radius: 0.5rem;">
+            <div style="font-size: 0.85rem; font-weight: 700; color: #991b1b; text-transform: uppercase;">Agotados (Stock Crítico)</div>
+            <div style="font-size: 2rem; font-weight: 800; color: var(--danger); margin-top: 0.25rem;">{{ alertas.total_criticas }}</div>
+            <div style="font-size: 0.8rem; color: #7f1d1d; margin-top: 0.25rem;">Disponibilidad = 0 unidades</div>
+        </div>
+
+        <div style="background: var(--warning-bg); border: 1px solid #fcd34d; padding: 1.25rem; border-radius: 0.5rem;">
+            <div style="font-size: 0.85rem; font-weight: 700; color: #92400e; text-transform: uppercase;">Stock Bajo (Bajo Mínimo)</div>
+            <div style="font-size: 2rem; font-weight: 800; color: var(--warning); margin-top: 0.25rem;">{{ alertas.total_bajas }}</div>
+            <div style="font-size: 0.8rem; color: #78350f; margin-top: 0.25rem;">0 &lt; Stock &lt; Stock Mínimo</div>
+        </div>
+
+        <div style="background: #f1f5f9; border: 1px solid var(--border); padding: 1.25rem; border-radius: 0.5rem;">
+            <div style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Total de Alertas</div>
+            <div style="font-size: 2rem; font-weight: 800; color: var(--text-main); margin-top: 0.25rem;">{{ alertas.total_alertas }}</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">En su ámbito autorizado</div>
+        </div>
+    </div>
+
+    <!-- 1. Alertas Críticas (Sin stock) -->
+    <h3 style="color: var(--danger); margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
+        🚨 Productos Críticos (Sin Stock Disponible)
+    </h3>
+    {% if criticas %}
+        <table class="table" style="margin-bottom: 2.5rem;">
+            <thead>
+                <tr>
+                    <th>Código</th>
+                    <th>Producto</th>
+                    <th>Almacén</th>
+                    <th>Stock Mínimo</th>
+                    <th>Stock Disponible</th>
+                    <th>Estado</th>
+                    <th>Acción</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ex in criticas %}
+                    <tr style="background: #fff5f5;">
+                        <td><code>{{ ex.producto.codigo_interno }}</code></td>
+                        <td><strong>{{ ex.producto.nombre }}</strong></td>
+                        <td>{{ ex.almacen.nombre }}</td>
+                        <td>{{ ex.producto.stock_minimo }}</td>
+                        <td><span style="color: var(--danger); font-weight: 700;">0 unid.</span></td>
+                        <td><span class="badge" style="background: var(--danger); color: white;">AGOTADO</span></td>
+                        <td>
+                            <a href="{% url 'inventario:producto-detalle' ex.producto.pk %}" class="btn btn-sm btn-secondary">Ver Ficha</a>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p style="color: var(--text-muted); margin-bottom: 2.5rem; font-style: italic;">
+            No hay productos agotados actualmente.
+        </p>
+    {% endif %}
+
+    <!-- 2. Alertas de Stock Bajo -->
+    <h3 style="color: var(--warning); margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
+        ⚠️ Productos con Stock Bajo
+    </h3>
+    {% if bajas %}
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Código</th>
+                    <th>Producto</th>
+                    <th>Almacén</th>
+                    <th>Stock Mínimo</th>
+                    <th>Stock Disponible</th>
+                    <th>Estado</th>
+                    <th>Acción</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ex in bajas %}
+                    <tr style="background: #fffdf5;">
+                        <td><code>{{ ex.producto.codigo_interno }}</code></td>
+                        <td><strong>{{ ex.producto.nombre }}</strong></td>
+                        <td>{{ ex.almacen.nombre }}</td>
+                        <td>{{ ex.producto.stock_minimo }}</td>
+                        <td><span style="color: var(--warning); font-weight: 700;">{{ ex.stock_disponible }} unid.</span></td>
+                        <td><span class="badge" style="background: var(--warning); color: white;">STOCK BAJO</span></td>
+                        <td>
+                            <a href="{% url 'inventario:producto-detalle' ex.producto.pk %}" class="btn btn-sm btn-secondary">Ver Ficha</a>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p style="color: var(--text-muted); font-style: italic;">
+            No hay productos por debajo del umbral mínimo de stock.
+        </p>
+    {% endif %}
+</div>
+{% endblock %}

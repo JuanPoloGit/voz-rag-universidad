@@ -11,9 +11,46 @@ from django.views.generic import CreateView, DetailView, ListView, UpdateView, V
 
 from cuentas.models import UsuarioAudacIA
 from cuentas.permisos import RolRequeridoMixin
-from inventario.forms import AlmacenForm, CategoriaForm, ProductoForm, UbicacionForm
-from inventario.models import Almacen, Categoria, Existencia, Movimiento, Producto, Ubicacion
-from inventario.servicios import NecesitaTraslado
+from inventario.forms import (
+    AlmacenForm,
+    BajaPrestamoForm,
+    CategoriaForm,
+    ConteoFisicoForm,
+    DevolucionPrestamoForm,
+    EntradaForm,
+    PrestamoForm,
+    ProductoForm,
+    ReversionForm,
+    SalidaForm,
+    TrasladoForm,
+    UbicacionForm,
+)
+from inventario.models import (
+    Almacen,
+    Categoria,
+    ConteoFisico,
+    DevolucionPrestamo,
+    Existencia,
+    Movimiento,
+    Prestamo,
+    Producto,
+    Ubicacion,
+)
+from inventario.servicios import (
+    NecesitaTraslado,
+    confirmar_conteo_fisico,
+    obtener_alertas_stock,
+    registrar_baja_prestamo,
+    registrar_conteo_fisico,
+    registrar_devolucion_prestamo,
+    registrar_entrada,
+    registrar_prestamo,
+    registrar_salida,
+    registrar_traslado_entre_almacenes,
+    registrar_traslado_interno,
+    revertir_movimiento,
+    verificar_estado_alerta,
+)
 from inventario.servicios.datos_maestros import (
     actualizar_almacen,
     actualizar_categoria,
@@ -715,5 +752,488 @@ class ProductoFusionarView(LoginRequiredMixin, RolRequeridoMixin, View):
         except Exception as exc:
             messages.error(request, str(exc))
             return self.get(request, pk)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. ALERTAS Y NOTIFICACIONES DE STOCK
+# ─────────────────────────────────────────────────────────────────────────────
+
+class AlertasStockListaView(LoginRequiredMixin, View):
+    """Centro de Notificaciones y Alertas de Stock Bajo y Crítico."""
+
+    def get(self, request):
+        alertas = obtener_alertas_stock(usuario=request.user)
+        return render(
+            request,
+            "inventario/alertas_lista.html",
+            {
+                "alertas": alertas,
+                "criticas": alertas["criticas"],
+                "bajas": alertas["bajas"],
+            },
+        )
+
+
+class AlertasStockJSONView(LoginRequiredMixin, View):
+    """Endpoint AJAX / JSON para consultar el estado de alertas en vivo."""
+
+    def get(self, request):
+        alertas = obtener_alertas_stock(usuario=request.user)
+        return JsonResponse({
+            "total_alertas": alertas["total_alertas"],
+            "total_criticas": alertas["total_criticas"],
+            "total_bajas": alertas["total_bajas"],
+            "criticas": [
+                {
+                    "codigo": e.producto.codigo_interno,
+                    "nombre": e.producto.nombre,
+                    "almacen": e.almacen.nombre,
+                    "stock": e.stock_disponible,
+                }
+                for e in alertas["criticas"][:10]
+            ],
+            "bajas": [
+                {
+                    "codigo": e.producto.codigo_interno,
+                    "nombre": e.producto.nombre,
+                    "almacen": e.almacen.nombre,
+                    "stock": e.stock_disponible,
+                    "minimo": e.producto.stock_minimo,
+                }
+                for e in alertas["bajas"][:10]
+            ],
+        })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. MOVIMIENTOS: LISTA, ENTRADAS Y SALIDAS
+# ─────────────────────────────────────────────────────────────────────────────
+
+class MovimientoListaView(LoginRequiredMixin, ListView):
+    """Historial y trazabilidad de movimientos de inventario."""
+
+    model = Movimiento
+    template_name = "inventario/movimiento_lista.html"
+    context_object_name = "movimientos"
+    paginate_by = 30
+
+    def get_queryset(self):
+        qs = Movimiento.objects.select_related(
+            "producto", "almacen_origen", "almacen_destino", "ubicacion_origen", "ubicacion_destino", "usuario"
+        ).order_by("-fecha_hora")
+
+        user = self.request.user
+        if getattr(user, "es_usuario_normal", False):
+            if user.almacen_asignado:
+                qs = qs.filter(Q(almacen_origen=user.almacen_asignado) | Q(almacen_destino=user.almacen_asignado))
+            else:
+                return qs.none()
+
+        tipo = self.request.GET.get("tipo")
+        if tipo:
+            qs = qs.filter(tipo=tipo)
+
+        q = self.request.GET.get("q", "").strip()
+        if q:
+            qs = qs.filter(
+                Q(producto__nombre__icontains=q)
+                | Q(producto__codigo_interno__icontains=q)
+                | Q(destinatario__icontains=q)
+                | Q(motivo__icontains=q)
+            )
+        return qs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["tipos_movimiento"] = Movimiento.Tipo.choices
+        context["tipo_seleccionado"] = self.request.GET.get("tipo", "")
+        context["q"] = self.request.GET.get("q", "")
+        return context
+
+
+class EntradaCrearView(LoginRequiredMixin, View):
+    """Registro operativo de entrada de mercancía (con soporte de empaques)."""
+
+    def get(self, request):
+        form = EntradaForm(usuario=request.user)
+        return render(request, "inventario/movimiento_entrada.html", {"form": form})
+
+    def post(self, request):
+        form = EntradaForm(request.POST, usuario=request.user)
+        if form.is_valid():
+            try:
+                existencia, mov = registrar_entrada(
+                    producto=form.cleaned_data["producto"],
+                    almacen=form.cleaned_data["almacen"],
+                    cantidad=form.cleaned_data.get("cantidad") or 0,
+                    usuario=request.user,
+                    ubicacion=form.cleaned_data.get("ubicacion"),
+                    es_empaque=form.cleaned_data.get("es_empaque", False),
+                    cantidad_empaques=form.cleaned_data.get("cantidad_empaques"),
+                    motivo=form.cleaned_data.get("motivo", ""),
+                    observacion=form.cleaned_data.get("observacion", ""),
+                    ip_origen=_obtener_ip(request),
+                )
+                messages.success(
+                    request,
+                    f"Entrada registrada: +{mov.cantidad} unid. de '{existencia.producto.codigo_interno}'. Stock actual: {existencia.stock_disponible}.",
+                )
+                return redirect("inventario:movimiento-lista")
+            except Exception as exc:
+                form.add_error(None, str(exc))
+        return render(request, "inventario/movimiento_entrada.html", {"form": form})
+
+
+class SalidaCrearView(LoginRequiredMixin, View):
+    """Registro operativo de salida de stock con verificación y alerta inmediata."""
+
+    def get(self, request):
+        form = SalidaForm(usuario=request.user)
+        return render(request, "inventario/movimiento_salida.html", {"form": form})
+
+    def post(self, request):
+        form = SalidaForm(request.POST, usuario=request.user)
+        if form.is_valid():
+            try:
+                existencia, mov, alerta = registrar_salida(
+                    producto=form.cleaned_data["producto"],
+                    almacen=form.cleaned_data["almacen"],
+                    cantidad=form.cleaned_data["cantidad"],
+                    motivo=form.cleaned_data["motivo"],
+                    destinatario=form.cleaned_data["destinatario"],
+                    usuario=request.user,
+                    ubicacion=form.cleaned_data.get("ubicacion"),
+                    observacion=form.cleaned_data.get("observacion", ""),
+                    ip_origen=_obtener_ip(request),
+                )
+                messages.success(
+                    request,
+                    f"Salida registrada: -{mov.cantidad} unid. de '{existencia.producto.codigo_interno}' para {mov.destinatario}. Stock restante: {existencia.stock_disponible}.",
+                )
+                if alerta.get("nivel"):
+                    messages.warning(request, alerta["mensaje"])
+                return redirect("inventario:movimiento-lista")
+            except Exception as exc:
+                form.add_error(None, str(exc))
+        return render(request, "inventario/movimiento_salida.html", {"form": form})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 9. PRÉSTAMOS, DEVOLUCIONES Y BAJAS
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PrestamoListaView(LoginRequiredMixin, ListView):
+    """Listado y seguimiento de préstamos."""
+
+    model = Prestamo
+    template_name = "inventario/prestamo_lista.html"
+    context_object_name = "prestamos"
+    paginate_by = 25
+
+    def get_queryset(self):
+        qs = Prestamo.objects.select_related("producto", "almacen", "usuario", "ubicacion_origen").order_by("-fecha_creacion")
+        user = self.request.user
+        if getattr(user, "es_usuario_normal", False):
+            if user.almacen_asignado:
+                qs = qs.filter(almacen=user.almacen_asignado)
+            else:
+                return qs.none()
+
+        estado = self.request.GET.get("estado")
+        if estado:
+            qs = qs.filter(estado=estado)
+
+        q = self.request.GET.get("q", "").strip()
+        if q:
+            qs = qs.filter(
+                Q(producto__nombre__icontains=q)
+                | Q(producto__codigo_interno__icontains=q)
+                | Q(destinatario__icontains=q)
+            )
+        return qs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["estados"] = Prestamo.Estado.choices
+        context["estado_seleccionado"] = self.request.GET.get("estado", "")
+        context["q"] = self.request.GET.get("q", "")
+        return context
+
+
+class PrestamoCrearView(LoginRequiredMixin, View):
+    """Registro de entrega de artículos en préstamo."""
+
+    def get(self, request):
+        form = PrestamoForm(usuario=request.user)
+        return render(request, "inventario/prestamo_form.html", {"form": form})
+
+    def post(self, request):
+        form = PrestamoForm(request.POST, usuario=request.user)
+        if form.is_valid():
+            try:
+                prestamo, mov, alerta = registrar_prestamo(
+                    producto=form.cleaned_data["producto"],
+                    almacen=form.cleaned_data["almacen"],
+                    cantidad=form.cleaned_data["cantidad"],
+                    destinatario=form.cleaned_data["destinatario"],
+                    usuario=request.user,
+                    ubicacion=form.cleaned_data.get("ubicacion"),
+                    motivo=form.cleaned_data.get("motivo", ""),
+                    observacion=form.cleaned_data.get("observacion", ""),
+                    ip_origen=_obtener_ip(request),
+                )
+                messages.success(
+                    request,
+                    f"Préstamo registrado exitosamente: {prestamo.cantidad_original} unid. de '{prestamo.producto.codigo_interno}' a {prestamo.destinatario}.",
+                )
+                if alerta.get("nivel"):
+                    messages.warning(request, alerta["mensaje"])
+                return redirect("inventario:prestamo-lista")
+            except Exception as exc:
+                form.add_error(None, str(exc))
+        return render(request, "inventario/prestamo_form.html", {"form": form})
+
+
+class PrestamoDevolucionView(LoginRequiredMixin, View):
+    """Registro de devolución total o parcial de un préstamo."""
+
+    def get(self, request, pk):
+        prestamo = get_object_or_404(Prestamo, pk=pk)
+        if getattr(request.user, "es_usuario_normal", False):
+            if prestamo.almacen_id != getattr(request.user, "almacen_asignado_id", None):
+                raise PermissionDenied("No tienes permisos para acceder a préstamos de otro almacén.")
+        form = DevolucionPrestamoForm(initial={"cantidad": prestamo.cantidad_pendiente_devolucion})
+        return render(request, "inventario/prestamo_devolucion.html", {"prestamo": prestamo, "form": form})
+
+    def post(self, request, pk):
+        prestamo = get_object_or_404(Prestamo, pk=pk)
+        form = DevolucionPrestamoForm(request.POST)
+        if form.is_valid():
+            try:
+                p_db, dev, mov = registrar_devolucion_prestamo(
+                    prestamo=prestamo,
+                    cantidad=form.cleaned_data["cantidad"],
+                    usuario=request.user,
+                    motivo=form.cleaned_data["motivo"],
+                    observacion=form.cleaned_data.get("observacion", ""),
+                    ip_origen=_obtener_ip(request),
+                )
+                messages.success(
+                    request,
+                    f"Devolución registrada: {dev.cantidad} unid. de '{p_db.producto.codigo_interno}'. Saldo pendiente: {p_db.cantidad_pendiente_devolucion} ({p_db.get_estado_display()}).",
+                )
+                return redirect("inventario:prestamo-lista")
+            except Exception as exc:
+                form.add_error(None, str(exc))
+        return render(request, "inventario/prestamo_devolucion.html", {"prestamo": prestamo, "form": form})
+
+
+class PrestamoBajaView(LoginRequiredMixin, View):
+    """Registro de baja por daño o pérdida de un préstamo (§9.4)."""
+
+    def get(self, request, pk):
+        prestamo = get_object_or_404(Prestamo, pk=pk)
+        if getattr(request.user, "es_usuario_normal", False):
+            if prestamo.almacen_id != getattr(request.user, "almacen_asignado_id", None):
+                raise PermissionDenied("No tienes permisos para dar de baja préstamos de otro almacén.")
+        form = BajaPrestamoForm(initial={"cantidad": 1})
+        return render(request, "inventario/prestamo_baja.html", {"prestamo": prestamo, "form": form})
+
+    def post(self, request, pk):
+        prestamo = get_object_or_404(Prestamo, pk=pk)
+        form = BajaPrestamoForm(request.POST)
+        if form.is_valid():
+            try:
+                p_db, baja, mov = registrar_baja_prestamo(
+                    prestamo=prestamo,
+                    cantidad=form.cleaned_data["cantidad"],
+                    usuario=request.user,
+                    motivo=form.cleaned_data["motivo"],
+                    observacion=form.cleaned_data.get("observacion", ""),
+                    ip_origen=_obtener_ip(request),
+                )
+                messages.warning(
+                    request,
+                    f"Baja por daño/pérdida registrada: {baja.cantidad} unid. de '{p_db.producto.codigo_interno}'. Saldo pendiente: {p_db.cantidad_pendiente_devolucion}.",
+                )
+                return redirect("inventario:prestamo-lista")
+            except Exception as exc:
+                form.add_error(None, str(exc))
+        return render(request, "inventario/prestamo_baja.html", {"prestamo": prestamo, "form": form})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 10. TRASLADOS OPERATIVOS
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TrasladoCrearView(LoginRequiredMixin, View):
+    """Registro de traslado operativo (interno o entre almacenes)."""
+
+    def get(self, request):
+        form = TrasladoForm(usuario=request.user)
+        return render(request, "inventario/movimiento_traslado.html", {"form": form})
+
+    def post(self, request):
+        form = TrasladoForm(request.POST, usuario=request.user)
+        if form.is_valid():
+            prod = form.cleaned_data["producto"]
+            alm_orig = form.cleaned_data["almacen_origen"]
+            alm_dest = form.cleaned_data.get("almacen_destino")
+            ub_orig = form.cleaned_data.get("ubicacion_origen")
+            ub_dest = form.cleaned_data.get("ubicacion_destino")
+            cant = form.cleaned_data["cantidad"]
+            mot = form.cleaned_data.get("motivo", "")
+
+            try:
+                if alm_dest and alm_dest.id != alm_orig.id:
+                    # Traslado entre almacenes
+                    ex_o, ex_d, mov = registrar_traslado_entre_almacenes(
+                        producto=prod,
+                        almacen_origen=alm_orig,
+                        almacen_destino=alm_dest,
+                        cantidad=cant,
+                        usuario=request.user,
+                        ubicacion_origen=ub_orig,
+                        ubicacion_destino=ub_dest,
+                        motivo=mot,
+                        ip_origen=_obtener_ip(request),
+                    )
+                    messages.success(
+                        request,
+                        f"Traslado completado: {cant} unid. de '{prod.codigo_interno}' enviadas de '{alm_orig.nombre}' a '{alm_dest.nombre}'.",
+                    )
+                else:
+                    # Traslado interno
+                    if not ub_orig or not ub_dest:
+                        raise ValidationError("Para un traslado interno debe indicar ubicación de origen y de destino.")
+                    ex, mov = registrar_traslado_interno(
+                        producto=prod,
+                        almacen=alm_orig,
+                        ubicacion_origen=ub_orig,
+                        ubicacion_destino=ub_dest,
+                        usuario=request.user,
+                        motivo=mot,
+                        ip_origen=_obtener_ip(request),
+                    )
+                    messages.success(
+                        request,
+                        f"Traslado interno completado: '{prod.codigo_interno}' reubicado de '{ub_orig.nombre}' a '{ub_dest.nombre}'.",
+                    )
+                return redirect("inventario:movimiento-lista")
+            except Exception as exc:
+                form.add_error(None, str(exc))
+        return render(request, "inventario/movimiento_traslado.html", {"form": form})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 11. CONTEO FÍSICO Y AJUSTES
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ConteoFisicoListaView(LoginRequiredMixin, ListView):
+    """Listado de conteos físicos y solicitudes de ajuste."""
+
+    model = ConteoFisico
+    template_name = "inventario/conteo_lista.html"
+    context_object_name = "conteos"
+    paginate_by = 25
+
+    def get_queryset(self):
+        qs = ConteoFisico.objects.select_related("producto", "almacen", "usuario_conteo", "usuario_confirmacion").order_by("-fecha_conteo")
+        user = self.request.user
+        if getattr(user, "es_usuario_normal", False):
+            if user.almacen_asignado:
+                qs = qs.filter(almacen=user.almacen_asignado)
+            else:
+                return qs.none()
+        return qs
+
+
+class ConteoFisicoCrearView(LoginRequiredMixin, View):
+    """Registro de conteo físico preliminar."""
+
+    def get(self, request):
+        form = ConteoFisicoForm(usuario=request.user)
+        return render(request, "inventario/conteo_form.html", {"form": form})
+
+    def post(self, request):
+        form = ConteoFisicoForm(request.POST, usuario=request.user)
+        if form.is_valid():
+            try:
+                conteo = registrar_conteo_fisico(
+                    producto=form.cleaned_data["producto"],
+                    almacen=form.cleaned_data["almacen"],
+                    cantidad_contada=form.cleaned_data["cantidad_contada"],
+                    usuario=request.user,
+                    motivo=form.cleaned_data.get("motivo", ""),
+                    ip_origen=_obtener_ip(request),
+                )
+                messages.success(
+                    request,
+                    f"Conteo registrado: Contado {conteo.cantidad_contada} unid. vs {conteo.stock_sistema} en sistema (Diferencia: {conteo.diferencia:+d}). Pendiente de confirmación administrativa.",
+                )
+                return redirect("inventario:conteo-lista")
+            except Exception as exc:
+                form.add_error(None, str(exc))
+        return render(request, "inventario/conteo_form.html", {"form": form})
+
+
+class ConteoFisicoConfirmarView(LoginRequiredMixin, RolRequeridoMixin, View):
+    """Confirmación y aplicación administrativa de ajuste por conteo físico (§6.2, §9.7)."""
+
+    roles_permitidos = (UsuarioAudacIA.Rol.ADMINISTRADOR, UsuarioAudacIA.Rol.SUPERUSUARIO)
+
+    def post(self, request, pk):
+        conteo = get_object_or_404(ConteoFisico, pk=pk)
+        try:
+            conteo_db, mov = confirmar_conteo_fisico(
+                conteo=conteo,
+                usuario=request.user,
+                ip_origen=_obtener_ip(request),
+            )
+            messages.success(
+                request,
+                f"Ajuste por conteo confirmado exitosamente para '{conteo_db.producto.codigo_interno}'. Stock ajustado a {conteo_db.cantidad_contada} unid.",
+            )
+        except Exception as exc:
+            messages.error(request, str(exc))
+        return redirect("inventario:conteo-lista")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 12. REVERSIÓN DE MOVIMIENTOS
+# ─────────────────────────────────────────────────────────────────────────────
+
+class MovimientoRevertirView(LoginRequiredMixin, View):
+    """Reversión de un movimiento previo con verificación estricta de no negatividad (§9.6)."""
+
+    def get(self, request, pk):
+        movimiento = get_object_or_404(Movimiento, pk=pk)
+        if getattr(request.user, "es_usuario_normal", False):
+            alm_mov = movimiento.almacen_origen or movimiento.almacen_destino
+            if alm_mov and alm_mov.id != getattr(request.user, "almacen_asignado_id", None):
+                raise PermissionDenied("No tienes permisos para revertir movimientos de otro almacén.")
+        form = ReversionForm()
+        return render(request, "inventario/movimiento_revertir.html", {"movimiento": movimiento, "form": form})
+
+    def post(self, request, pk):
+        movimiento = get_object_or_404(Movimiento, pk=pk)
+        form = ReversionForm(request.POST)
+        if form.is_valid():
+            try:
+                mov_orig, mov_rev = revertir_movimiento(
+                    movimiento=movimiento,
+                    usuario=request.user,
+                    motivo=form.cleaned_data["motivo"],
+                    ip_origen=_obtener_ip(request),
+                )
+                messages.success(
+                    request,
+                    f"Movimiento revertido exitosamente. Se generó la reversión compensatoria con folio {mov_rev.id}.",
+                )
+                return redirect("inventario:movimiento-lista")
+            except Exception as exc:
+                form.add_error(None, str(exc))
+        return render(request, "inventario/movimiento_revertir.html", {"movimiento": movimiento, "form": form})
+
 
 

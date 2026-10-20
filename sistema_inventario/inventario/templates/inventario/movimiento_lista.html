@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block title %}Historial de Movimientos{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+        <div>
+            <h2>Historial de Movimientos de Inventario</h2>
+            <p style="color: var(--text-muted); font-size: 0.9rem;">
+                Trazabilidad inmutable de entradas, salidas, traslados, préstamos y reversiones (§9).
+            </p>
+        </div>
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <a href="{% url 'inventario:movimiento-entrada' %}" class="btn btn-primary">+ Entrada</a>
+            <a href="{% url 'inventario:movimiento-salida' %}" class="btn btn-secondary">- Salida</a>
+            <a href="{% url 'inventario:movimiento-traslado' %}" class="btn btn-secondary">⇄ Traslado</a>
+        </div>
+    </div>
+
+    <!-- Barra de Filtros -->
+    <form method="get" style="display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
+        <input type="text" name="q" value="{{ q }}" placeholder="Buscar por producto, destinatario o motivo..." class="form-control" style="flex: 2; min-width: 250px;">
+        <select name="tipo" class="form-control" style="flex: 1; min-width: 180px;">
+            <option value="">-- Todos los tipos --</option>
+            {% for valor, etiqueta in tipos_movimiento %}
+                <option value="{{ valor }}" {% if tipo_seleccionado == valor %}selected{% endif %}>{{ etiqueta }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-primary">Filtrar</button>
+        {% if q or tipo_seleccionado %}
+            <a href="{% url 'inventario:movimiento-lista' %}" class="btn btn-secondary">Limpiar</a>
+        {% endif %}
+    </form>
+
+    {% if movimientos %}
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Fecha y Hora</th>
+                    <th>Tipo</th>
+                    <th>Producto</th>
+                    <th>Cantidad</th>
+                    <th>Almacén / Ubicación</th>
+                    <th>Destinatario / Motivo</th>
+                    <th>Usuario</th>
+                    <th>Estado</th>
+                    <th>Acción</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for mov in movimientos %}
+                    <tr {% if mov.estado == 'REVERTIDO' %}style="opacity: 0.6; background: #f8fafc;"{% endif %}>
+                        <td style="font-size: 0.85rem; white-space: nowrap;">{{ mov.fecha_hora|date:"Y-m-d H:i" }}</td>
+                        <td>
+                            <span class="badge" style="
+                                {% if mov.tipo == 'ENTRADA' %}background: var(--success); color: white;
+                                {% elif mov.tipo == 'SALIDA' %}background: var(--danger); color: white;
+                                {% elif mov.tipo == 'PRESTAMO' %}background: #6366f1; color: white;
+                                {% elif mov.tipo == 'DEVOLUCION' %}background: #0284c7; color: white;
+                                {% elif mov.tipo == 'BAJA_PRESTAMO' %}background: #b91c1c; color: white;
+                                {% elif mov.tipo == 'REVERSION' %}background: #475569; color: white;
+                                {% else %}background: #64748b; color: white;{% endif %}
+                            ">
+                                {{ mov.get_tipo_display }}
+                            </span>
+                        </td>
+                        <td>
+                            <strong>{{ mov.producto.codigo_interno }}</strong><br>
+                            <small style="color: var(--text-muted);">{{ mov.producto.nombre|truncatechars:25 }}</small>
+                        </td>
+                        <td><strong>{{ mov.cantidad }}</strong></td>
+                        <td style="font-size: 0.85rem;">
+                            {% if mov.almacen_origen %}{{ mov.almacen_origen.nombre }}{% endif %}
+                            {% if mov.almacen_destino %} → {{ mov.almacen_destino.nombre }}{% endif %}
+                        </td>
+                        <td style="font-size: 0.85rem;">
+                            {% if mov.destinatario %}<strong>A:</strong> {{ mov.destinatario }}<br>{% endif %}
+                            <span style="color: var(--text-muted);">{{ mov.motivo|truncatechars:35 }}</span>
+                        </td>
+                        <td style="font-size: 0.85rem;">{{ mov.usuario.nombre_completo|default:mov.usuario.username }}</td>
+                        <td>
+                            {% if mov.estado == 'REVERTIDO' %}
+                                <span class="badge" style="background: #ef4444; color: white;">REVERTIDO</span>
+                            {% else %}
+                                <span class="badge" style="background: #10b981; color: white;">OK</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if mov.estado != 'REVERTIDO' and mov.tipo in 'ENTRADA,SALIDA,TRASLADO_ENTRE,AJUSTE_CONTEO' %}
+                                <a href="{% url 'inventario:movimiento-revertir' mov.pk %}" class="btn btn-sm btn-secondary" style="color: var(--danger);">Revertir</a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- Paginación -->
+        {% if is_paginated %}
+            <div style="display: flex; justify-content: center; gap: 0.5rem; margin-top: 1.5rem;">
+                {% if page_obj.has_previous %}
+                    <a href="?page={{ page_obj.previous_page_number }}{% if q %}&q={{ q }}{% endif %}{% if tipo_seleccionado %}&tipo={{ tipo_seleccionado }}{% endif %}" class="btn btn-sm btn-secondary">&laquo; Anterior</a>
+                {% endif %}
+                <span style="align-self: center; font-size: 0.85rem; color: var(--text-muted);">
+                    Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
+                </span>
+                {% if page_obj.has_next %}
+                    <a href="?page={{ page_obj.next_page_number }}{% if q %}&q={{ q }}{% endif %}{% if tipo_seleccionado %}&tipo={{ tipo_seleccionado }}{% endif %}" class="btn btn-sm btn-secondary">Siguiente &raquo;</a>
+                {% endif %}
+            </div>
+        {% endif %}
+    {% else %}
+        <p style="text-align: center; color: var(--text-muted); margin: 3rem 0;">
+            No se encontraron movimientos con los criterios especificados.
+        </p>
+    {% endif %}
+</div>
+{% endblock %}

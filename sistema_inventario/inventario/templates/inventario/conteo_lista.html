@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}Conteos Físicos de Inventario{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+        <div>
+            <h2>Auditoría y Conteos Físicos de Inventario</h2>
+            <p style="color: var(--text-muted); font-size: 0.9rem;">
+                Inspección física y cálculo de discrepancias. Los ajustes requieren confirmación administrativa (§9.7).
+            </p>
+        </div>
+        <div>
+            <a href="{% url 'inventario:conteo-crear' %}" class="btn btn-primary">+ Iniciar Conteo Físico</a>
+        </div>
+    </div>
+
+    {% if conteos %}
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Fecha Conteo</th>
+                    <th>Producto</th>
+                    <th>Almacén</th>
+                    <th>Contado</th>
+                    <th>Sistema</th>
+                    <th>Diferencia</th>
+                    <th>Contado Por</th>
+                    <th>Estado</th>
+                    <th>Acción</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in conteos %}
+                    <tr>
+                        <td style="font-size: 0.85rem; white-space: nowrap;">{{ c.fecha_conteo|date:"Y-m-d H:i" }}</td>
+                        <td>
+                            <code>{{ c.producto.codigo_interno }}</code><br>
+                            <small>{{ c.producto.nombre|truncatechars:25 }}</small>
+                        </td>
+                        <td>{{ c.almacen.nombre }}</td>
+                        <td><strong>{{ c.cantidad_contada }}</strong></td>
+                        <td>{{ c.stock_sistema }}</td>
+                        <td>
+                            <strong style="color: {% if c.diferencia > 0 %}var(--success){% elif c.diferencia < 0 %}var(--danger){% else %}var(--text-muted){% endif %};">
+                                {{ c.diferencia|stringformat:"+d" }}
+                            </strong>
+                        </td>
+                        <td style="font-size: 0.85rem;">{{ c.usuario_conteo.nombre_completo|default:c.usuario_conteo.username }}</td>
+                        <td>
+                            {% if c.confirmado %}
+                                <span class="badge" style="background: var(--success); color: white;">Ajustado</span><br>
+                                <small style="color: var(--text-muted); font-size: 0.75rem;">por {{ c.usuario_confirmacion.username }}</small>
+                            {% else %}
+                                <span class="badge" style="background: var(--warning); color: white;">Pendiente</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if not c.confirmado %}
+                                {% if user.es_administrador %}
+                                    <form action="{% url 'inventario:conteo-confirmar' c.pk %}" method="post" style="display: inline;">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm btn-primary" onclick="return confirm('¿Confirmar y aplicar este ajuste al stock de sistema?');">
+                                            Aprobar Ajuste
+                                        </button>
+                                    </form>
+                                {% else %}
+                                    <span style="font-size: 0.8rem; color: var(--text-muted);">Requiere Admin</span>
+                                {% endif %}
+                            {% else %}
+                                <span style="font-size: 0.8rem; color: var(--text-muted);">Aplicado el {{ c.fecha_confirmacion|date:"Y-m-d" }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        {% if is_paginated %}
+            <div style="display: flex; justify-content: center; gap: 0.5rem; margin-top: 1.5rem;">
+                {% if page_obj.has_previous %}
+                    <a href="?page={{ page_obj.previous_page_number }}" class="btn btn-sm btn-secondary">&laquo; Anterior</a>
+                {% endif %}
+                <span style="align-self: center; font-size: 0.85rem; color: var(--text-muted);">
+                    Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
+                </span>
+                {% if page_obj.has_next %}
+                    <a href="?page={{ page_obj.next_page_number }}" class="btn btn-sm btn-secondary">Siguiente &raquo;</a>
+                {% endif %}
+            </div>
+        {% endif %}
+    {% else %}
+        <p style="text-align: center; color: var(--text-muted); margin: 3rem 0;">
+            No hay registros de conteos físicos en su almacén.
+        </p>
+    {% endif %}
+</div>
+{% endblock %}
