@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% block page_title %}Reporte de Movimientos{% endblock %}
+{% block sidebar_rep_movimientos %}active{% endblock %}
 
 {% block title %}Informe de Movimientos de Inventario{% endblock %}
 
@@ -17,7 +19,7 @@
     </div>
 
     <!-- Filtros de fecha y tipo -->
-    <form method="get" style="display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; background: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid var(--border);">
+    <form method="get" style="display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; background: var(--bg-panel-2); padding: 1rem; border-radius: 0.5rem; border: 1px solid var(--border);">
         <div style="flex: 1; min-width: 150px;">
             <label style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted);">Desde</label>
             <input type="date" name="fecha_desde" value="{{ fecha_desde }}" class="form-control" style="margin-top: 0.25rem;">
@@ -68,11 +70,11 @@
                             <span class="badge" style="
                                 {% if m.tipo == 'ENTRADA' %}background: var(--success); color: white;
                                 {% elif m.tipo == 'SALIDA' %}background: var(--danger); color: white;
-                                {% elif m.tipo == 'PRESTAMO' %}background: #6366f1; color: white;
-                                {% elif m.tipo == 'DEVOLUCION' %}background: #0284c7; color: white;
-                                {% elif m.tipo == 'BAJA_PRESTAMO' %}background: #b91c1c; color: white;
-                                {% elif m.tipo == 'REVERSION' %}background: #475569; color: white;
-                                {% else %}background: #64748b; color: white;{% endif %}
+                                {% elif m.tipo == 'PRESTAMO' %}background: #8b5cf6; color: white;
+                                {% elif m.tipo == 'DEVOLUCION' %}background: var(--accent); color: white;
+                                {% elif m.tipo == 'BAJA_PRESTAMO' %}background: var(--crit); color: white;
+                                {% elif m.tipo == 'REVERSION' %}background: var(--bg-elevated); color: white;
+                                {% else %}background: var(--bg-elevated); color: white;{% endif %}
                             ">{{ m.get_tipo_display }}</span>
                         </td>
                         <td><code>{{ m.producto.codigo_interno }}</code> {{ m.producto.nombre|truncatechars:20 }}</td>

@@ -1,15 +1,17 @@
 {% extends "base.html" %}
+{% block page_title %}Baja por Daño/Pérdida{% endblock %}
+{% block sidebar_prestamos %}active{% endblock %}
 
 {% block title %}Baja de Préstamo por Daño/Pérdida{% endblock %}
 
 {% block content %}
 <div class="card" style="max-width: 600px; margin: 0 auto;">
     <h2 style="margin-bottom: 0.5rem; color: var(--danger);">Baja por Daño o Pérdida de Préstamo</h2>
-    <div style="background: var(--danger-bg); border: 1px solid #fecaca; padding: 1rem; border-radius: 0.375rem; margin-bottom: 1.5rem;">
+    <div style="background: var(--danger-bg); border: 1px solid rgba(255,107,122,0.3); padding: 1rem; border-radius: 0.375rem; margin-bottom: 1.5rem;">
         <div><strong>Artículo:</strong> {{ prestamo.producto.codigo_interno }} — {{ prestamo.producto.nombre }}</div>
         <div><strong>Responsable:</strong> {{ prestamo.destinatario }}</div>
         <div><strong>Cantidad pendiente actual:</strong> <strong>{{ prestamo.cantidad_pendiente_devolucion }} unid.</strong></div>
-        <p style="margin-top: 0.5rem; font-size: 0.85rem; color: #991b1b;">
+        <p style="margin-top: 0.5rem; font-size: 0.85rem; color: var(--crit);">
             ⚠️ <strong>Atención:</strong> Las unidades dadas de baja reducen el saldo pendiente del préstamo pero <u>NO</u> vuelven a sumarse al stock disponible del almacén (§9.4).
         </p>
     </div>

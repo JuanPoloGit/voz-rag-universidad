@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% block page_title %}Reporte de Existencias{% endblock %}
+{% block sidebar_rep_existencias %}active{% endblock %}
 
 {% block title %}Informe de Existencias de Inventario{% endblock %}
 
@@ -19,7 +21,7 @@
     </div>
 
     <!-- Barra de Filtros -->
-    <form method="get" style="display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; background: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid var(--border);">
+    <form method="get" style="display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; background: var(--bg-panel-2); padding: 1rem; border-radius: 0.5rem; border: 1px solid var(--border);">
         {% if not user.es_usuario_normal %}
             <div style="flex: 1; min-width: 180px;">
                 <label style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted);">Almacén</label>
@@ -77,7 +79,7 @@
             </thead>
             <tbody>
                 {% for ex in existencias %}
-                    <tr {% if ex.sin_stock %}style="background: #fff5f5;"{% elif ex.stock_bajo %}style="background: #fffdf5;"{% endif %}>
+                    <tr {% if ex.sin_stock %}style="background: var(--bg-panel-2);"{% elif ex.stock_bajo %}style="background: var(--bg-panel-2);"{% endif %}>
                         <td><code>{{ ex.producto.codigo_interno }}</code></td>
                         <td><strong>{{ ex.producto.nombre }}</strong></td>
                         <td>{{ ex.producto.categoria.nombre }}</td>

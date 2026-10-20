@@ -1,40 +1,21 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestión de Usuarios — Inventario AudacIA</title>
-    <style>
-        body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #f8fafc; padding: 2rem; margin: 0; }
-        .container { max-width: 1000px; margin: 0 auto; background: #1e293b; padding: 2rem; border-radius: 12px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5); }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-bottom: 1px solid #334155; padding-bottom: 1rem; }
-        h1 { margin: 0; font-size: 1.5rem; color: #38bdf8; }
-        .btn { padding: 0.5rem 1rem; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 0.875rem; border: none; cursor: pointer; display: inline-block; }
-        .btn-primary { background: #0284c7; color: #fff; }
-        .btn-primary:hover { background: #0369a1; }
-        .btn-danger { background: #b91c1c; color: #fff; }
-        .btn-danger:hover { background: #991b1b; }
-        .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
-        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-        th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #334155; font-size: 0.875rem; }
-        th { color: #94a3b8; font-weight: 600; }
-        tr:hover { background: #334155; }
-        .badge { padding: 0.25rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
-        .badge-admin { background: #7c3aed; color: #ede9fe; }
-        .badge-user { background: #0284c7; color: #e0f2fe; }
-        .badge-super { background: #ea580c; color: #ffedd5; }
-        .badge-active { background: #059669; color: #d1fae5; }
-        .badge-inactive { background: #dc2626; color: #fee2e2; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>Gestión de Usuarios</h1>
-            <a href="{% url 'cuentas:usuario_crear' %}" class="btn btn-primary">+ Nuevo Usuario</a>
-        </div>
+{% extends "base.html" %}
 
-        <table>
+{% block title %}Gestión de Usuarios{% endblock %}
+{% block page_title %}Gestión de Usuarios{% endblock %}
+{% block sidebar_usuarios %}active{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h2 class="card-title">Usuarios del sistema</h2>
+            <p class="text-faint" style="font-size: 12.5px; margin-top: 2px;">Roles, almacenes asignados y estado de acceso.</p>
+        </div>
+        <a href="{% url 'cuentas:usuario_crear' %}" class="btn btn-primary">+ Nuevo Usuario</a>
+    </div>
+
+    <div class="table-responsive">
+        <table class="data-table">
             <thead>
                 <tr>
                     <th>Usuario</th>
@@ -42,7 +23,7 @@
                     <th>Rol</th>
                     <th>Almacén Asignado</th>
                     <th>Estado</th>
-                    <th>Acciones</th>
+                    <th style="text-align: right;">Acciones</th>
                 </tr>
             </thead>
             <tbody>
@@ -52,32 +33,32 @@
                     <td>{{ u.nombre_completo }}</td>
                     <td>
                         {% if u.rol == "SUPERUSUARIO" %}
-                            <span class="badge badge-super">Superusuario</span>
+                            <span class="badge badge-warn">Superusuario</span>
                         {% elif u.rol == "ADMINISTRADOR" %}
-                            <span class="badge badge-admin">Administrador</span>
+                            <span class="badge badge-purple">Administrador</span>
                         {% else %}
-                            <span class="badge badge-user">Usuario</span>
+                            <span class="badge badge-accent">Usuario</span>
                         {% endif %}
                     </td>
                     <td>
                         {% if u.almacen_asignado %}
                             {{ u.almacen_asignado.nombre }}
                         {% else %}
-                            <span style="color: #64748b;">(Todos los almacenes)</span>
+                            <span class="text-faint">(Todos los almacenes)</span>
                         {% endif %}
                     </td>
                     <td>
                         {% if u.eliminado_logicamente %}
-                            <span class="badge badge-inactive">Eliminado lógicamente</span>
+                            <span class="badge badge-crit">Eliminado lógicamente</span>
                         {% elif u.is_active %}
-                            <span class="badge badge-active">Activo</span>
+                            <span class="badge badge-ok">Activo</span>
                         {% else %}
-                            <span class="badge badge-inactive">Inactivo</span>
+                            <span class="badge badge-crit">Inactivo</span>
                         {% endif %}
                     </td>
-                    <td>
+                    <td style="text-align: right; white-space: nowrap;">
                         {% if not u.es_superusuario_inventario or request.user.es_superusuario_inventario %}
-                            <a href="{% url 'cuentas:usuario_editar' u.pk %}" class="btn btn-primary btn-sm">Editar</a>
+                            <a href="{% url 'cuentas:usuario_editar' u.pk %}" class="btn btn-secondary btn-sm">Editar</a>
                             {% if not u.es_superusuario_inventario and not u.eliminado_logicamente %}
                                 <form method="post" action="{% url 'cuentas:usuario_eliminar' u.pk %}" style="display:inline;" onsubmit="return confirm('¿Está seguro de eliminar lógicamente este usuario?');">
                                     {% csrf_token %}
@@ -89,11 +70,11 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="6" style="text-align: center; color: #94a3b8; padding: 2rem;">No hay usuarios registrados.</td>
+                    <td colspan="6" style="text-align: center; padding: 2rem;" class="text-faint">No hay usuarios registrados.</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
-</body>
-</html>
+</div>
+{% endblock %}

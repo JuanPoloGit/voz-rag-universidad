@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% block page_title %}Productos Estancados{% endblock %}
+{% block sidebar_rep_estancados %}active{% endblock %}
 
 {% block title %}Informe de Artículos Inactivos / Sin Rotación{% endblock %}
 
@@ -17,7 +19,7 @@
     </div>
 
     <!-- Filtro de días -->
-    <form method="get" style="display: flex; gap: 1rem; align-items: center; margin-bottom: 1.5rem; background: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid var(--border);">
+    <form method="get" style="display: flex; gap: 1rem; align-items: center; margin-bottom: 1.5rem; background: var(--bg-panel-2); padding: 1rem; border-radius: 0.5rem; border: 1px solid var(--border);">
         <label style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted);">Sin movimiento en más de:</label>
         <select name="dias" class="form-control" style="width: 150px;">
             <option value="15" {% if dias == 15 %}selected{% endif %}>15 días</option>

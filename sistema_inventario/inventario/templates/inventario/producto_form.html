@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% block page_title %}Productos{% endblock %}
+{% block sidebar_productos %}active{% endblock %}
 
 {% block title %}
     {% if object %}Editar Producto: {{ object.codigo_interno }}{% else %}Nuevo Producto{% endif %} — Inventario AudacIA
@@ -49,7 +51,7 @@
                             {% for error in form.nombre.errors %}{{ error }}{% endfor %}
                         </div>
                     {% endif %}
-                    <div id="similares-aviso" style="display: none; margin-top: 0.5rem; padding: 0.75rem; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; font-size: 0.85rem; color: #92400e;">
+                    <div id="similares-aviso" style="display: none; margin-top: 0.5rem; padding: 0.75rem; background: var(--bg-panel-2); border: 1px solid rgba(255,189,92,0.3); border-radius: 6px; font-size: 0.85rem; color: var(--warn);">
                         <strong>Atención:</strong> Existen productos con nombres similares registrados:
                         <ul id="similares-lista" style="margin: 0.25rem 0 0 1.25rem; padding: 0;"></ul>
                     </div>

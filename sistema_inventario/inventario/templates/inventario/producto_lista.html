@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% block page_title %}Catálogo de Productos{% endblock %}
+{% block sidebar_productos %}active{% endblock %}
 
 {% block title %}Productos — Inventario AudacIA{% endblock %}
 
@@ -80,7 +82,7 @@
                         <td>{{ prod.categoria.nombre }}</td>
                         <td>
                             {% if prod.codigo_barras %}
-                                <code style="font-size: 0.8rem; background: #f1f5f9; padding: 0.2rem 0.4rem; border-radius: 4px;">{{ prod.codigo_barras }}</code>
+                                <code style="font-size: 0.8rem; background: var(--bg-panel-2); padding: 0.2rem 0.4rem; border-radius: 4px;">{{ prod.codigo_barras }}</code>
                             {% else %}
                                 <span style="color: var(--text-muted); font-size: 0.8rem;">—</span>
                             {% endif %}
@@ -98,11 +100,11 @@
                         <td>
                             {% with stock_disp=prod.existencias.first.stock_disponible|default:0 %}
                                 {% if stock_disp == 0 %}
-                                    <span style="display: inline-block; padding: 0.2rem 0.5rem; background: #fee2e2; color: #b91c1c; border-radius: 9999px; font-size: 0.75rem; font-weight: 600;">
+                                    <span style="display: inline-block; padding: 0.2rem 0.5rem; background: var(--crit-bg); color: var(--crit); border-radius: 9999px; font-size: 0.75rem; font-weight: 600;">
                                         Sin Stock
                                     </span>
                                 {% elif stock_disp < prod.stock_minimo %}
-                                    <span style="display: inline-block; padding: 0.2rem 0.5rem; background: #fef3c7; color: #b45309; border-radius: 9999px; font-size: 0.75rem; font-weight: 600;">
+                                    <span style="display: inline-block; padding: 0.2rem 0.5rem; background: var(--warn-bg); color: var(--warn); border-radius: 9999px; font-size: 0.75rem; font-weight: 600;">
                                         Stock Bajo (< {{ prod.stock_minimo }})
                                     </span>
                                 {% else %}

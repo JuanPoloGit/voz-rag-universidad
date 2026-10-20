@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% block page_title %}Alertas de Stock{% endblock %}
+{% block sidebar_alertas %}active{% endblock %}
 
 {% block title %}Centro de Notificaciones y Alertas de Stock{% endblock %}
 
@@ -18,19 +20,19 @@
 
     <!-- Resumen de alertas -->
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
-        <div style="background: var(--danger-bg); border: 1px solid #fca5a5; padding: 1.25rem; border-radius: 0.5rem;">
-            <div style="font-size: 0.85rem; font-weight: 700; color: #991b1b; text-transform: uppercase;">Agotados (Stock Crítico)</div>
+        <div style="background: var(--danger-bg); border: 1px solid rgba(255,107,122,0.3); padding: 1.25rem; border-radius: 0.5rem;">
+            <div style="font-size: 0.85rem; font-weight: 700; color: var(--crit); text-transform: uppercase;">Agotados (Stock Crítico)</div>
             <div style="font-size: 2rem; font-weight: 800; color: var(--danger); margin-top: 0.25rem;">{{ alertas.total_criticas }}</div>
-            <div style="font-size: 0.8rem; color: #7f1d1d; margin-top: 0.25rem;">Disponibilidad = 0 unidades</div>
+            <div style="font-size: 0.8rem; color: var(--crit); margin-top: 0.25rem;">Disponibilidad = 0 unidades</div>
         </div>
 
-        <div style="background: var(--warning-bg); border: 1px solid #fcd34d; padding: 1.25rem; border-radius: 0.5rem;">
-            <div style="font-size: 0.85rem; font-weight: 700; color: #92400e; text-transform: uppercase;">Stock Bajo (Bajo Mínimo)</div>
+        <div style="background: var(--warning-bg); border: 1px solid rgba(255,189,92,0.3); padding: 1.25rem; border-radius: 0.5rem;">
+            <div style="font-size: 0.85rem; font-weight: 700; color: var(--warn); text-transform: uppercase;">Stock Bajo (Bajo Mínimo)</div>
             <div style="font-size: 2rem; font-weight: 800; color: var(--warning); margin-top: 0.25rem;">{{ alertas.total_bajas }}</div>
-            <div style="font-size: 0.8rem; color: #78350f; margin-top: 0.25rem;">0 &lt; Stock &lt; Stock Mínimo</div>
+            <div style="font-size: 0.8rem; color: var(--warn); margin-top: 0.25rem;">0 &lt; Stock &lt; Stock Mínimo</div>
         </div>
 
-        <div style="background: #f1f5f9; border: 1px solid var(--border); padding: 1.25rem; border-radius: 0.5rem;">
+        <div style="background: var(--bg-panel-2); border: 1px solid var(--border); padding: 1.25rem; border-radius: 0.5rem;">
             <div style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Total de Alertas</div>
             <div style="font-size: 2rem; font-weight: 800; color: var(--text-main); margin-top: 0.25rem;">{{ alertas.total_alertas }}</div>
             <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">En su ámbito autorizado</div>
@@ -56,7 +58,7 @@
             </thead>
             <tbody>
                 {% for ex in criticas %}
-                    <tr style="background: #fff5f5;">
+                    <tr style="background: var(--bg-panel-2);">
                         <td><code>{{ ex.producto.codigo_interno }}</code></td>
                         <td><strong>{{ ex.producto.nombre }}</strong></td>
                         <td>{{ ex.almacen.nombre }}</td>
@@ -95,7 +97,7 @@
             </thead>
             <tbody>
                 {% for ex in bajas %}
-                    <tr style="background: #fffdf5;">
+                    <tr style="background: var(--bg-panel-2);">
                         <td><code>{{ ex.producto.codigo_interno }}</code></td>
                         <td><strong>{{ ex.producto.nombre }}</strong></td>
                         <td>{{ ex.almacen.nombre }}</td>

@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% block page_title %}Historial de Movimientos{% endblock %}
+{% block sidebar_movimientos %}active{% endblock %}
 
 {% block title %}Historial de Movimientos{% endblock %}
 
@@ -50,17 +52,17 @@
             </thead>
             <tbody>
                 {% for mov in movimientos %}
-                    <tr {% if mov.estado == 'REVERTIDO' %}style="opacity: 0.6; background: #f8fafc;"{% endif %}>
+                    <tr {% if mov.estado == 'REVERTIDO' %}style="opacity: 0.6; background: var(--bg-panel-2);"{% endif %}>
                         <td style="font-size: 0.85rem; white-space: nowrap;">{{ mov.fecha_hora|date:"Y-m-d H:i" }}</td>
                         <td>
                             <span class="badge" style="
                                 {% if mov.tipo == 'ENTRADA' %}background: var(--success); color: white;
                                 {% elif mov.tipo == 'SALIDA' %}background: var(--danger); color: white;
-                                {% elif mov.tipo == 'PRESTAMO' %}background: #6366f1; color: white;
-                                {% elif mov.tipo == 'DEVOLUCION' %}background: #0284c7; color: white;
-                                {% elif mov.tipo == 'BAJA_PRESTAMO' %}background: #b91c1c; color: white;
-                                {% elif mov.tipo == 'REVERSION' %}background: #475569; color: white;
-                                {% else %}background: #64748b; color: white;{% endif %}
+                                {% elif mov.tipo == 'PRESTAMO' %}background: #8b5cf6; color: white;
+                                {% elif mov.tipo == 'DEVOLUCION' %}background: var(--accent); color: white;
+                                {% elif mov.tipo == 'BAJA_PRESTAMO' %}background: var(--crit); color: white;
+                                {% elif mov.tipo == 'REVERSION' %}background: var(--bg-elevated); color: white;
+                                {% else %}background: var(--bg-elevated); color: white;{% endif %}
                             ">
                                 {{ mov.get_tipo_display }}
                             </span>
@@ -81,9 +83,9 @@
                         <td style="font-size: 0.85rem;">{{ mov.usuario.nombre_completo|default:mov.usuario.username }}</td>
                         <td>
                             {% if mov.estado == 'REVERTIDO' %}
-                                <span class="badge" style="background: #ef4444; color: white;">REVERTIDO</span>
+                                <span class="badge" style="background: var(--crit); color: white;">REVERTIDO</span>
                             {% else %}
-                                <span class="badge" style="background: #10b981; color: white;">OK</span>
+                                <span class="badge" style="background: var(--ok); color: white;">OK</span>
                             {% endif %}
                         </td>
                         <td>

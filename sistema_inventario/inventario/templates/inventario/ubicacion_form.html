@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% block page_title %}Ubicaciones{% endblock %}
+{% block sidebar_ubicaciones %}active{% endblock %}
 
 {% block title %}
     {% if object %}Editar Ubicación: {{ object.nombre }}{% else %}Nueva Ubicación{% endif %} — Inventario AudacIA

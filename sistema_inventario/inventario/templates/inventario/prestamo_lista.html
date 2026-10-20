@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% block page_title %}Préstamos{% endblock %}
+{% block sidebar_prestamos %}active{% endblock %}
 
 {% block title %}Préstamos de Inventario{% endblock %}
 
@@ -59,7 +61,7 @@
                         <td><strong style="color: {% if p.cantidad_pendiente_devolucion > 0 %}var(--danger){% else %}var(--success){% endif %};">{{ p.cantidad_pendiente_devolucion }}</strong></td>
                         <td>
                             <span class="badge" style="
-                                {% if p.estado == 'ABIERTO' %}background: #6366f1; color: white;
+                                {% if p.estado == 'ABIERTO' %}background: #8b5cf6; color: white;
                                 {% elif p.estado == 'DEVUELTO_PARCIAL' %}background: var(--warning); color: white;
                                 {% else %}background: var(--success); color: white;{% endif %}
                             ">

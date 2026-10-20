@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% block page_title %}Categorías{% endblock %}
+{% block sidebar_categorias %}active{% endblock %}
 
 {% block title %}Categorías — Inventario AudacIA{% endblock %}
 
@@ -51,7 +53,7 @@
                             <strong>{{ cat.nombre }}</strong>
                         </td>
                         <td>
-                            <code style="background: #f1f5f9; padding: 0.2rem 0.4rem; border-radius: 4px; font-weight: 600;">
+                            <code style="background: var(--bg-panel-2); padding: 0.2rem 0.4rem; border-radius: 4px; font-weight: 600;">
                                 {{ cat.prefijo_codigo }}-XXXX
                             </code>
                         </td>
@@ -62,7 +64,7 @@
                                     Activa
                                 </span>
                             {% else %}
-                                <span style="display: inline-block; padding: 0.2rem 0.5rem; background: #f1f5f9; color: var(--text-muted); border-radius: 9999px; font-size: 0.75rem; font-weight: 600;">
+                                <span style="display: inline-block; padding: 0.2rem 0.5rem; background: var(--bg-panel-2); color: var(--text-muted); border-radius: 9999px; font-size: 0.75rem; font-weight: 600;">
                                     Inactiva
                                 </span>
                             {% endif %}

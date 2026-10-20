@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% block page_title %}Categorías{% endblock %}
+{% block sidebar_categorias %}active{% endblock %}
 
 {% block title %}
     {% if object %}Editar Categoría: {{ object.nombre }}{% else %}Nueva Categoría{% endif %} — Inventario AudacIA
