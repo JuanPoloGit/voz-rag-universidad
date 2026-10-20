@@ -350,10 +350,11 @@
 <body>
     <header class="navbar">
         <div class="brand-container">
-            <a href="{% url 'inventario:producto-lista' %}" class="brand-title">
+            <a href="{% url 'web:dashboard' %}" class="brand-title">
                 Inventario <span>AudacIA</span>
             </a>
             <nav class="nav-links">
+                <a href="{% url 'web:dashboard' %}">Dashboard</a>
                 <a href="{% url 'inventario:almacen-lista' %}">Almacenes</a>
                 <a href="{% url 'inventario:ubicacion-lista' %}">Ubicaciones</a>
                 <a href="{% url 'inventario:categoria-lista' %}">Categorías</a>
@@ -361,6 +362,7 @@
                 <a href="{% url 'inventario:movimiento-lista' %}">Movimientos</a>
                 <a href="{% url 'inventario:prestamo-lista' %}">Préstamos</a>
                 <a href="{% url 'inventario:conteo-lista' %}">Conteos</a>
+                <a href="{% url 'web:reporte-existencias' %}">Reportes</a>
             </nav>
         </div>
         <div class="user-nav">

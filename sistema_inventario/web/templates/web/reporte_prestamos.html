@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Informe de Préstamos Activos{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+        <div>
+            <h2>Informe de Préstamos y Control de Antigüedad</h2>
+            <p style="color: var(--text-muted); font-size: 0.9rem;">
+                Seguimiento de artículos prestados, responsables y días transcurridos sin devolución (§11).
+            </p>
+        </div>
+        <div>
+            <a href="{% url 'inventario:prestamo-lista' %}" class="btn btn-secondary">&larr; Gestión de Préstamos</a>
+        </div>
+    </div>
+
+    {% if prestamos %}
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Fecha Préstamo</th>
+                    <th>Responsable / Solicitante</th>
+                    <th>Producto</th>
+                    <th>Almacén</th>
+                    <th>Prestado</th>
+                    <th>Pendiente</th>
+                    <th>Antigüedad</th>
+                    <th>Estado</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in prestamos %}
+                    <tr>
+                        <td style="font-size: 0.85rem; white-space: nowrap;">{{ p.fecha_creacion|date:"Y-m-d" }}</td>
+                        <td><strong>{{ p.destinatario }}</strong></td>
+                        <td><code>{{ p.producto.codigo_interno }}</code> {{ p.producto.nombre }}</td>
+                        <td>{{ p.almacen.nombre }}</td>
+                        <td>{{ p.cantidad_original }}</td>
+                        <td><strong style="color: var(--danger);">{{ p.cantidad_pendiente_devolucion }}</strong></td>
+                        <td>
+                            <span class="badge" style="{% if p.dias_transcurridos > 15 %}background: var(--danger); color: white;{% elif p.dias_transcurridos > 7 %}background: var(--warning); color: white;{% else %}background: #e2e8f0; color: var(--text-main);{% endif %}">
+                                {{ p.dias_transcurridos }} día(s)
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge" style="
+                                {% if p.estado == 'ABIERTO' %}background: #6366f1; color: white;
+                                {% elif p.estado == 'DEVUELTO_PARCIAL' %}background: var(--warning); color: white;
+                                {% else %}background: var(--success); color: white;{% endif %}
+                            ">{{ p.get_estado_display }}</span>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p style="text-align: center; color: var(--text-muted); margin: 3rem 0;">
+            No hay préstamos activos pendientes en este momento.
+        </p>
+    {% endif %}
+</div>
+{% endblock %}

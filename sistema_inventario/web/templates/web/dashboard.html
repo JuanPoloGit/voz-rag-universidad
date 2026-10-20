@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Dashboard Operativo{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+        <div>
+            <h1 style="font-size: 1.75rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.025em;">
+                Panel de Control de Inventario
+            </h1>
+            <p style="color: var(--text-muted); font-size: 0.95rem;">
+                Resumen operativo y métricas en tiempo real de AudacIA (§11).
+            </p>
+        </div>
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <a href="{% url 'inventario:movimiento-entrada' %}" class="btn btn-primary">+ Entrada de Stock</a>
+            <a href="{% url 'inventario:movimiento-salida' %}" class="btn btn-secondary">- Salida</a>
+            <a href="{% url 'inventario:prestamo-crear' %}" class="btn btn-secondary">Entregar Préstamo</a>
+        </div>
+    </div>
+</div>
+
+<!-- 1. Tarjetas Métricas Principales -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+    <!-- Total Productos -->
+    <div class="card" style="padding: 1.25rem;">
+        <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Total Catálogo</div>
+        <div style="font-size: 2rem; font-weight: 800; color: var(--primary); margin: 0.25rem 0;">{{ metricas.total_productos }}</div>
+        <div style="font-size: 0.8rem; color: var(--text-muted);">Productos activos</div>
+    </div>
+
+    <!-- Stock Disponible -->
+    <div class="card" style="padding: 1.25rem;">
+        <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Stock Disponible</div>
+        <div style="font-size: 2rem; font-weight: 800; color: var(--success); margin: 0.25rem 0;">{{ metricas.total_stock_disponible }}</div>
+        <div style="font-size: 0.8rem; color: var(--text-muted);">Unidades en almacén</div>
+    </div>
+
+    <!-- Stock en Préstamo -->
+    <div class="card" style="padding: 1.25rem;">
+        <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">En Préstamo</div>
+        <div style="font-size: 2rem; font-weight: 800; color: #6366f1; margin: 0.25rem 0;">{{ metricas.total_stock_prestamo }}</div>
+        <div style="font-size: 0.8rem; color: var(--text-muted);">{{ metricas.total_prestamos_activos }} préstamos activos</div>
+    </div>
+
+    <!-- Stock Crítico -->
+    <a href="{% url 'inventario:alertas-lista' %}" style="text-decoration: none;" class="card" style="padding: 1.25rem; background: {% if metricas.total_criticos > 0 %}var(--danger-bg){% else %}white{% endif %}; border-color: {% if metricas.total_criticos > 0 %}#fca5a5{% else %}var(--border){% endif %};">
+        <div style="font-size: 0.8rem; font-weight: 700; color: {% if metricas.total_criticos > 0 %}#991b1b{% else %}var(--text-muted){% endif %}; text-transform: uppercase;">Sin Stock (Agotados)</div>
+        <div style="font-size: 2rem; font-weight: 800; color: var(--danger); margin: 0.25rem 0;">{{ metricas.total_criticos }}</div>
+        <div style="font-size: 0.8rem; color: {% if metricas.total_criticos > 0 %}#7f1d1d{% else %}var(--text-muted){% endif %};">0 unidades disponibles</div>
+    </a>
+
+    <!-- Stock Bajo -->
+    <a href="{% url 'inventario:alertas-lista' %}" style="text-decoration: none;" class="card" style="padding: 1.25rem; background: {% if metricas.total_bajo_stock > 0 %}var(--warning-bg){% else %}white{% endif %}; border-color: {% if metricas.total_bajo_stock > 0 %}#fcd34d{% else %}var(--border){% endif %};">
+        <div style="font-size: 0.8rem; font-weight: 700; color: {% if metricas.total_bajo_stock > 0 %}#92400e{% else %}var(--text-muted){% endif %}; text-transform: uppercase;">Stock Bajo</div>
+        <div style="font-size: 2rem; font-weight: 800; color: var(--warning); margin: 0.25rem 0;">{{ metricas.total_bajo_stock }}</div>
+        <div style="font-size: 0.8rem; color: {% if metricas.total_bajo_stock > 0 %}#78350f{% else %}var(--text-muted){% endif %};">&lt; umbral mínimo</div>
+    </a>
+</div>
+
+<!-- 2. Gráficos Analíticos con Chart.js Local -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+    <!-- Gráfico 1: Categorías -->
+    <div class="card">
+        <h3 style="font-size: 1.1rem; margin-bottom: 1rem; color: var(--text-main);">Distribución de Productos por Categoría</h3>
+        <div style="height: 260px; position: relative;">
+            <canvas id="canvasCategorias"></canvas>
+        </div>
+    </div>
+
+    <!-- Gráfico 2: Balance Entradas vs Salidas -->
+    <div class="card">
+        <h3 style="font-size: 1.1rem; margin-bottom: 1rem; color: var(--text-main);">Balance de Movimientos (Últimos 7 días)</h3>
+        <div style="height: 260px; position: relative;">
+            <canvas id="canvasBalance"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- 3. Tablas Operativas del Dashboard -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 1.5rem;">
+    <!-- Últimos Movimientos -->
+    <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h3 style="font-size: 1.1rem; color: var(--text-main);">Últimos Movimientos</h3>
+            <a href="{% url 'inventario:movimiento-lista' %}" style="font-size: 0.85rem; color: var(--primary); text-decoration: none; font-weight: 600;">Ver todos &rarr;</a>
+        </div>
+        {% if ultimos_movimientos %}
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Hora</th>
+                        <th>Tipo</th>
+                        <th>Producto</th>
+                        <th>Cantidad</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for m in ultimos_movimientos %}
+                        <tr>
+                            <td style="font-size: 0.8rem;">{{ m.fecha_hora|date:"H:i" }}</td>
+                            <td>
+                                <span class="badge" style="font-size: 0.7rem;
+                                    {% if m.tipo == 'ENTRADA' %}background: var(--success); color: white;
+                                    {% elif m.tipo == 'SALIDA' %}background: var(--danger); color: white;
+                                    {% elif m.tipo == 'PRESTAMO' %}background: #6366f1; color: white;
+                                    {% else %}background: #64748b; color: white;{% endif %}
+                                ">{{ m.get_tipo_display }}</span>
+                            </td>
+                            <td><code>{{ m.producto.codigo_interno }}</code> <small>{{ m.producto.nombre|truncatechars:20 }}</small></td>
+                            <td><strong>{{ m.cantidad }}</strong></td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p style="color: var(--text-muted); font-size: 0.9rem; text-align: center; margin: 2rem 0;">No hay movimientos recientes.</p>
+        {% endif %}
+    </div>
+
+    <!-- Préstamos Activos -->
+    <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h3 style="font-size: 1.1rem; color: var(--text-main);">Préstamos Pendientes</h3>
+            <a href="{% url 'inventario:prestamo-lista' %}" style="font-size: 0.85rem; color: var(--primary); text-decoration: none; font-weight: 600;">Ver todos &rarr;</a>
+        </div>
+        {% if prestamos_recientes %}
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Responsable</th>
+                        <th>Producto</th>
+                        <th>Pendiente</th>
+                        <th>Acción</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in prestamos_recientes %}
+                        <tr>
+                            <td><strong>{{ p.destinatario }}</strong></td>
+                            <td><code>{{ p.producto.codigo_interno }}</code></td>
+                            <td><strong style="color: var(--danger);">{{ p.cantidad_pendiente_devolucion }}</strong></td>
+                            <td>
+                                <a href="{% url 'inventario:prestamo-devolver' p.pk %}" class="btn btn-sm btn-primary">Devolver</a>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p style="color: var(--text-muted); font-size: 0.9rem; text-align: center; margin: 2rem 0;">No hay préstamos activos pendientes.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/chartjs/chart.umd.min.js' %}"></script>
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        // 1. Gráfico de Categorías (Doughnut)
+        fetch("{% url 'web:grafico-categorias' %}")
+            .then(res => res.json())
+            .then(data => {
+                const ctxCat = document.getElementById("canvasCategorias");
+                if (!ctxCat) return;
+                new Chart(ctxCat, {
+                    type: "doughnut",
+                    data: {
+                        labels: data.labels,
+                        datasets: [{
+                            data: data.data,
+                            backgroundColor: [
+                                "#0284c7", "#10b981", "#f59e0b", "#6366f1",
+                                "#ec4899", "#8b5cf6", "#14b8a6", "#f97316"
+                            ],
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: "right" }
+                        }
+                    }
+                });
+            });
+
+        // 2. Gráfico de Balance Entradas vs Salidas (Bar)
+        fetch("{% url 'web:grafico-balance' %}?dias=7")
+            .then(res => res.json())
+            .then(data => {
+                const ctxBal = document.getElementById("canvasBalance");
+                if (!ctxBal) return;
+                new Chart(ctxBal, {
+                    type: "bar",
+                    data: {
+                        labels: data.labels,
+                        datasets: [
+                            {
+                                label: "Entradas",
+                                data: data.entradas,
+                                backgroundColor: "rgba(22, 163, 74, 0.8)",
+                                borderRadius: 4
+                            },
+                            {
+                                label: "Salidas",
+                                data: data.salidas,
+                                backgroundColor: "rgba(220, 38, 38, 0.8)",
+                                borderRadius: 4
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: { precision: 0 }
+                            }
+                        }
+                    }
+                });
+            });
+    });
+</script>
+{% endblock %}

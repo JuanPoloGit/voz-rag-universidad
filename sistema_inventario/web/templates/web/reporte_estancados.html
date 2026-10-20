@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Informe de Artículos Inactivos / Sin Rotación{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+        <div>
+            <h2>Artículos Sin Rotación / Inactivos</h2>
+            <p style="color: var(--text-muted); font-size: 0.9rem;">
+                Detección de productos activos sin movimientos registrados en los últimos N días (§11).
+            </p>
+        </div>
+        <div>
+            <a href="{% url 'web:reporte-existencias' %}" class="btn btn-secondary">&larr; Volver a Existencias</a>
+        </div>
+    </div>
+
+    <!-- Filtro de días -->
+    <form method="get" style="display: flex; gap: 1rem; align-items: center; margin-bottom: 1.5rem; background: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid var(--border);">
+        <label style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted);">Sin movimiento en más de:</label>
+        <select name="dias" class="form-control" style="width: 150px;">
+            <option value="15" {% if dias == 15 %}selected{% endif %}>15 días</option>
+            <option value="30" {% if dias == 30 %}selected{% endif %}>30 días</option>
+            <option value="60" {% if dias == 60 %}selected{% endif %}>60 días</option>
+            <option value="90" {% if dias == 90 %}selected{% endif %}>90 días</option>
+        </select>
+        <button type="submit" class="btn btn-primary">Actualizar</button>
+    </form>
+
+    {% if estancados %}
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Código</th>
+                    <th>Producto</th>
+                    <th>Categoría</th>
+                    <th>Última Actividad</th>
+                    <th>Inactividad Estimada</th>
+                    <th>Acción</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in estancados %}
+                    <tr>
+                        <td><code>{{ p.codigo_interno }}</code></td>
+                        <td><strong>{{ p.nombre }}</strong></td>
+                        <td>{{ p.categoria.nombre }}</td>
+                        <td>
+                            {% if p.ultima_actividad %}
+                                {{ p.ultima_actividad|date:"Y-m-d" }}
+                            {% else %}
+                                <span style="color: var(--text-muted); font-style: italic;">Sin movimientos</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge" style="background: var(--warning); color: white;">
+                                &ge; {{ p.dias_sin_movimiento }} días
+                            </span>
+                        </td>
+                        <td>
+                            <a href="{% url 'inventario:producto-detalle' p.pk %}" class="btn btn-sm btn-secondary">Ver Ficha</a>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p style="text-align: center; color: var(--text-muted); margin: 3rem 0;">
+            No hay productos inactivos en el umbral de {{ dias }} días seleccionado.
+        </p>
+    {% endif %}
+</div>
+{% endblock %}
