@@ -85,8 +85,11 @@ class ComprensionEInterrupcionTestCase(TestCase):
             password="password123",
             nombre_completo="Operario Sin Almacen Asignado",
             rol="USUARIO",
-            almacen_asignado=None,
+            almacen_asignado=self.almacen_principal,
         )
+        # Limpiar almacén mediante update_fields para evaluar el manejo defensivo en Haku
+        User.objects.filter(pk=self.operario_sin_almacen.pk).update(almacen_asignado=None)
+        self.operario_sin_almacen.refresh_from_db()
 
         # 4. Catálogo de productos de prueba
         # Prod 1: Cable HDMI (Stock disponible: 15, Min: 5) -> En stock OK

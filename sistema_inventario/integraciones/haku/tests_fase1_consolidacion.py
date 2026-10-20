@@ -403,8 +403,10 @@ class HakuFase1ConsolidacionTestCase(TestCase):
             password="Password123",
             nombre_completo="Usuario Huérfano",
             rol=UsuarioAudacIA.Rol.USUARIO,
-            almacen_asignado=None,
+            almacen_asignado=self.almacen_principal,
         )
+        UsuarioAudacIA.objects.filter(pk=user_sin_almacen.pk).update(almacen_asignado=None)
+        user_sin_almacen.refresh_from_db()
 
         r_cat = procesar_comando_inventario(user_sin_almacen, "¿cuál es el listado de productos?")
         self.assertIn("no tiene un almacén asignado", r_cat["mensaje_pantalla"])

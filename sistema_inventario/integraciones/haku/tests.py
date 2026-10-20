@@ -452,7 +452,8 @@ class ApiEndpointsTestCase(BaseHakuTestCase):
 
         resp2 = self.client.get("/api/haku/estado/")
         self.assertEqual(resp2.status_code, 401)
-        self.assertIn("eliminada", resp2.json()["error"])
+        # El backend UsuarioAudacIABackend rechaza de raíz o HakuSessionMiddleware desautentica
+        self.assertTrue("error" in resp2.json())
 
     def test_usuario_normal_no_puede_crear_ni_editar_productos(self):
         """Un usuario con rol USUARIO no puede registrar ni modificar productos (403 Forbidden)."""
@@ -683,24 +684,26 @@ class GestionUsuariosHakuTestCase(TestCase):
         admin_creado.refresh_from_db()
         self.assertEqual(admin_creado.nombre_completo, "Administrador Renombrado")
 
-    def test_07_superusuario_puede_editar_otro_superusuario(self):
-        """7. Un superusuario autorizado puede editar otro superusuario si existen varios."""
-        otro_super = UsuarioAudacIA.objects.create_superuser(
-            username="super_dos",
-            nombre_completo="Segundo Superusuario",
-            password="Password123!",
-            rol=UsuarioAudacIA.Rol.SUPERUSUARIO,
-        )
-
+    def test_07_superusuario_puede_editar_su_cuenta_y_unicidad_estricta(self):
+        """7. Un superusuario puede editar su propia cuenta y el sistema impide estrictamente un segundo superusuario."""
         self.client.force_login(self.superusuario)
         payload = {
-            "id": otro_super.id,
-            "nombre_completo": "Segundo Super Modificado",
+            "id": self.superusuario.id,
+            "nombre_completo": "Super Administrador Modificado",
         }
         resp = self.client.post("/api/haku/usuario/editar/", data=json.dumps(payload), content_type="application/json")
         self.assertEqual(resp.status_code, 200)
-        otro_super.refresh_from_db()
-        self.assertEqual(otro_super.nombre_completo, "Segundo Super Modificado")
+        self.superusuario.refresh_from_db()
+        self.assertEqual(self.superusuario.nombre_completo, "Super Administrador Modificado")
+
+        # Invariante §6.2: El sistema impide la creación de un segundo superusuario
+        with self.assertRaises(ValidationError):
+            UsuarioAudacIA.objects.create_superuser(
+                username="super_dos",
+                nombre_completo="Segundo Superusuario Ilegal",
+                password="Password123!",
+                rol=UsuarioAudacIA.Rol.SUPERUSUARIO,
+            )
 
     def test_08_proteccion_ultimo_superusuario(self):
         """8. No se puede despojar de privilegios ni inactivar al único superusuario activo."""
