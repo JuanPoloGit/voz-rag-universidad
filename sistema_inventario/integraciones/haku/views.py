@@ -16,10 +16,12 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import HttpResponse, JsonResponse
 from django.utils.decorators import method_decorator
 from django.views import View
-from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.generic import TemplateView
-
-from inventario.models import Almacen, Existencia, Prestamo, Producto
+from django.views.decorators.csrf import ensure_csrf_cookie
+from django.contrib.auth.password_validation import validate_password
+from django.db import transaction
+from cuentas.models import UsuarioAudacIA
+from inventario.models import Almacen, Auditoria, Existencia, Prestamo, Producto
 
 from .serializers import (
     ValidadorComando,
@@ -366,15 +368,24 @@ class TranscribirVozView(HakuApiBaseView):
             return JsonResponse({"error": "No se recibió archivo de audio."}, status=400)
 
         fname = getattr(audio_file, "name", "raw") if audio_file else "raw"
-        logger.debug("Recibido audio STT: filename='%s', bytes=%d", fname, len(audio_bytes))
+        content_type = getattr(audio_file, "content_type", "unknown") if audio_file else request.content_type
+        logger.warning(
+            "[HakuSTT] Petición recibida: archivo='%s', MIME='%s', bytes=%d",
+            fname, content_type, len(audio_bytes)
+        )
 
         try:
             res_audio = procesar_audio_y_transcribir(audio_bytes)
-            logger.debug(
-                "Resultado STT: estado=%s, motivo=%s, texto='%s'",
+            metricas = res_audio.get("metricas", {})
+            orig = metricas.get("metricas_originales", {})
+            logger.warning(
+                "[HakuSTT] Resultado pipeline: estado=%s, motivo=%s, duracion=%.2fs, RMS=%.1f dBFS, Pico=%.1f dBFS, SNR=%.1f dB",
                 res_audio.get("estado"),
                 res_audio.get("motivo"),
-                res_audio.get("texto"),
+                metricas.get("duracion_seg", 0.0),
+                orig.get("rms_dbfs", -100.0),
+                orig.get("pico_dbfs", -100.0),
+                orig.get("snr_db", 0.0),
             )
 
             if res_audio.get("estado") == "SIN_VOZ":
@@ -457,10 +468,527 @@ class SintetizarVozView(HakuApiBaseView):
             return resp
         except Exception as exc:
             logger.exception("Error inesperado en síntesis de voz: %s", exc)
+class ProductoCrearHakuView(HakuApiBaseView):
+    """Crea un nuevo producto en el inventario validando campos y permisos existentes.
+
+    POST /api/haku/producto/crear/
+    """
+
+    def post(self, request):
+        if request.user.es_usuario_normal:
+            raise PermissionDenied("Solo los Administradores o Superusuarios pueden registrar productos.")
+
+        datos = self._obtener_json(request)
+        nombre = str(datos.get("nombre", "")).strip()
+        categoria_id = datos.get("categoria_id")
+        codigo_barras = str(datos.get("codigo_barras", "")).strip() or None
+        stock_minimo = datos.get("stock_minimo", 0)
+        nombre_empaque = str(datos.get("nombre_empaque", "")).strip()
+        unidades_por_empaque = datos.get("unidades_por_empaque")
+        descripcion = str(datos.get("descripcion", "")).strip()
+
+        if not nombre:
+            return JsonResponse({"error": "El nombre del producto es obligatorio."}, status=400)
+        if not categoria_id:
+            return JsonResponse({"error": "La categoría es obligatoria."}, status=400)
+
+        from inventario.models import Categoria, Producto, Auditoria
+        categoria = Categoria.objects.filter(id=categoria_id, activo=True, eliminado=False).first()
+        if not categoria:
+            return JsonResponse({"error": "La categoría seleccionada no existe o está inactiva."}, status=400)
+
+        if codigo_barras:
+            if Producto.objects.filter(codigo_barras=codigo_barras).exists():
+                return JsonResponse({"error": f"El código de barras '{codigo_barras}' ya está registrado en otro producto."}, status=400)
+
+        try:
+            stock_minimo = int(stock_minimo) if stock_minimo is not None else 0
+            if stock_minimo < 0:
+                return JsonResponse({"error": "El stock mínimo no puede ser negativo."}, status=400)
+        except (ValueError, TypeError):
+            return JsonResponse({"error": "El stock mínimo debe ser un número entero válido."}, status=400)
+
+        if unidades_por_empaque:
+            try:
+                unidades_por_empaque = int(unidades_por_empaque)
+                if unidades_por_empaque <= 0:
+                    return JsonResponse({"error": "Las unidades por empaque deben ser mayores a cero."}, status=400)
+            except (ValueError, TypeError):
+                return JsonResponse({"error": "Las unidades por empaque deben ser un número válido."}, status=400)
+        else:
+            unidades_por_empaque = None
+
+        from django.db import transaction
+        with transaction.atomic():
+            producto = Producto(
+                nombre=nombre,
+                categoria=categoria,
+                codigo_barras=codigo_barras,
+                stock_minimo=stock_minimo,
+                nombre_empaque=nombre_empaque,
+                unidades_por_empaque=unidades_por_empaque,
+                descripcion=descripcion,
+                activo=True,
+                archivado=False,
+            )
+            producto.full_clean()
+            producto.save()
+
+            stock_inicial = int(datos.get("stock_inicial", 0) or 0)
+            almacen_id = datos.get("almacen_id")
+            if stock_inicial > 0 and almacen_id:
+                from inventario.models import Almacen, Existencia, Movimiento
+                almacen = Almacen.objects.filter(id=almacen_id, activo=True).first()
+                if almacen:
+                    existencia, _ = Existencia.objects.get_or_create(
+                        producto=producto,
+                        almacen=almacen,
+                        defaults={"stock_disponible": stock_inicial, "stock_en_prestamo": 0},
+                    )
+                    if existencia.stock_disponible != stock_inicial:
+                        existencia.stock_disponible = stock_inicial
+                        existencia.save(update_fields=["stock_disponible"])
+                    
+                    Movimiento.objects.create(
+                        clave_idempotencia=f"init-stock-{producto.id}-{almacen.id}",
+                        tipo=Movimiento.Tipo.ENTRADA,
+                        producto=producto,
+                        cantidad=stock_inicial,
+                        almacen_origen=almacen,
+                        usuario=request.user,
+                        motivo="Stock inicial al registrar producto vía Haku",
+                        stock_disponible_anterior=0,
+                        stock_disponible_posterior=stock_inicial,
+                    )
+
+            Auditoria.objects.create(
+                usuario=request.user,
+                accion="CREAR_PRODUCTO",
+                tipo_entidad="Producto",
+                id_entidad=str(producto.id),
+                valores_anteriores={},
+                valores_nuevos={
+                    "codigo_interno": producto.codigo_interno,
+                    "nombre": producto.nombre,
+                    "categoria": categoria.nombre,
+                    "stock_minimo": stock_minimo,
+                },
+                motivo="Producto creado mediante formulario interactivo de Haku",
+                resultado="OK",
+                via_haku=True,
+            )
+
+        from .cache import HakuCacheManager
+        HakuCacheManager.invalidar_catalogo()
+
+        msg_exito = f"Producto {producto.nombre} creado exitosamente con código interno {producto.codigo_interno}."
+        return JsonResponse({
+            "exito": True,
+            "producto": {
+                "id": producto.id,
+                "codigo_interno": producto.codigo_interno,
+                "nombre": producto.nombre,
+                "categoria": categoria.nombre,
+            },
+            "mensaje_pantalla": msg_exito,
+            "mensaje_verbal": normalizar_para_tts(f"Producto {producto.nombre} creado con código {producto.codigo_interno}."),
+        })
+
+
+class ProductoEditarHakuView(HakuApiBaseView):
+    """Edita un producto existente validando campos permitidos y restricciones de unicidad.
+
+    POST /api/haku/producto/editar/
+    """
+
+    def post(self, request):
+        if request.user.es_usuario_normal:
+            raise PermissionDenied("Solo los Administradores o Superusuarios pueden modificar productos.")
+
+        datos = self._obtener_json(request)
+        producto_id = datos.get("producto_id")
+        if not producto_id:
+            return JsonResponse({"error": "El ID del producto es obligatorio."}, status=400)
+
+        from inventario.models import Categoria, Producto, Auditoria
+        producto = Producto.objects.filter(id=producto_id, archivado=False).first()
+        if not producto:
+            return JsonResponse({"error": "El producto especificado no existe o fue archivado."}, status=404)
+
+        nombre = str(datos.get("nombre", producto.nombre)).strip()
+        if not nombre:
+            return JsonResponse({"error": "El nombre del producto no puede estar vacío."}, status=400)
+
+        categoria_id = datos.get("categoria_id", producto.categoria_id)
+        categoria = Categoria.objects.filter(id=categoria_id, activo=True, eliminado=False).first()
+        if not categoria:
+            return JsonResponse({"error": "La categoría seleccionada no existe o está inactiva."}, status=400)
+
+        codigo_barras = datos.get("codigo_barras")
+        if codigo_barras is not None:
+            codigo_barras = str(codigo_barras).strip() or None
+            if codigo_barras and Producto.objects.filter(codigo_barras=codigo_barras).exclude(id=producto.id).exists():
+                return JsonResponse({"error": f"El código de barras '{codigo_barras}' ya pertenece a otro producto."}, status=400)
+
+        stock_minimo = datos.get("stock_minimo", producto.stock_minimo)
+        try:
+            stock_minimo = int(stock_minimo)
+            if stock_minimo < 0:
+                return JsonResponse({"error": "El stock mínimo no puede ser negativo."}, status=400)
+        except (ValueError, TypeError):
+            return JsonResponse({"error": "El stock mínimo debe ser un número entero válido."}, status=400)
+
+        unidades_por_empaque = datos.get("unidades_por_empaque", producto.unidades_por_empaque)
+        if unidades_por_empaque:
+            try:
+                unidades_por_empaque = int(unidades_por_empaque)
+                if unidades_por_empaque <= 0:
+                    return JsonResponse({"error": "Las unidades por empaque deben ser mayores a cero."}, status=400)
+            except (ValueError, TypeError):
+                return JsonResponse({"error": "Las unidades por empaque deben ser un número válido."}, status=400)
+        else:
+            unidades_por_empaque = None
+
+        nombre_empaque = str(datos.get("nombre_empaque", producto.nombre_empaque)).strip()
+        descripcion = str(datos.get("descripcion", producto.descripcion)).strip()
+
+        valores_anteriores = {
+            "nombre": producto.nombre,
+            "categoria_id": producto.categoria_id,
+            "codigo_barras": producto.codigo_barras,
+            "stock_minimo": producto.stock_minimo,
+        }
+
+        from django.db import transaction
+        with transaction.atomic():
+            producto.nombre = nombre
+            producto.categoria = categoria
+            producto.codigo_barras = codigo_barras
+            producto.stock_minimo = stock_minimo
+            producto.nombre_empaque = nombre_empaque
+            producto.unidades_por_empaque = unidades_por_empaque
+            producto.descripcion = descripcion
+            producto.full_clean()
+            producto.save()
+
+            Auditoria.objects.create(
+                usuario=request.user,
+                accion="EDITAR_PRODUCTO",
+                tipo_entidad="Producto",
+                id_entidad=str(producto.id),
+                valores_anteriores=valores_anteriores,
+                valores_nuevos={
+                    "nombre": producto.nombre,
+                    "categoria_id": producto.categoria_id,
+                    "codigo_barras": producto.codigo_barras,
+                    "stock_minimo": producto.stock_minimo,
+                },
+                motivo="Producto actualizado mediante formulario interactivo de Haku",
+                resultado="OK",
+                via_haku=True,
+            )
+
+        from .cache import HakuCacheManager
+        HakuCacheManager.invalidar_catalogo()
+        HakuCacheManager.invalidar_stock(producto.id)
+        HakuCacheManager.invalidar_ubicaciones(producto.id)
+
+        msg_exito = f"El producto {producto.nombre} ({producto.codigo_interno}) ha sido actualizado con éxito."
+        return JsonResponse({
+            "exito": True,
+            "producto": {
+                "id": producto.id,
+                "codigo_interno": producto.codigo_interno,
+                "nombre": producto.nombre,
+                "categoria": categoria.nombre,
+                "stock_minimo": producto.stock_minimo,
+            },
+            "mensaje_pantalla": msg_exito,
+            "mensaje_verbal": normalizar_para_tts(f"Producto {producto.nombre} actualizado correctamente."),
+        })
+
+
+class UsuarioCrearHakuView(HakuApiBaseView):
+    """Crea un usuario desde el formulario integrado de HAKU.
+
+    POST /api/haku/usuario/crear/
+    """
+
+    def post(self, request):
+        usuario = request.user
+        if not usuario.is_authenticated or not usuario.is_active or getattr(usuario, "eliminado_logicamente", False):
+            return JsonResponse({"error": "No autenticado o cuenta inactiva."}, status=401)
+
+        # Regla 1: Usuario normal no tiene acceso a la gestión de cuentas
+        if usuario.es_usuario_normal:
             return JsonResponse({
-                "status": "error_tts",
-                "mensaje": "La síntesis de voz no está disponible actualmente.",
-            }, status=500)
+                "error": "No tienes autorización para crear usuarios.",
+                "mensaje_verbal": "No tienes autorización para crear usuarios en el sistema."
+            }, status=403)
+
+        payload = self._obtener_json(request)
+        if not isinstance(payload, dict):
+            return JsonResponse({"error": "Payload inválido."}, status=400)
+
+        username = (payload.get("username") or "").strip().lower()
+        nombre_completo = (payload.get("nombre_completo") or "").strip()
+        password = payload.get("password") or ""
+        rol = (payload.get("rol") or "").strip().upper()
+        almacen_id = payload.get("almacen_asignado_id")
+
+        errores = {}
+        if not username:
+            errores["username"] = "El nombre de usuario es obligatorio."
+        elif UsuarioAudacIA.objects.filter(username=username).exists():
+            errores["username"] = "Ya existe un usuario con este nombre de usuario."
+
+        if not nombre_completo:
+            errores["nombre_completo"] = "El nombre completo es obligatorio."
+
+        if not rol:
+            errores["rol"] = "El rol es obligatorio."
+        elif rol not in [UsuarioAudacIA.Rol.SUPERUSUARIO, UsuarioAudacIA.Rol.ADMINISTRADOR, UsuarioAudacIA.Rol.USUARIO]:
+            errores["rol"] = "El rol especificado no es válido."
+
+        # Regla 2: Un administrador no puede crear un superusuario ni asignar roles superiores a los suyos
+        if not usuario.es_superusuario_inventario and rol == UsuarioAudacIA.Rol.SUPERUSUARIO:
+            return JsonResponse({
+                "error": "No tienes autorización para crear un superusuario.",
+                "mensaje_verbal": "No tienes autorización para crear una cuenta con rol superusuario."
+            }, status=403)
+
+        # Regla 3: Almacén asignado obligatorio para rol USUARIO
+        almacen = None
+        if rol == UsuarioAudacIA.Rol.USUARIO:
+            if not almacen_id:
+                errores["almacen_asignado_id"] = "El almacén es obligatorio para usuarios normales."
+            else:
+                try:
+                    almacen = Almacen.objects.get(id=almacen_id, activo=True)
+                except Almacen.DoesNotExist:
+                    errores["almacen_asignado_id"] = "El almacén seleccionado no existe o no está activo."
+        else:
+            if almacen_id:
+                try:
+                    almacen = Almacen.objects.get(id=almacen_id, activo=True)
+                except Almacen.DoesNotExist:
+                    pass
+
+        # Regla 4: Validar contraseña según Django
+        if not password:
+            errores["password"] = "La contraseña es obligatoria."
+        else:
+            try:
+                validate_password(password)
+            except ValidationError as e:
+                errores["password"] = " ".join(e.messages)
+
+        if errores:
+            return JsonResponse({"error": "Errores de validación.", "detalles": errores}, status=400)
+
+        # Persistir con atomicidad y registro de auditoría
+        with transaction.atomic():
+            nuevo_usuario = UsuarioAudacIA(
+                username=username,
+                nombre_completo=nombre_completo,
+                rol=rol,
+                almacen_asignado=almacen,
+                is_active=True,
+                eliminado_logicamente=False,
+            )
+            nuevo_usuario.set_password(password)
+            nuevo_usuario.save()
+
+            # Auditoría segura sin contraseñas
+            Auditoria.objects.create(
+                usuario=usuario,
+                accion="CREAR_USUARIO",
+                tipo_entidad="Usuario",
+                id_entidad=str(nuevo_usuario.pk),
+                valores_nuevos={
+                    "username": nuevo_usuario.username,
+                    "nombre_completo": nuevo_usuario.nombre_completo,
+                    "rol": nuevo_usuario.rol,
+                    "almacen": nuevo_usuario.almacen_asignado.nombre if nuevo_usuario.almacen_asignado else None,
+                    "is_active": nuevo_usuario.is_active,
+                },
+                motivo="Creación de usuario mediante HAKU Inventario",
+                resultado="OK",
+                via_haku=True,
+            )
+
+        msg_exito = f"Usuario {nuevo_usuario.username} ({nuevo_usuario.nombre_completo}) creado exitosamente con rol {nuevo_usuario.rol}."
+        return JsonResponse({
+            "status": "ok",
+            "usuario": {
+                "id": nuevo_usuario.id,
+                "username": nuevo_usuario.username,
+                "nombre_completo": nuevo_usuario.nombre_completo,
+                "rol": nuevo_usuario.rol,
+                "almacen": nuevo_usuario.almacen_asignado.nombre if nuevo_usuario.almacen_asignado else None,
+            },
+            "mensaje_pantalla": msg_exito,
+            "mensaje_verbal": normalizar_para_tts(f"Usuario {nuevo_usuario.username} creado correctamente."),
+        })
+
+
+class UsuarioEditarHakuView(HakuApiBaseView):
+    """Edita un usuario desde el formulario integrado de HAKU.
+
+    POST /api/haku/usuario/editar/
+    """
+
+    def post(self, request):
+        usuario = request.user
+        if not usuario.is_authenticated or not usuario.is_active or getattr(usuario, "eliminado_logicamente", False):
+            return JsonResponse({"error": "No autenticado o cuenta inactiva."}, status=401)
+
+        # Regla 1: Usuario normal no tiene acceso a la gestión de cuentas
+        if usuario.es_usuario_normal:
+            return JsonResponse({
+                "error": "No tienes autorización para editar usuarios.",
+                "mensaje_verbal": "No tienes autorización para gestionar cuentas en el sistema."
+            }, status=403)
+
+        payload = self._obtener_json(request)
+        if not isinstance(payload, dict):
+            return JsonResponse({"error": "Payload inválido."}, status=400)
+
+        usuario_id = payload.get("id") or payload.get("usuario_id")
+        if not usuario_id:
+            return JsonResponse({"error": "Se requiere el ID del usuario a editar."}, status=400)
+
+        try:
+            target_user = UsuarioAudacIA.objects.select_for_update().get(id=usuario_id)
+        except UsuarioAudacIA.DoesNotExist:
+            return JsonResponse({"error": "El usuario especificado no existe."}, status=404)
+
+        # Regla 2: Un administrador no puede editar, inactivar, eliminar ni modificar una cuenta SUPERUSUARIO
+        if not usuario.es_superusuario_inventario and target_user.es_superusuario_inventario:
+            return JsonResponse({
+                "error": "No tienes autorización para modificar una cuenta de superusuario.",
+                "mensaje_verbal": "No tienes autorización para modificar cuentas con rol superusuario."
+            }, status=403)
+
+        nuevo_rol = (payload.get("rol") or target_user.rol).strip().upper()
+        # Regla 3: Un administrador no puede convertir una cuenta en SUPERUSUARIO ni elevar sus propios privilegios
+        if not usuario.es_superusuario_inventario and nuevo_rol == UsuarioAudacIA.Rol.SUPERUSUARIO:
+            return JsonResponse({
+                "error": "No tienes autorización para asignar el rol de superusuario.",
+                "mensaje_verbal": "No puedes conceder privilegios de superusuario."
+            }, status=403)
+
+        nombre_completo = (payload.get("nombre_completo") or target_user.nombre_completo).strip()
+        almacen_id = payload.get("almacen_asignado_id")
+        is_active = payload.get("is_active") if "is_active" in payload else target_user.is_active
+        eliminado_logicamente = payload.get("eliminado_logicamente") if "eliminado_logicamente" in payload else target_user.eliminado_logicamente
+
+        # Regla 4: Protección del último superusuario
+        if target_user.es_superusuario_inventario:
+            democion = nuevo_rol != UsuarioAudacIA.Rol.SUPERUSUARIO
+            inactivacion = not is_active or eliminado_logicamente
+            if democion or inactivacion:
+                otros_superusuarios = UsuarioAudacIA.objects.filter(
+                    rol=UsuarioAudacIA.Rol.SUPERUSUARIO,
+                    is_active=True,
+                    eliminado_logicamente=False
+                ).exclude(id=target_user.id).count()
+
+                if otros_superusuarios == 0:
+                    return JsonResponse({
+                        "error": "No se puede despojar de privilegios, inactivar o eliminar al único superusuario activo del sistema.",
+                        "mensaje_verbal": "Operación rechazada. No se puede deshabilitar al único superusuario activo."
+                    }, status=400)
+
+        errores = {}
+        if not nombre_completo:
+            errores["nombre_completo"] = "El nombre completo no puede estar vacío."
+
+        if nuevo_rol not in [UsuarioAudacIA.Rol.SUPERUSUARIO, UsuarioAudacIA.Rol.ADMINISTRADOR, UsuarioAudacIA.Rol.USUARIO]:
+            errores["rol"] = "Rol inválido."
+
+        almacen = target_user.almacen_asignado
+        if "almacen_asignado_id" in payload:
+            if nuevo_rol == UsuarioAudacIA.Rol.USUARIO:
+                if not almacen_id:
+                    errores["almacen_asignado_id"] = "El almacén es obligatorio para usuarios normales."
+                else:
+                    try:
+                        almacen = Almacen.objects.get(id=almacen_id, activo=True)
+                    except Almacen.DoesNotExist:
+                        errores["almacen_asignado_id"] = "El almacén seleccionado no existe o no está activo."
+            else:
+                if almacen_id:
+                    try:
+                        almacen = Almacen.objects.get(id=almacen_id, activo=True)
+                    except Almacen.DoesNotExist:
+                        pass
+                else:
+                    almacen = None
+
+        # Contraseña opcional en edición
+        nueva_password = payload.get("password")
+        if nueva_password:
+            try:
+                validate_password(nueva_password, user=target_user)
+            except ValidationError as e:
+                errores["password"] = " ".join(e.messages)
+
+        if errores:
+            return JsonResponse({"error": "Errores de validación.", "detalles": errores}, status=400)
+
+        valores_anteriores = {
+            "nombre_completo": target_user.nombre_completo,
+            "rol": target_user.rol,
+            "almacen": target_user.almacen_asignado.nombre if target_user.almacen_asignado else None,
+            "is_active": target_user.is_active,
+            "eliminado_logicamente": target_user.eliminado_logicamente,
+        }
+
+        with transaction.atomic():
+            target_user.nombre_completo = nombre_completo
+            target_user.rol = nuevo_rol
+            target_user.almacen_asignado = almacen
+            target_user.is_active = is_active
+            target_user.eliminado_logicamente = eliminado_logicamente
+            if nueva_password:
+                target_user.set_password(nueva_password)
+            target_user.save()
+
+            valores_nuevos = {
+                "nombre_completo": target_user.nombre_completo,
+                "rol": target_user.rol,
+                "almacen": target_user.almacen_asignado.nombre if target_user.almacen_asignado else None,
+                "is_active": target_user.is_active,
+                "eliminado_logicamente": target_user.eliminado_logicamente,
+            }
+
+            Auditoria.objects.create(
+                usuario=usuario,
+                accion="EDITAR_USUARIO",
+                tipo_entidad="Usuario",
+                id_entidad=str(target_user.pk),
+                valores_anteriores=valores_anteriores,
+                valores_nuevos=valores_nuevos,
+                motivo="Modificación de usuario mediante HAKU Inventario",
+                resultado="OK",
+                via_haku=True,
+            )
+
+        msg_exito = f"Usuario {target_user.username} actualizado correctamente."
+        return JsonResponse({
+            "status": "ok",
+            "usuario": {
+                "id": target_user.id,
+                "username": target_user.username,
+                "nombre_completo": target_user.nombre_completo,
+                "rol": target_user.rol,
+                "almacen": target_user.almacen_asignado.nombre if target_user.almacen_asignado else None,
+                "is_active": target_user.is_active,
+            },
+            "mensaje_pantalla": msg_exito,
+            "mensaje_verbal": normalizar_para_tts(f"Usuario {target_user.username} actualizado correctamente."),
+        })
 
 
 class EstadoHakuView(HakuApiBaseView):

@@ -40,14 +40,20 @@ class AudioDecoder:
         if not audio_bytes:
             raise AudioDecodeError("Buffer de audio vacío.")
 
+        err_sf_msg = None
+        err_wave_msg = None
+        err_ffmpeg_msg = None
+        err_pcm_msg = None
+
         # 1. Intentar con soundfile sobre io.BytesIO (soporta WAV, WebM, OGG, FLAC)
         try:
             import soundfile as sf
             with io.BytesIO(audio_bytes) as bio:
                 data, sr = sf.read(bio, dtype="float32")
                 return cls._normalizar_formato(data, sr)
-        except Exception as err_sf:
-            logger.debug("soundfile en memoria no pudo decodificar (%s); intentando parser nativo WAV", err_sf)
+        except Exception as exc:
+            err_sf_msg = str(exc)
+            logger.debug("soundfile en memoria no pudo decodificar (%s); intentando parser nativo WAV", exc)
 
         # 2. Fallback nativo: intentar con módulo wave estándar de Python
         try:
@@ -72,8 +78,9 @@ class AudioDecoder:
                         data = data.reshape(-1, canales)
 
                     return cls._normalizar_formato(data, sr)
-        except Exception as err_wave:
-            logger.debug("Parser nativo wave falló: %s", err_wave)
+        except Exception as exc:
+            err_wave_msg = str(exc)
+            logger.debug("Parser nativo wave falló: %s", exc)
 
         # 3. Fallback: decodificación en memoria mediante pipe de ffmpeg (soporte WebM/Opus, OGG, etc.)
         try:
@@ -86,17 +93,21 @@ class AudioDecoder:
                 with io.BytesIO(stdout_data) as bio:
                     data, sr = sf.read(bio, dtype="float32")
                     return cls._normalizar_formato(data, sr)
-        except Exception as err_ffmpeg:
-            logger.debug("Decodificador ffmpeg pipe falló o no disponible: %s", err_ffmpeg)
+            else:
+                err_ffmpeg_msg = stderr_data.decode("utf-8", errors="replace") if stderr_data else f"code {proc.returncode}"
+        except Exception as exc:
+            err_ffmpeg_msg = str(exc)
+            logger.debug("Decodificador ffmpeg pipe falló o no disponible: %s", exc)
 
         # 4. Fallback: buffer PCM 16-bit crudo a 16kHz
         try:
             data = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
             return cls._normalizar_formato(data, cls.TARGET_SAMPLE_RATE)
-        except Exception as err_pcm:
+        except Exception as exc:
+            err_pcm_msg = str(exc)
             raise AudioDecodeError(
-                f"No se pudo decodificar el formato de audio: sf={err_sf}, wave={err_wave}, ffmpeg={err_ffmpeg}, pcm={err_pcm}"
-            ) from err_pcm
+                f"No se pudo decodificar el formato de audio: sf={err_sf_msg}, wave={err_wave_msg}, ffmpeg={err_ffmpeg_msg}, pcm={err_pcm_msg}"
+            ) from exc
 
     @classmethod
     def _normalizar_formato(cls, data: np.ndarray, sample_rate: int) -> Tuple[np.ndarray, float]:

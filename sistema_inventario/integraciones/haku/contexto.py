@@ -53,6 +53,9 @@ class EstadoOperativoHaku:
     # 4. Operación pendiente de pre-confirmación en 2 pasos
     propuesta_activa: Optional[Dict[str, Any]] = None
 
+    # 4-bis. Operación pendiente en recolección de ranuras (ej. esperando destinatario de préstamo o edición)
+    operacion_pendiente: Optional[Dict[str, Any]] = None
+
     # 5. Memoria operacional reciente (máximo 5 elementos)
     # Formato: [{"accion": "CONSULTAR_STOCK", "producto": "Cable HDMI", "producto_id": 101, "codigo": "CAB-001", "cantidad": 15, "fecha": ...}]
     # NO almacena chat history, ni audios, ni conversaciones completas.
@@ -86,6 +89,7 @@ class EstadoOperativoHaku:
         self.coleccion_productos = []
         self.coleccion_total_original = 0
         self.propuesta_activa = None
+        self.operacion_pendiente = None
         self.ultimas_acciones = []
 
     def asignar_producto(self, producto_id: int, codigo: str, nombre: str) -> None:
@@ -188,6 +192,7 @@ class EstadoOperativoHaku:
             "coleccion_productos": self.coleccion_productos,
             "coleccion_total_original": self.coleccion_total_original,
             "propuesta_activa": self.propuesta_activa,
+            "operacion_pendiente": self.operacion_pendiente,
             "ultimas_acciones": self.ultimas_acciones,
             "ultimo_acceso": self.ultimo_acceso,
             "version_contexto": self.version_contexto,
@@ -209,6 +214,7 @@ class EstadoOperativoHaku:
             coleccion_productos=data.get("coleccion_productos", []),
             coleccion_total_original=data.get("coleccion_total_original", 0),
             propuesta_activa=data.get("propuesta_activa"),
+            operacion_pendiente=data.get("operacion_pendiente"),
             ultimas_acciones=data.get("ultimas_acciones", []),
             ultimo_acceso=data.get("ultimo_acceso", time.time()),
             version_contexto=data.get("version_contexto", VERSION_CONTEXTO_ACTUAL),

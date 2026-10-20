@@ -21,6 +21,12 @@ urlpatterns = [
     path("voz/transcribir/", views.TranscribirVozView.as_view(), name="transcribir_voz"),
     path("voz/sintetizar/", views.SintetizarVozView.as_view(), name="sintetizar_voz"),
 
+    # Formularios interactivos integrados
+    path("producto/crear/", views.ProductoCrearHakuView.as_view(), name="producto_crear"),
+    path("producto/editar/", views.ProductoEditarHakuView.as_view(), name="producto_editar"),
+    path("usuario/crear/", views.UsuarioCrearHakuView.as_view(), name="usuario_crear"),
+    path("usuario/editar/", views.UsuarioEditarHakuView.as_view(), name="usuario_editar"),
+
     # Estado de la sesión y panel web
     path("estado/", views.EstadoHakuView.as_view(), name="estado"),
     path("panel/", views.PanelHakuView.as_view(), name="panel"),

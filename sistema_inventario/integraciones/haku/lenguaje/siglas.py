@@ -23,6 +23,8 @@ class NormalizadorSiglasTecnicas:
         (r"\b(?:patch\s*cord|pach\s*cor|pascor)\b", "Patch Cord"),
         (r"\b(?:switch|suich|swich)\b", "Switch"),
         (r"\b(?:router|ruter)\b", "Router"),
+        (r"\b(?:dos\s+punto\s+cero|2\s+punto\s+cero|2\s+punto\s+0)\b", "2.0"),
+        (r"\b(?:uno\s+punto\s+cuatro|1\s+punto\s+cuatro|1\s+punto\s+4)\b", "1.4"),
     ]
 
     # 2. Deletreo de prefijos de códigos de inventario

@@ -29,6 +29,10 @@
             SINTETIZAR: "/api/haku/voz/sintetizar/",
             ESTADO: "/api/haku/estado/",
             ALERTAS: "/api/haku/alertas/",
+            PRODUCTO_CREAR: "/api/haku/producto/crear/",
+            PRODUCTO_EDITAR: "/api/haku/producto/editar/",
+            USUARIO_CREAR: "/api/haku/usuario/crear/",
+            USUARIO_EDITAR: "/api/haku/usuario/editar/",
         },
         TIMEOUT_INACTIVIDAD_MS: 120 * 60 * 1000, // 2 horas (120 minutos / 7200 segundos)
         MIME_TYPES: [
@@ -55,6 +59,11 @@
         mediaRecorder: null,
         audioChunks: [],
         streamMicrofono: null,
+        audioContextMetro: null,
+        analyserNode: null,
+        maxRmsGrabacion: 0,
+        animFrameMetro: null,
+        tiempoInicioGrabacion: 0,
         propuestaActiva: null,
         ultimoAcceso: Date.now(),
         timerInactividad: null,
@@ -123,8 +132,96 @@
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // MONITOREO DE NIVEL DE ENTRADA (AUDIO METER / ANALYSER)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function iniciarMedidorNivelAudio(stream) {
+        try {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContextClass) return;
+
+            if (!state.audioContextMetro || state.audioContextMetro.state === "closed") {
+                state.audioContextMetro = new AudioContextClass();
+            }
+            if (state.audioContextMetro.state === "suspended") {
+                state.audioContextMetro.resume();
+            }
+
+            const source = state.audioContextMetro.createMediaStreamSource(stream);
+            const analyser = state.audioContextMetro.createAnalyser();
+            analyser.fftSize = 512;
+            source.connect(analyser);
+
+            state.analyserNode = analyser;
+            state.maxRmsGrabacion = 0;
+
+            const buffer = new Float32Array(analyser.fftSize);
+            const medir = () => {
+                if (!state.grabando) return;
+                analyser.getFloatTimeDomainData(buffer);
+                let sumSq = 0;
+                for (let i = 0; i < buffer.length; i++) {
+                    sumSq += buffer[i] * buffer[i];
+                }
+                const rms = Math.sqrt(sumSq / buffer.length);
+                if (rms > state.maxRmsGrabacion) {
+                    state.maxRmsGrabacion = rms;
+                }
+                state.animFrameMetro = requestAnimationFrame(medir);
+            };
+            state.animFrameMetro = requestAnimationFrame(medir);
+        } catch (e) {
+            console.warn("[HakuVoz] No se pudo inicializar AnalyserNode:", e);
+        }
+    }
+
+    function detenerMedidorNivelAudio() {
+        if (state.animFrameMetro) {
+            cancelAnimationFrame(state.animFrameMetro);
+            state.animFrameMetro = null;
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // GRABACIÓN DE VOZ (MICROFONO CLIENTE)
     // ─────────────────────────────────────────────────────────────────────────
+
+    async function obtenerStreamMicrofonoValido() {
+        // Verificar si el stream existente sigue vivo y activo
+        if (state.streamMicrofono) {
+            const tracks = state.streamMicrofono.getAudioTracks();
+            const trackValido = tracks.length > 0 && tracks[0].readyState === "live" && tracks[0].enabled;
+            if (trackValido) {
+                return state.streamMicrofono;
+            }
+            // Si el track feneció o está inactivo, detener pistas previas
+            tracks.forEach(t => { try { t.stop(); } catch (_) {} });
+            state.streamMicrofono = null;
+        }
+
+        // Solicitar MediaStream con restricciones estándar (evitando forzar sampleRate: 16000 que
+        // en Windows silencia o entra en conflicto con drivers WASAPI a 48000Hz).
+        const constraints = {
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+            },
+        };
+
+        const nuevoStream = await navigator.mediaDevices.getUserMedia(constraints);
+        const pistas = nuevoStream.getAudioTracks();
+        if (pistas.length > 0) {
+            const settings = pistas[0].getSettings ? pistas[0].getSettings() : {};
+            console.log("[HakuVoz] Micrófono capturado:", pistas[0].label,
+                "| readyState:", pistas[0].readyState,
+                "| muted:", pistas[0].muted,
+                "| sampleRate:", settings.sampleRate,
+                "| channels:", settings.channelCount);
+        }
+        state.streamMicrofono = nuevoStream;
+        return nuevoStream;
+    }
 
     async function iniciarGrabacion() {
         if (state.grabando || state.procesando || state.iniciandoGrabacion) return;
@@ -133,15 +230,7 @@
         state.detencionPendiente = false;
 
         try {
-            if (!state.streamMicrofono) {
-                state.streamMicrofono = await navigator.mediaDevices.getUserMedia({
-                    audio: {
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        sampleRate: 16000,
-                    },
-                });
-            }
+            const stream = await obtenerStreamMicrofonoValido();
 
             // Si el usuario soltó el control antes de que getUserMedia terminara
             if (state.detencionPendiente) {
@@ -162,37 +251,53 @@
 
             state.audioChunks = [];
             state.mediaRecorder = mimeType
-                ? new MediaRecorder(state.streamMicrofono, { mimeType })
-                : new MediaRecorder(state.streamMicrofono);
+                ? new MediaRecorder(stream, { mimeType })
+                : new MediaRecorder(stream);
 
             state.mediaRecorder.ondataavailable = (event) => {
-                if (event.data && event.data.size > 0) {
+                const size = (event.data && event.data.size) || 0;
+                console.log("[HakuVoz] ondataavailable recibido:", size, "bytes");
+                if (size > 0) {
                     state.audioChunks.push(event.data);
                 }
             };
 
-            state.mediaRecorder.onstop = procesarAudioGrabado;
+            state.mediaRecorder.onstop = () => {
+                const duracionSeg = (Date.now() - state.tiempoInicioGrabacion) / 1000;
+                detenerMedidorNivelAudio();
+                console.log("[HakuVoz] mediaRecorder onstop. Chunks:", state.audioChunks.length,
+                    "| Duración:", duracionSeg.toFixed(2), "s",
+                    "| Max RMS entrada:", state.maxRmsGrabacion.toFixed(4));
+                procesarAudioGrabado(duracionSeg);
+            };
 
-            state.mediaRecorder.start(250); // trozos cada 250ms
+            state.tiempoInicioGrabacion = Date.now();
             state.grabando = true;
             state.iniciandoGrabacion = false;
+
+            iniciarMedidorNivelAudio(stream);
+
+            state.mediaRecorder.start(250); // trozos cada 250ms
+            console.log("[HakuVoz] mediaRecorder iniciado con mimeType:", mimeType || "default");
             actualizarEstadoVisual("grabando");
 
             // Si se solicitó detención mientras llamábamos a start()
             if (state.detencionPendiente) {
+                console.log("[HakuVoz] detención pendiente detectada tras start()");
                 state.detencionPendiente = false;
                 detenerGrabacion();
             }
         } catch (error) {
             state.iniciandoGrabacion = false;
             state.detencionPendiente = false;
-            console.error("Error al acceder al micrófono:", error);
+            console.error("[HakuVoz] Error al acceder al micrófono:", error);
             mostrarToast("No se pudo acceder al micrófono. Verifica los permisos del navegador o el certificado HTTPS.", "error");
             actualizarEstadoVisual("reposo");
         }
     }
 
     function detenerGrabacion() {
+        console.log("[HakuVoz] detenerGrabacion llamado. grabando:", state.grabando, "iniciando:", state.iniciandoGrabacion);
         if (state.iniciandoGrabacion) {
             state.detencionPendiente = true;
             return;
@@ -202,10 +307,12 @@
         actualizarEstadoVisual("procesando");
         try {
             if (state.mediaRecorder.state !== "inactive") {
+                // Al llamar a stop(), el estándar W3C MediaRecorder dispara inmediatamente
+                // el último ondataavailable con los datos restantes y a continuación onstop.
                 state.mediaRecorder.stop();
             }
         } catch (e) {
-            console.error("Error al detener grabador:", e);
+            console.error("[HakuVoz] Error al detener grabador:", e);
         }
     }
 
@@ -325,24 +432,44 @@
         }
     }
 
-    async function procesarAudioGrabado() {
+    async function procesarAudioGrabado(duracionSeg = 0) {
+        if (state.procesando) {
+            console.warn("[HakuVoz] procesarAudioGrabado ignorado: ya se encuentra procesando.");
+            return;
+        }
+
+        console.log("[HakuVoz] procesarAudioGrabado iniciado. Chunks:", state.audioChunks.length,
+            "| Duración:", duracionSeg ? duracionSeg.toFixed(2) + "s" : "N/D",
+            "| Max RMS entrada:", state.maxRmsGrabacion.toFixed(4));
+
         if (state.audioChunks.length === 0) {
+            console.warn("[HakuVoz] Descartando: state.audioChunks está vacío.");
+            mostrarToast("Grabación vacía. Mantén pulsada la barra espaciadora mientras hablas.", "info");
             actualizarEstadoVisual("reposo");
             return;
         }
 
         const mime = (state.mediaRecorder && state.mediaRecorder.mimeType) || "audio/webm";
         const audioBlob = new Blob(state.audioChunks, { type: mime });
+        console.log("[HakuVoz] audioBlob generado:", audioBlob.size, "bytes, mime:", audioBlob.type);
         state.audioChunks = [];
 
-        // Filtro: si el audio dura menos de 300ms o es insignificante (< 1000 bytes), descartar (clic accidental)
-        if (audioBlob.size < 1000) {
+        // Filtro de integridad: si el buffer carece de datos útiles (< 100 bytes no contiene ni cabecera ni payload).
+        // En versiones iniciales se usaba if (audioBlob.size < 1000), pero descartaba locuciones válidas breves.
+        if (audioBlob.size < 100) {
+            console.warn("[HakuVoz] Descartando: audioBlob sin datos utilizables (", audioBlob.size, "bytes)");
+            mostrarToast("Grabación sin audio capturado. Intenta hablar nuevamente.", "info");
             actualizarEstadoVisual("reposo");
             return;
         }
 
         state.procesando = true;
         actualizarEstadoVisual("procesando");
+
+        // Alerta preventiva no bloqueante si el hardware/navegador entregó señal cero (micrófono silenciado)
+        if (state.maxRmsGrabacion < 0.005) {
+            console.warn("[HakuVoz] ADVERTENCIA: La amplitud de entrada capturada por el navegador fue prácticamente nula (Max RMS = " + state.maxRmsGrabacion.toFixed(5) + "). Comprueba que el micrófono no esté muteado en Windows o con volumen en cero.");
+        }
 
         try {
             reiniciarTimerInactividad();
@@ -360,10 +487,14 @@
             });
 
             const dataSTT = await respSTT.json();
+            console.log("[HakuVoz] Respuesta STT recibida:", dataSTT);
 
             // 2. Manejo explícito de silencio VAD
             if (dataSTT.status === "silencio" || dataSTT.estado === "SIN_VOZ") {
-                const mensajeAviso = dataSTT.mensaje_pantalla || "No se detectó voz audible en el micrófono.";
+                let mensajeAviso = dataSTT.mensaje_pantalla || "No se detectó voz audible en el micrófono.";
+                if (state.maxRmsGrabacion < 0.005) {
+                    mensajeAviso += " (El micrófono parece no recibir señal física o estar silenciado en Windows).";
+                }
                 mostrarToast(mensajeAviso, "info");
                 actualizarEstadoVisual("reposo");
                 state.procesando = false;
@@ -431,6 +562,18 @@
             if (data.tipo === "propuesta" && data.propuesta) {
                 state.propuestaActiva = data.propuesta;
                 mostrarTarjetaPropuesta(data.propuesta);
+            } else if (data.tipo === "formulario_crear_producto" && data.datos) {
+                state.propuestaActiva = null;
+                mostrarFormularioCrearProducto(data.datos);
+            } else if (data.tipo === "formulario_editar_producto" && data.datos) {
+                state.propuestaActiva = null;
+                mostrarFormularioEditarProducto(data.datos);
+            } else if (data.tipo === "formulario_crear_usuario" && data.datos) {
+                state.propuestaActiva = null;
+                mostrarFormularioCrearUsuario(data.datos);
+            } else if (data.tipo === "formulario_editar_usuario" && data.datos) {
+                state.propuestaActiva = null;
+                mostrarFormularioEditarUsuario(data.datos);
             } else if (data.tipo === "confirmacion_ejecutada" || data.tipo === "propuesta_cancelada") {
                 state.propuestaActiva = null;
                 ocultarTarjetaPropuesta();
@@ -855,6 +998,459 @@
 
         document.getElementById("haku-btn-cancelar")?.addEventListener("click", () => {
             cancelarPropuestaManual(propuesta.id);
+        });
+    }
+
+    function mostrarFormularioCrearProducto(datos) {
+        const contenedor = document.getElementById("haku-propuesta-card");
+        if (!contenedor) return;
+
+        const categorias = datos.categorias || [];
+        const categoriasHtml = categorias.map(c => `<option value="${c.id}">${escapeHtml(c.nombre)} (${escapeHtml(c.prefijo_codigo)})</option>`).join("");
+        const almacenes = datos.almacenes || [];
+        const almacenesHtml = `<option value="">-- Sin stock inicial / Ninguno --</option>` + almacenes.map(a => `<option value="${a.id}">${escapeHtml(a.nombre)}</option>`).join("");
+
+        contenedor.innerHTML = `
+            <div class="propuesta-inner" style="border-color: var(--primary);">
+                <div class="propuesta-header">
+                    <h4>Registro de Nuevo Producto</h4>
+                    <span class="badge badge-info">Formulario</span>
+                </div>
+                <form id="haku-form-crear-producto" class="haku-form-interactivo" style="margin-top: 1rem; display: flex; flex-direction: column; gap: 0.75rem;">
+                    <div>
+                        <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Nombre del producto *</label>
+                        <input type="text" id="haku-crear-nombre" required class="input-text" style="width:100%;" placeholder="Ej. Cable HDMI 2.0 5m">
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Categoría *</label>
+                            <select id="haku-crear-categoria" required class="input-text" style="width:100%; background:var(--bg-main); color:var(--text-main);">
+                                ${categoriasHtml}
+                            </select>
+                        </div>
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Almacén inicial (opcional)</label>
+                            <select id="haku-crear-almacen" class="input-text" style="width:100%; background:var(--bg-main); color:var(--text-main);">
+                                ${almacenesHtml}
+                            </select>
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Stock inicial</label>
+                            <input type="number" id="haku-crear-stock-inicial" value="0" min="0" class="input-text" style="width:100%;">
+                        </div>
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Stock mínimo</label>
+                            <input type="number" id="haku-crear-stock-minimo" value="0" min="0" class="input-text" style="width:100%;">
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Código de barras (opcional)</label>
+                            <input type="text" id="haku-crear-codigo-barras" class="input-text" style="width:100%;" placeholder="EAN / UPC">
+                        </div>
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Empaque (ej. Caja, Paquete)</label>
+                            <input type="text" id="haku-crear-nombre-empaque" class="input-text" style="width:100%;" placeholder="Unidad / Paquete">
+                        </div>
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Uds por empaque</label>
+                        <input type="number" id="haku-crear-uds-empaque" min="1" class="input-text" style="width:100%;" placeholder="Ej. 12">
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Descripción</label>
+                        <textarea id="haku-crear-descripcion" class="input-text" style="width:100%; height:60px;" placeholder="Detalles técnicos o notas"></textarea>
+                    </div>
+                    <div class="propuesta-acciones" style="margin-top: 0.5rem;">
+                        <button type="submit" class="btn btn-confirmar">💾 Guardar producto</button>
+                        <button type="button" class="btn btn-cancelar" id="haku-btn-cancelar-crear">❌ Cancelar</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        contenedor.style.display = "block";
+
+        document.getElementById("haku-btn-cancelar-crear")?.addEventListener("click", () => {
+            ocultarTarjetaPropuesta();
+            agregarMensajeChat("haku", "Operación de registro cancelada por el usuario.");
+        });
+
+        document.getElementById("haku-form-crear-producto")?.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const almVal = document.getElementById("haku-crear-almacen")?.value;
+            const payload = {
+                nombre: document.getElementById("haku-crear-nombre").value.trim(),
+                categoria_id: parseInt(document.getElementById("haku-crear-categoria").value, 10),
+                almacen_id: almVal ? parseInt(almVal, 10) : null,
+                stock_inicial: parseInt(document.getElementById("haku-crear-stock-inicial")?.value, 10) || 0,
+                codigo_barras: document.getElementById("haku-crear-codigo-barras").value.trim() || null,
+                stock_minimo: parseInt(document.getElementById("haku-crear-stock-minimo").value, 10) || 0,
+                nombre_empaque: document.getElementById("haku-crear-nombre-empaque").value.trim(),
+                unidades_por_empaque: document.getElementById("haku-crear-uds-empaque").value ? parseInt(document.getElementById("haku-crear-uds-empaque").value, 10) : null,
+                descripcion: document.getElementById("haku-crear-descripcion").value.trim(),
+            };
+            actualizarEstadoVisual("procesando");
+            try {
+                const resp = await apiFetch(CONFIG.ENDPOINTS.PRODUCTO_CREAR, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                });
+                const resData = await resp.json();
+                if (resData.error) {
+                    mostrarToast(resData.error, "error");
+                    agregarMensajeChat("haku", `⚠️ No se pudo crear: ${resData.error}`);
+                } else {
+                    ocultarTarjetaPropuesta();
+                    mostrarToast("Producto registrado exitosamente.", "info");
+                    agregarMensajeChat("haku", `✅ ${resData.mensaje_pantalla}`);
+                    if (resData.mensaje_verbal) reproducirVozCliente(resData.mensaje_verbal);
+                }
+            } catch (err) {
+                console.error("Error creando producto:", err);
+                mostrarToast("Error de conexión al registrar producto.", "error");
+            } finally {
+                actualizarEstadoVisual("reposo");
+            }
+        });
+    }
+
+    function mostrarFormularioEditarProducto(datos) {
+        const contenedor = document.getElementById("haku-propuesta-card");
+        if (!contenedor) return;
+
+        const prod = datos.producto || {};
+        const categorias = datos.categorias || [];
+        const categoriasHtml = categorias.map(c => `
+            <option value="${c.id}" ${c.id === prod.categoria_id ? "selected" : ""}>
+                ${escapeHtml(c.nombre)} (${escapeHtml(c.prefijo_codigo)})
+            </option>
+        `).join("");
+
+        contenedor.innerHTML = `
+            <div class="propuesta-inner" style="border-color: var(--accent);">
+                <div class="propuesta-header">
+                    <h4>Edición de Producto: ${escapeHtml(prod.nombre)}</h4>
+                    <span class="badge badge-warning"><code>${escapeHtml(prod.codigo_interno)}</code></span>
+                </div>
+                <form id="haku-form-editar-producto" class="haku-form-interactivo" style="margin-top: 1rem; display: flex; flex-direction: column; gap: 0.75rem;">
+                    <input type="hidden" id="haku-editar-id" value="${prod.id}">
+                    <div>
+                        <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Nombre del producto *</label>
+                        <input type="text" id="haku-editar-nombre" required class="input-text" style="width:100%;" value="${escapeHtml(prod.nombre || '')}">
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Categoría *</label>
+                        <select id="haku-editar-categoria" required class="input-text" style="width:100%; background:var(--bg-main); color:var(--text-main);">
+                            ${categoriasHtml}
+                        </select>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Código de barras (opcional)</label>
+                            <input type="text" id="haku-editar-codigo-barras" class="input-text" style="width:100%;" value="${escapeHtml(prod.codigo_barras || '')}">
+                        </div>
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Stock mínimo</label>
+                            <input type="number" id="haku-editar-stock-minimo" min="0" class="input-text" style="width:100%;" value="${prod.stock_minimo !== undefined ? prod.stock_minimo : 0}">
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Empaque (ej. Caja, Paquete)</label>
+                            <input type="text" id="haku-editar-nombre-empaque" class="input-text" style="width:100%;" value="${escapeHtml(prod.nombre_empaque || '')}">
+                        </div>
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Uds por empaque</label>
+                            <input type="number" id="haku-editar-uds-empaque" min="1" class="input-text" style="width:100%;" value="${prod.unidades_por_empaque || ''}">
+                        </div>
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Descripción</label>
+                        <textarea id="haku-editar-descripcion" class="input-text" style="width:100%; height:60px;">${escapeHtml(prod.descripcion || '')}</textarea>
+                    </div>
+                    <div class="propuesta-acciones" style="margin-top: 0.5rem;">
+                        <button type="submit" class="btn btn-confirmar">💾 Guardar cambios</button>
+                        <button type="button" class="btn btn-cancelar" id="haku-btn-cancelar-editar">❌ Cancelar</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        contenedor.style.display = "block";
+
+        document.getElementById("haku-btn-cancelar-editar")?.addEventListener("click", () => {
+            ocultarTarjetaPropuesta();
+            agregarMensajeChat("haku", "Edición cancelada por el usuario.");
+        });
+
+        document.getElementById("haku-form-editar-producto")?.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const payload = {
+                producto_id: parseInt(document.getElementById("haku-editar-id").value, 10),
+                nombre: document.getElementById("haku-editar-nombre").value.trim(),
+                categoria_id: parseInt(document.getElementById("haku-editar-categoria").value, 10),
+                codigo_barras: document.getElementById("haku-editar-codigo-barras").value.trim() || null,
+                stock_minimo: parseInt(document.getElementById("haku-editar-stock-minimo").value, 10) || 0,
+                nombre_empaque: document.getElementById("haku-editar-nombre-empaque").value.trim(),
+                unidades_por_empaque: document.getElementById("haku-editar-uds-empaque").value ? parseInt(document.getElementById("haku-editar-uds-empaque").value, 10) : null,
+                descripcion: document.getElementById("haku-editar-descripcion").value.trim(),
+            };
+            actualizarEstadoVisual("procesando");
+            try {
+                const resp = await apiFetch(CONFIG.ENDPOINTS.PRODUCTO_EDITAR, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                });
+                const resData = await resp.json();
+                if (resData.error) {
+                    mostrarToast(resData.error, "error");
+                    agregarMensajeChat("haku", `⚠️ No se pudo actualizar: ${resData.error}`);
+                } else {
+                    ocultarTarjetaPropuesta();
+                    mostrarToast("Producto actualizado con éxito.", "info");
+                    agregarMensajeChat("haku", `✅ ${resData.mensaje_pantalla}`);
+                    if (resData.mensaje_verbal) reproducirVozCliente(resData.mensaje_verbal);
+                }
+            } catch (err) {
+                console.error("Error actualizando producto:", err);
+                mostrarToast("Error de conexión al actualizar producto.", "error");
+            } finally {
+                actualizarEstadoVisual("reposo");
+            }
+        });
+    }
+
+    function mostrarFormularioCrearUsuario(datos) {
+        const contenedor = document.getElementById("haku-propuesta-card");
+        if (!contenedor) return;
+
+        const roles = datos.roles || [];
+        const rolesHtml = roles.map(r => `<option value="${escapeHtml(r.valor)}">${escapeHtml(r.nombre)}</option>`).join("");
+        const almacenes = datos.almacenes || [];
+        const almacenesHtml = `<option value="">-- Seleccionar almacén --</option>` + almacenes.map(a => `<option value="${a.id}">${escapeHtml(a.nombre)}</option>`).join("");
+
+        contenedor.innerHTML = `
+            <div class="propuesta-inner" style="border-color: var(--primary);">
+                <div class="propuesta-header">
+                    <h4>Registro de Nuevo Usuario</h4>
+                    <span class="badge badge-info">Gestión de Usuarios</span>
+                </div>
+                <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+                    Rol de operador: <strong>${escapeHtml(datos.usuario_actor_rol)}</strong>
+                </div>
+                <form id="haku-form-crear-usuario" class="haku-form-interactivo" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Nombre de usuario (login) *</label>
+                            <input type="text" id="haku-user-crear-username" required class="input-text" style="width:100%;" placeholder="ej. jpolo">
+                        </div>
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Nombre completo *</label>
+                            <input type="text" id="haku-user-crear-nombre" required class="input-text" style="width:100%;" placeholder="ej. Juan Polo">
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Rol asignado *</label>
+                            <select id="haku-user-crear-rol" required class="input-text" style="width:100%; background:var(--bg-main); color:var(--text-main);">
+                                ${rolesHtml}
+                            </select>
+                        </div>
+                        <div id="haku-user-crear-almacen-wrap">
+                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Almacén asignado <span id="haku-user-almacen-req">*</span></label>
+                            <select id="haku-user-crear-almacen" class="input-text" style="width:100%; background:var(--bg-main); color:var(--text-main);">
+                                ${almacenesHtml}
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Contraseña inicial *</label>
+                        <input type="password" id="haku-user-crear-password" required class="input-text" style="width:100%;" placeholder="Mínimo 8 caracteres, alfanumérica">
+                    </div>
+                    <div class="propuesta-acciones" style="margin-top: 0.5rem;">
+                        <button type="submit" class="btn btn-confirmar">✅ Crear usuario</button>
+                        <button type="button" class="btn btn-cancelar" id="haku-btn-cancelar-crear-usuario">❌ Cancelar</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        contenedor.style.display = "block";
+
+        const selRol = document.getElementById("haku-user-crear-rol");
+        const selAlmReq = document.getElementById("haku-user-almacen-req");
+        const selAlm = document.getElementById("haku-user-crear-almacen");
+        if (selRol && selAlmReq && selAlm) {
+            selRol.addEventListener("change", () => {
+                if (selRol.value === "USUARIO") {
+                    selAlmReq.style.display = "inline";
+                    selAlm.required = true;
+                } else {
+                    selAlmReq.style.display = "none";
+                    selAlm.required = false;
+                }
+            });
+            selRol.dispatchEvent(new Event("change"));
+        }
+
+        document.getElementById("haku-btn-cancelar-crear-usuario")?.addEventListener("click", () => {
+            ocultarTarjetaPropuesta();
+            agregarMensajeChat("haku", "Creación de usuario cancelada.");
+        });
+
+        document.getElementById("haku-form-crear-usuario")?.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const payload = {
+                username: document.getElementById("haku-user-crear-username").value.trim(),
+                nombre_completo: document.getElementById("haku-user-crear-nombre").value.trim(),
+                rol: document.getElementById("haku-user-crear-rol").value.trim(),
+                almacen_asignado_id: document.getElementById("haku-user-crear-almacen").value ? parseInt(document.getElementById("haku-user-crear-almacen").value, 10) : null,
+                password: document.getElementById("haku-user-crear-password").value,
+            };
+
+            actualizarEstadoVisual("procesando");
+            try {
+                const resp = await apiFetch(CONFIG.ENDPOINTS.USUARIO_CREAR, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                });
+                const resData = await resp.json();
+                if (resData.error) {
+                    mostrarToast(resData.error, "error");
+                    let detalleTexto = "";
+                    if (resData.detalles) {
+                        detalleTexto = " " + Object.values(resData.detalles).join("; ");
+                    }
+                    agregarMensajeChat("haku", `⚠️ No se pudo crear el usuario: ${resData.error}${detalleTexto}`);
+                } else {
+                    ocultarTarjetaPropuesta();
+                    mostrarToast("Usuario creado con éxito.", "info");
+                    agregarMensajeChat("haku", `✅ ${resData.mensaje_pantalla}`);
+                    if (resData.mensaje_verbal) reproducirVozCliente(resData.mensaje_verbal);
+                }
+            } catch (err) {
+                console.error("Error al crear usuario:", err);
+                mostrarToast("Error de conexión al crear usuario.", "error");
+            } finally {
+                actualizarEstadoVisual("reposo");
+            }
+        });
+    }
+
+    function mostrarFormularioEditarUsuario(datos) {
+        const contenedor = document.getElementById("haku-propuesta-card");
+        if (!contenedor) return;
+
+        const u = datos.usuario || {};
+        const roles = datos.roles || [];
+        const rolesHtml = roles.map(r => `<option value="${escapeHtml(r.valor)}" ${u.rol === r.valor ? "selected" : ""}>${escapeHtml(r.nombre)}</option>`).join("");
+        const almacenes = datos.almacenes || [];
+        const almacenesHtml = `<option value="">-- Sin almacén específico --</option>` + almacenes.map(a => `<option value="${a.id}" ${u.almacen_id === a.id ? "selected" : ""}>${escapeHtml(a.nombre)}</option>`).join("");
+
+        contenedor.innerHTML = `
+            <div class="propuesta-inner" style="border-color: var(--primary);">
+                <div class="propuesta-header">
+                    <h4>Editar Usuario: ${escapeHtml(u.username || "")}</h4>
+                    <span class="badge badge-warning">Edición de Cuenta</span>
+                </div>
+                <form id="haku-form-editar-usuario" class="haku-form-interactivo" style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
+                    <input type="hidden" id="haku-user-editar-id" value="${u.id || ''}">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Nombre de usuario</label>
+                            <input type="text" class="input-text" style="width:100%; opacity:0.8;" value="${escapeHtml(u.username || '')}" disabled>
+                        </div>
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Nombre completo *</label>
+                            <input type="text" id="haku-user-editar-nombre" required class="input-text" style="width:100%;" value="${escapeHtml(u.nombre_completo || '')}">
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Rol asignado *</label>
+                            <select id="haku-user-editar-rol" required class="input-text" style="width:100%; background:var(--bg-main); color:var(--text-main);">
+                                ${rolesHtml}
+                            </select>
+                        </div>
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Almacén asignado</label>
+                            <select id="haku-user-editar-almacen" class="input-text" style="width:100%; background:var(--bg-main); color:var(--text-main);">
+                                ${almacenesHtml}
+                            </select>
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Estado de la cuenta</label>
+                            <select id="haku-user-editar-activo" class="input-text" style="width:100%; background:var(--bg-main); color:var(--text-main);">
+                                <option value="true" ${u.is_active ? "selected" : ""}>Activa</option>
+                                <option value="false" ${!u.is_active ? "selected" : ""}>Inactiva / Bloqueada</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Nueva contraseña (opcional)</label>
+                            <input type="password" id="haku-user-editar-password" class="input-text" style="width:100%;" placeholder="Dejar en blanco para mantener">
+                        </div>
+                    </div>
+                    <div class="propuesta-acciones" style="margin-top: 0.5rem;">
+                        <button type="submit" class="btn btn-confirmar">💾 Guardar cambios</button>
+                        <button type="button" class="btn btn-cancelar" id="haku-btn-cancelar-editar-usuario">❌ Cancelar</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        contenedor.style.display = "block";
+
+        document.getElementById("haku-btn-cancelar-editar-usuario")?.addEventListener("click", () => {
+            ocultarTarjetaPropuesta();
+            agregarMensajeChat("haku", "Modificación cancelada por el usuario.");
+        });
+
+        document.getElementById("haku-form-editar-usuario")?.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const payload = {
+                id: parseInt(document.getElementById("haku-user-editar-id").value, 10),
+                nombre_completo: document.getElementById("haku-user-editar-nombre").value.trim(),
+                rol: document.getElementById("haku-user-editar-rol").value.trim(),
+                almacen_asignado_id: document.getElementById("haku-user-editar-almacen").value ? parseInt(document.getElementById("haku-user-editar-almacen").value, 10) : null,
+                is_active: document.getElementById("haku-user-editar-activo").value === "true",
+            };
+
+            const pwd = document.getElementById("haku-user-editar-password").value;
+            if (pwd) {
+                payload.password = pwd;
+            }
+
+            actualizarEstadoVisual("procesando");
+            try {
+                const resp = await apiFetch(CONFIG.ENDPOINTS.USUARIO_EDITAR, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                });
+                const resData = await resp.json();
+                if (resData.error) {
+                    mostrarToast(resData.error, "error");
+                    let detalleTexto = "";
+                    if (resData.detalles) {
+                        detalleTexto = " " + Object.values(resData.detalles).join("; ");
+                    }
+                    agregarMensajeChat("haku", `⚠️ No se pudo modificar el usuario: ${resData.error}${detalleTexto}`);
+                } else {
+                    ocultarTarjetaPropuesta();
+                    mostrarToast("Usuario actualizado con éxito.", "info");
+                    agregarMensajeChat("haku", `✅ ${resData.mensaje_pantalla}`);
+                    if (resData.mensaje_verbal) reproducirVozCliente(resData.mensaje_verbal);
+                }
+            } catch (err) {
+                console.error("Error al editar usuario:", err);
+                mostrarToast("Error de conexión al modificar usuario.", "error");
+            } finally {
+                actualizarEstadoVisual("reposo");
+            }
         });
     }
 

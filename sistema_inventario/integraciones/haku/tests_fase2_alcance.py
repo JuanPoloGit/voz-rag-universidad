@@ -535,3 +535,258 @@ class TestGrupo12FlujosTransaccionalesConfirmacion(BaseFase2TestCase):
         )
         self.assertEqual(resp_cancel["tipo"], "accion_cancelar")
         self.assertIn("Operación cancelada", resp_cancel["mensaje_pantalla"])
+
+
+class TestAuditoriaFuncionalHaku(BaseFase2TestCase):
+    """Pruebas obligatorias de la auditoría funcional de HAKU Inventario."""
+
+    def test_01_prestamo_conserva_contexto_y_solicita_destinatario(self):
+        """1. Un préstamo que conserva el contexto mientras solicita el nombre del destinatario."""
+        # Usuario solicita préstamo del producto sin indicar destinatario
+        resp1 = procesar_comando_inventario(
+            self.admin_user,
+            "Quiero realizar un préstamo de 1 unidad de Cable HDMI 2m"
+        )
+        self.assertEqual(resp1["tipo"], "aclaracion")
+        self.assertIn("¿A quién se le prestará 1 unidad", resp1["mensaje_pantalla"])
+
+        # Estado operativo debe haber guardado operacion_pendiente
+        ctx = HakuOperationalContext.obtener_o_crear(self.admin_user.id, "test_session_1")
+        ctx.operacion_pendiente = {
+            "tipo": "PRESTAMO",
+            "esperando": "destinatario",
+            "producto_id": self.prod_hdmi.id,
+            "cantidad": 1,
+        }
+        HakuOperationalContext.guardar(ctx)
+
+        # 3. Respuesta posterior con el nombre completa la operación pendiente
+        resp2 = procesar_comando_inventario(
+            self.admin_user,
+            "Ayancarlos",
+            estado_operativo=ctx
+        )
+        self.assertEqual(resp2["tipo"], "propuesta")
+        self.assertIn("Yancarlos", resp2["propuesta"]["destinatario"])
+        self.assertEqual(resp2["propuesta"]["producto_id"], self.prod_hdmi.id)
+
+    def test_02_prestamo_respuesta_con_prefijo_conversacional(self):
+        """3. Respuesta con 'La persona se llama Yang Cablos'."""
+        ctx = HakuOperationalContext.obtener_o_crear(self.admin_user.id, "test_session_2")
+        ctx.operacion_pendiente = {
+            "tipo": "PRESTAMO",
+            "esperando": "destinatario",
+            "producto_id": self.prod_hdmi.id,
+            "cantidad": 1,
+        }
+        HakuOperationalContext.guardar(ctx)
+
+        resp = procesar_comando_inventario(
+            self.admin_user,
+            "La persona se llama Yang Cablos",
+            estado_operativo=ctx
+        )
+        self.assertEqual(resp["tipo"], "propuesta")
+        self.assertEqual(resp["propuesta"]["destinatario"], "Yang Cablos")
+
+    def test_04_productos_agotados_separados_de_bajo_stock(self):
+        """4. Productos agotados separados de productos con bajo stock."""
+        # Ponchadora tiene stock_disponible = 0 (Agotado)
+        # UTP tiene stock_disponible = 2, stock_minimo = 5 (Bajo stock)
+        resp_bajo = procesar_comando_inventario(self.admin_user, "¿Qué productos están por debajo del mínimo?")
+        self.assertEqual(resp_bajo["tipo"], "consulta")
+        # Debe incluir Cable UTP y NO Ponchadora
+        self.assertIn("Cable UTP Bobina 100m", resp_bajo["mensaje_pantalla"])
+        self.assertNotIn("Ponchadora RJ45", resp_bajo["mensaje_pantalla"])
+
+        resp_agotados = procesar_comando_inventario(self.admin_user, "¿Cuáles productos están agotados?")
+        self.assertEqual(resp_agotados["tipo"], "consulta")
+        self.assertIn("Ponchadora RJ45", resp_agotados["mensaje_pantalla"])
+        self.assertNotIn("Cable UTP Bobina 100m", resp_agotados["mensaje_pantalla"])
+
+    def test_05_stock_disponible_afectado_por_prestamos(self):
+        """5. Stock disponible afectado por préstamos, sin doble descuento."""
+        existencia = Existencia.objects.get(producto=self.prod_hdmi, almacen=self.almacen_norte)
+        # disponible es 20, en_prestamo es 3, total es 23
+        self.assertEqual(existencia.stock_disponible, 20)
+        self.assertEqual(existencia.stock_en_prestamo, 3)
+        self.assertEqual(existencia.stock_total, 23)
+
+    def test_06_creacion_producto_por_voz_abre_formulario(self):
+        """6. Registro de un producto mediante voz abre formulario interactivo."""
+        resp = procesar_comando_inventario(self.admin_user, "Quiero registrar un nuevo producto")
+        self.assertEqual(resp["tipo"], "formulario_crear_producto")
+        self.assertIn("categorias", resp["datos"])
+        self.assertIn("almacenes", resp["datos"])
+
+    def test_07_inhabilitacion_producto_por_voz(self):
+        """7. Inhabilitación de un producto mediante voz."""
+        resp = procesar_comando_inventario(
+            self.admin_user,
+            "Quiero inhabilitar el producto CAB-0001"
+        )
+        self.assertEqual(resp["tipo"], "propuesta")
+        self.assertEqual(resp["propuesta"]["tipo_operacion"], "INHABILITAR_PRODUCTO")
+        self.assertEqual(resp["propuesta"]["producto_id"], self.prod_hdmi.id)
+
+    def test_08_consulta_movimientos_filtrada_por_producto(self):
+        """8. Una consulta de movimientos filtrada por producto."""
+        resp = procesar_comando_inventario(
+            self.admin_user,
+            "¿Qué movimientos han habido del cable HDMI?"
+        )
+        self.assertEqual(resp["tipo"], "consulta")
+        self.assertIn("Cable HDMI", resp["mensaje_pantalla"])
+
+    def test_09_consulta_sin_movimientos_respuesta_breve(self):
+        """9. Una consulta sin movimientos que genera una respuesta breve."""
+        from inventario.models import Prestamo
+        Prestamo.objects.all().delete()
+        Movimiento.objects.all().delete()
+        resp = procesar_comando_inventario(
+            self.admin_user,
+            "cómo va la vaina hoy"
+        )
+        self.assertEqual(resp["tipo"], "consulta")
+        self.assertIn("Hoy no se registraron movimientos de inventario", resp["mensaje_pantalla"])
+
+    def test_10_pregunta_fuera_de_alcance_sol(self):
+        """10. Una consulta sobre el sol que recibe una respuesta de fuera de alcance."""
+        resp = procesar_comando_inventario(
+            self.admin_user,
+            "¿Qué es el sol?"
+        )
+        self.assertEqual(resp["tipo"], "fuera_de_dominio")
+        self.assertIn("Solo gestiono operaciones y consultas del inventario", resp["mensaje_pantalla"])
+        self.assertIn("Audacia", resp["mensaje_verbal"])
+
+    def test_11_coincidencias_multiples_solicitan_seleccion(self):
+        """11. Una consulta de producto con varias coincidencias que solicita una selección."""
+        # Creamos un segundo Cable HDMI para forzar ambigüedad
+        Producto.objects.create(
+            codigo_interno="CAB-0003",
+            nombre="Cable HDMI 2.0 2m",
+            categoria=self.cat_cables,
+            stock_minimo=3,
+            activo=True,
+        )
+        resp = procesar_comando_inventario(
+            self.admin_user,
+            "consulta Cable HDMI"
+        )
+        self.assertEqual(resp["tipo"], "aclaracion")
+        self.assertIn("varias coincidencias", resp["mensaje_pantalla"])
+
+    def test_12_codigo_exacto_no_se_confunde(self):
+        """12. Una consulta con un código exacto de producto que no se confunde con otro artículo."""
+        resp = procesar_comando_inventario(
+            self.admin_user,
+            "Stock de CAB-0002"
+        )
+        self.assertEqual(resp["tipo"], "consulta")
+        self.assertIn("CAB-0002", resp["mensaje_pantalla"])
+        self.assertEqual(resp["datos"]["codigo"], "CAB-0002")
+
+    def test_13_confirmacion_inhabilitacion_ejecuta_y_archiva_producto(self):
+        """13. La confirmación de una propuesta de inhabilitar producto ejecuta el archivado real."""
+        from integraciones.haku.services import ejecutar_confirmacion_propuesta
+        propuesta = {
+            "id": "prop-inhab-123",
+            "tipo_operacion": "INHABILITAR_PRODUCTO",
+            "producto_id": self.prod_hdmi.id,
+            "producto_nombre": self.prod_hdmi.nombre,
+            "producto_codigo": self.prod_hdmi.codigo_interno,
+            "expira_en": time.time() + 300,
+        }
+        res = ejecutar_confirmacion_propuesta(self.admin_user, propuesta)
+        self.assertTrue(res["exito"])
+        self.prod_hdmi.refresh_from_db()
+        self.assertFalse(self.prod_hdmi.activo)
+        self.assertTrue(self.prod_hdmi.archivado)
+
+    def test_17_inhabilitacion_idempotencia_y_producto_inactivo(self):
+        """17. Inhabilitación no se duplica por confirmación repetida y rechaza productos ya inactivos."""
+        from integraciones.haku.services import ejecutar_confirmacion_propuesta
+        from django.core.exceptions import ValidationError
+        propuesta = {
+            "id": "prop-inhab-idem",
+            "tipo_operacion": "INHABILITAR_PRODUCTO",
+            "producto_id": self.prod_hdmi.id,
+            "producto_nombre": self.prod_hdmi.nombre,
+            "producto_codigo": self.prod_hdmi.codigo_interno,
+            "expira_en": time.time() + 300,
+        }
+        res1 = ejecutar_confirmacion_propuesta(self.admin_user, propuesta, idempotency_key="key-inhab-1")
+        self.assertTrue(res1["exito"])
+        self.assertFalse(res1.get("idempotente", False))
+
+        # Reintento con la misma clave de idempotencia
+        res2 = ejecutar_confirmacion_propuesta(self.admin_user, propuesta, idempotency_key="key-inhab-1")
+        self.assertTrue(res2["exito"])
+        self.assertTrue(res2.get("idempotente", False))
+
+        # Intento de nueva propuesta sobre producto ya inactivo/archivado
+        propuesta_nueva = {
+            "id": "prop-inhab-nueva",
+            "tipo_operacion": "INHABILITAR_PRODUCTO",
+            "producto_id": self.prod_hdmi.id,
+            "producto_nombre": self.prod_hdmi.nombre,
+            "producto_codigo": self.prod_hdmi.codigo_interno,
+            "expira_en": time.time() + 300,
+        }
+        with self.assertRaises(ValidationError):
+            ejecutar_confirmacion_propuesta(self.admin_user, propuesta_nueva, idempotency_key="key-inhab-2")
+
+    def test_18_preguntas_fuera_dominio_variadas_y_terminos_tecnicos(self):
+        """18. Preguntas científicas, históricas y generales nuevas vs consultas legítimas."""
+        # 1. Preguntas fuera de dominio nuevas
+        preguntas_fuera = [
+            "¿A qué temperatura hierve el agua?",
+            "¿Cuáles son los planetas del sistema solar?",
+            "Dime una receta para hacer pizza",
+            "¿Quién ganó el mundial de fútbol?",
+            "¿Cuánto cuesta un vuelo a París?",
+        ]
+        for p in preguntas_fuera:
+            resp = procesar_comando_inventario(self.admin_user, p)
+            self.assertEqual(resp["tipo"], "fuera_de_dominio", f"Debería ser fuera de dominio: '{p}' -> {resp['tipo']}")
+
+        # 2. Consultas válidas expresadas informalmente
+        resp_coloquial = procesar_comando_inventario(self.admin_user, "¿Qué tenemos disponible para trabajar hoy?")
+        self.assertEqual(resp_coloquial["tipo"], "consulta")
+
+        # 3. Preguntas con palabras de inventario pero fuera de dominio ("chiste de cables")
+        resp_chiste = procesar_comando_inventario(self.admin_user, "Cuéntame un chiste de cables")
+        self.assertEqual(resp_chiste["tipo"], "fuera_de_dominio")
+
+    def test_19_solicitud_ambigua_pide_aclaracion(self):
+        """19. Solicitud ambigua o incompleta pide aclaración en vez de inventar datos."""
+        # Petición incompleta: "Dónde está" sin indicar cuál producto ni tener foco
+        resp = procesar_comando_inventario(self.admin_user, "¿Dónde está?")
+        self.assertEqual(resp["tipo"], "aclaracion")
+        self.assertIn("ubicación", resp["mensaje_pantalla"])
+
+    def test_20_prestamo_conservacion_destinatario_y_cancelacion(self):
+        """20. Flujo de préstamo: conserva destinatario a través de turnos y limpia contexto al cancelar."""
+        ctx = HakuOperationalContext.obtener_o_crear(self.admin_user.id, "ses_test_20")
+        
+        # Turno 1: Indicar intención y producto
+        resp1 = procesar_comando_inventario(self.admin_user, "Prestar 2 cables HDMI", estado_operativo=ctx)
+        self.assertEqual(resp1["tipo"], "aclaracion")
+        self.assertIn("¿A quién se le prestarán", resp1["mensaje_pantalla"])
+
+        # Turno 2: Indicar destinatario
+        resp2 = procesar_comando_inventario(self.admin_user, "La persona se llama Carlos Martínez", estado_operativo=ctx)
+        self.assertEqual(resp2["tipo"], "propuesta")
+        self.assertEqual(resp2["propuesta"]["destinatario"], "Carlos Martínez")
+        self.assertEqual(resp2["propuesta"]["cantidad"], 2)
+
+        # Turno 3: Cancelar préstamo
+        resp3 = procesar_comando_inventario(self.admin_user, "Cancelar eso", estado_operativo=ctx)
+        self.assertEqual(resp3["tipo"], "accion_cancelar")
+        
+        # Verificar que el contexto pendiente se limpió
+        ctx_actualizado = HakuOperationalContext.obtener_o_crear(self.admin_user.id, "ses_test_20")
+        self.assertIsNone(ctx_actualizado.propuesta_activa)
+
+

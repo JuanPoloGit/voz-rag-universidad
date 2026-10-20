@@ -181,6 +181,9 @@ class InterpretadorCosteno:
         (r"\bla\s+ponchadoras\b", "las ponchadoras"),
 
         # Términos técnicos y de inventario con variaciones fonéticas o transcripciones Whisper
+        (r"\b(?:cableud|cable\s+ud)\s+(?:de\s+)?(?:pecaceis|peca\s+ceis|peca\s+6)\b", "cable UTP Cat 6"),
+        (r"\b(?:cableud|cable\s+ud)\b", "cable UTP"),
+        (r"\b(?:pecaceis|peca\s+ceis)\b", "Cat 6"),
         (r"\b(?:barro|barros|bajo)\s+(?:stop|estoco|estock|estoc|top)\b", "bajo stock"),
         (r"\b(?:bajo\s+stop)\b", "bajo stock"),
         (r"\b(?:estoco|estock|estoc)\b", "stock"),

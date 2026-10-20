@@ -214,6 +214,38 @@ class TranscribirVozEndpointTestCase(TestCase):
         )
         self.assertEqual(resp.status_code, 400)
 
+    def test_grabacion_breve_valida_con_datos_audio(self):
+        """Una grabación breve válida (~0.5s - 1.0s) con datos de audio no se rechaza por brevedad."""
+        from unittest.mock import patch
+        tono = _sintetizar_tono_voz(duracion_seg=0.6, amplitud=0.35)
+        wav_bytes = _crear_wav_bytes(tono)
+
+        with patch("integraciones.haku.audio.transcriber.HakuTranscriber.transcribir", return_value="hola buenos dias"):
+            resp = self.client.post(
+                "/api/haku/voz/transcribir/",
+                data=wav_bytes,
+                content_type="audio/wav",
+            )
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertEqual(data.get("estado"), "VOZ_DETECTADA")
+            self.assertEqual(data.get("status"), "ok")
+            self.assertEqual(data.get("texto"), "hola buenos dias")
+            self.assertIn("metricas", data)
+            self.assertAlmostEqual(data["metricas"]["duracion_seg"], 0.6, delta=0.1)
+
+    def test_grabacion_invalida_sin_audio_utilizable(self):
+        """Buffer casi vacío (<100 bytes corruptos) es rechazado por el pipeline."""
+        resp = self.client.post(
+            "/api/haku/voz/transcribir/",
+            data=b"corrupt_tiny_data",
+            content_type="audio/webm",
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data.get("estado"), "SIN_VOZ")
+        self.assertEqual(data.get("status"), "silencio")
+
     def test_concurrencia_multiples_clientes_audio(self):
         """Simulación de 5 clientes enviando audio simultáneamente no satura ni bloquea el servicio."""
         tono = _sintetizar_tono_voz(duracion_seg=0.5, amplitud=0.3)
@@ -399,4 +431,39 @@ class HakuTTSSintetizadorTestCase(TestCase):
                 IntencionTipo.CONSULTAR_RESUMEN_INVENTARIO,
                 f"La frase '{frase}' debe mapear a CONSULTAR_RESUMEN_INVENTARIO, se obtuvo {res.tipo}"
             )
+
+    def test_decodificacion_y_pipeline_webm_opus_silencio_real(self):
+        """Verifica que un payload WebM Opus con ceros (silencio) se decodifique a muestras exactas y sea rechazado como AUDIO_SILENCIOSO."""
+        import subprocess
+        from integraciones.haku.audio.decoder import AudioDecoder
+        from integraciones.haku.audio.analyzer import AudioAnalyzer
+        from integraciones.haku.audio.pipeline import AudioPipeline
+
+        # 1.86s de silencio simulando captura de micrófono apagado o silenciado en navegador
+        sr = 48000
+        duration = 1.86
+        silence = np.zeros(int(sr * duration), dtype=np.float32)
+
+        p = subprocess.Popen(
+            ["ffmpeg", "-y", "-f", "f32le", "-ar", str(sr), "-ac", "1", "-i", "pipe:0", "-c:a", "libopus", "-b:a", "32k", "-f", "webm", "pipe:1"],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        webm_silence, _ = p.communicate(silence.tobytes())
+
+        # Decodificación
+        samples, dur = AudioDecoder.decodificar_a_16k_mono(webm_silence)
+        self.assertAlmostEqual(dur, 1.86, delta=0.1)
+        self.assertEqual(len(samples), int(16000 * 1.86))
+        self.assertAlmostEqual(float(np.max(np.abs(samples))), 0.0, places=4)
+
+        # Métrica de audio
+        metricas = AudioAnalyzer.analizar(samples)
+        self.assertLessEqual(metricas.rms_dbfs, -100.0)
+
+        # Pipeline rechaza con AUDIO_SILENCIOSO
+        pipeline = AudioPipeline.desde_settings()
+        res = pipeline.procesar(webm_silence)
+        self.assertEqual(res.estado, "SIN_VOZ")
+        self.assertEqual(res.motivo, "AUDIO_SILENCIOSO")
+
 

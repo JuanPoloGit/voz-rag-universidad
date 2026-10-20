@@ -561,7 +561,18 @@ def procesar_comando_inventario(
         es_pregunta_entradas = bool(re.search(r"\bentradas?\b", texto_lower) and not re.search(r"\bsalidas?\b", texto_lower))
         es_pregunta_salidas = bool(re.search(r"\bsalidas?\b", texto_lower) and not re.search(r"\bentradas?\b", texto_lower))
 
-        if es_pregunta_entradas:
+        if total_mov == 0:
+            pantalla = (
+                f"Hoy no se registraron movimientos de inventario.\n"
+                f"Durante la jornada se registraron movimientos de inventario correspondientes a las operaciones realizadas hoy (0 movimientos en total):\n"
+                f"- **0** entradas\n"
+                f"- **0** salidas\n"
+                f"- **0** préstamos\n"
+                f"- **0** devoluciones.\n\n"
+                f"¿Quieres revisar algún producto específico?"
+            )
+            verbal = "Hoy no se registraron movimientos de inventario."
+        elif es_pregunta_entradas:
             pantalla = (
                 f"Hoy se han registrado **{entradas}** entradas (de un total de {total_mov} movimientos hoy):\n"
                 f"- **{entradas}** entradas\n"
@@ -1095,18 +1106,22 @@ def procesar_comando_inventario(
             )
             HakuOperationalContext.guardar(estado_operativo)
 
-        pantalla = (
-            f"### Movimientos de {producto.nombre} (`{producto.codigo_interno}`)\n"
-            f"El {producto.nombre} tuvo **{total_mov}** movimientos:\n"
-            f"- **{entradas}** entradas\n"
-            f"- **{salidas}** salidas\n"
-            f"- **{prestamos}** préstamos\n"
-            f"- **{devoluciones}** devoluciones"
-        )
-        verbal = (
-            f"El {producto.nombre} tuvo {total_mov} movimientos: "
-            f"{entradas} entradas, {salidas} salidas y {prestamos} préstamos."
-        )
+        if total_mov == 0:
+            pantalla = f"El producto {producto.nombre} (`{producto.codigo_interno}`) no registra movimientos de inventario en el periodo consultado."
+            verbal = f"El producto {producto.nombre} no registra movimientos de inventario en el periodo consultado."
+        else:
+            pantalla = (
+                f"### Movimientos de {producto.nombre} (`{producto.codigo_interno}`)\n"
+                f"El {producto.nombre} tuvo **{total_mov}** movimientos:\n"
+                f"- **{entradas}** entradas\n"
+                f"- **{salidas}** salidas\n"
+                f"- **{prestamos}** préstamos\n"
+                f"- **{devoluciones}** devoluciones"
+            )
+            verbal = (
+                f"El {producto.nombre} tuvo {total_mov} movimientos: "
+                f"{entradas} entradas, {salidas} salidas y {prestamos} préstamos."
+            )
         return {
             "tipo": "consulta",
             "mensaje_pantalla": pantalla,
@@ -1838,8 +1853,20 @@ def procesar_comando_inventario(
             return {"tipo": "aclaracion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
 
         if not destinatario:
-            msg = f"¿A quién se le van a prestar las {cantidad} unidades de {producto.nombre}?"
-            return {"tipo": "aclaracion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
+            if cantidad == 1:
+                msg = f"¿A quién se le prestará 1 unidad de {producto.nombre}?"
+            else:
+                msg = f"¿A quién se le prestarán las {cantidad} unidades de {producto.nombre}?"
+            
+            if estado_operativo:
+                estado_operativo.operacion_pendiente = {
+                    "tipo": "PRESTAMO",
+                    "esperando": "destinatario",
+                    "producto_id": producto.id,
+                    "cantidad": cantidad,
+                }
+                HakuOperationalContext.guardar(estado_operativo)
+            return {"tipo": "aclaracion", "mensaje_pantalla": msg, "mensaje_verbal": normalizar_para_tts(msg)}
 
         almacen = usuario.almacen_asignado if (usuario.es_usuario_normal and usuario.almacen_asignado) else producto.categoria.almacen_principal
         if not usuario.tiene_acceso_almacen(almacen):
@@ -1872,6 +1899,7 @@ def procesar_comando_inventario(
 
         if estado_operativo:
             estado_operativo.propuesta_activa = propuesta
+            estado_operativo.operacion_pendiente = None
             estado_operativo.registrar_accion(
                 "PROPUESTA_PRESTAMO",
                 producto=producto.nombre,
@@ -1883,7 +1911,11 @@ def procesar_comando_inventario(
         if sesion is not None:
             sesion["haku_propuesta_activa"] = propuesta
 
+        unidad_txt = "1 unidad" if cantidad == 1 else f"{cantidad} unidades"
         verbal = (
+            f"Vas a prestar {unidad_txt} de {producto.nombre} a {destinatario}. "
+            f"Quedará registrada como préstamo pendiente. ¿Deseas confirmar?"
+            if cantidad == 1 else
             f"Vas a prestar {cantidad} unidades de {producto.nombre} a {destinatario}. "
             f"Quedarán registradas como préstamo pendiente. ¿Deseas confirmar?"
         )
@@ -1904,6 +1936,172 @@ def procesar_comando_inventario(
             "mensaje_verbal": normalizar_para_tts(verbal),
         }
 
+    # 10. Creación de producto con formulario interactivo
+    # 9-bis. Creación de usuario con formulario interactivo
+    if intencion.tipo == IntencionTipo.CREAR_USUARIO:
+        if usuario.es_usuario_normal:
+            raise PermissionDenied("No tienes permisos para administrar usuarios. Contacta al Administrador.")
+
+        almacenes_qs = Almacen.objects.filter(activo=True, eliminado=False).values("id", "nombre")
+        # Filtrar roles permitidos: Administrador solo puede crear USUARIO; Superusuario puede crear ADMINISTRADOR, USUARIO y SUPERUSUARIO
+        roles_disponibles = [{"codigo": "USUARIO", "valor": "USUARIO", "nombre": "Usuario (Operador de almacén)"}]
+        if usuario.es_superusuario_inventario:
+            roles_disponibles.insert(0, {"codigo": "ADMINISTRADOR", "valor": "ADMINISTRADOR", "nombre": "Administrador"})
+            roles_disponibles.insert(0, {"codigo": "SUPERUSUARIO", "valor": "SUPERUSUARIO", "nombre": "Superusuario (Control total)"})
+
+        return {
+            "tipo": "formulario_crear_usuario",
+            "mensaje_pantalla": "### Registro de Nuevo Usuario\nCompleta los datos requeridos en el formulario a continuación.",
+            "mensaje_verbal": normalizar_para_tts("Abriendo formulario para registrar un nuevo usuario."),
+            "datos": {
+                "roles": roles_disponibles,
+                "almacenes": list(almacenes_qs),
+                "es_superusuario": usuario.es_superusuario_inventario,
+                "usuario_actor_rol": usuario.rol,
+            },
+        }
+
+    # 9-ter. Edición de usuario con formulario interactivo
+    if intencion.tipo == IntencionTipo.EDITAR_USUARIO:
+        if usuario.es_usuario_normal:
+            raise PermissionDenied("No tienes permisos para modificar usuarios. Contacta al Administrador.")
+
+        almacenes_qs = Almacen.objects.filter(activo=True, eliminado=False).values("id", "nombre")
+        roles_disponibles = [{"codigo": "USUARIO", "valor": "USUARIO", "nombre": "Usuario (Operador de almacén)"}]
+        if usuario.es_superusuario_inventario:
+            roles_disponibles.insert(0, {"codigo": "ADMINISTRADOR", "valor": "ADMINISTRADOR", "nombre": "Administrador"})
+            roles_disponibles.insert(0, {"codigo": "SUPERUSUARIO", "valor": "SUPERUSUARIO", "nombre": "Superusuario (Control total)"})
+
+        # Lista de usuarios que el solicitante puede editar
+        from cuentas.models import UsuarioAudacIA
+        qs_usuarios = UsuarioAudacIA.objects.filter(eliminado_logicamente=False).order_by("username")
+        if not usuario.es_superusuario_inventario:
+            # Administrador no puede editar Superusuarios ni elevar privilegios
+            qs_usuarios = qs_usuarios.exclude(rol=UsuarioAudacIA.Rol.SUPERUSUARIO)
+
+        usuarios_lista = [
+            {
+                "id": u.id,
+                "username": u.username,
+                "nombre_completo": u.nombre_completo,
+                "rol": u.rol,
+                "almacen_asignado_id": u.almacen_asignado_id,
+                "is_active": u.is_active,
+            }
+            for u in qs_usuarios
+        ]
+
+        return {
+            "tipo": "formulario_editar_usuario",
+            "mensaje_pantalla": "### Gestión de Usuario\nSelecciona y modifica el usuario en el formulario a continuación.",
+            "mensaje_verbal": normalizar_para_tts("Abriendo formulario para editar usuarios."),
+            "datos": {
+                "usuarios": usuarios_lista,
+                "roles": roles_disponibles,
+                "almacenes": list(almacenes_qs),
+                "es_superusuario": usuario.es_superusuario_inventario,
+            },
+        }
+
+    if intencion.tipo == IntencionTipo.CREAR_PRODUCTO:
+        if usuario.es_usuario_normal:
+            raise PermissionDenied("No tienes permisos para registrar nuevos productos. Contacta al Administrador.")
+
+        categorias_qs = Categoria.objects.filter(activo=True, eliminado=False).values("id", "nombre")
+        almacenes_qs = Almacen.objects.filter(activo=True, eliminado=False).values("id", "nombre")
+
+        msg = "Abriendo el formulario de registro de nuevo producto en pantalla. Por favor completa los datos obligatorios para proceder."
+        return {
+            "tipo": "formulario_crear_producto",
+            "mensaje_pantalla": "### Registro de Nuevo Producto\nPor favor completa los datos requeridos en el formulario a continuación.",
+            "mensaje_verbal": normalizar_para_tts("Abriendo formulario para registrar un nuevo producto."),
+            "datos": {
+                "categorias": list(categorias_qs),
+                "almacenes": list(almacenes_qs),
+            },
+        }
+
+    # 11. Edición de producto con formulario interactivo
+    if intencion.tipo == IntencionTipo.EDITAR_PRODUCTO:
+        if usuario.es_usuario_normal:
+            raise PermissionDenied("No tienes permisos para modificar productos. Contacta al Administrador.")
+
+        producto = intencion.producto
+        if not producto:
+            msg = "¿Cuál producto deseas editar o modificar?"
+            return {"tipo": "aclaracion", "mensaje_pantalla": msg, "mensaje_verbal": normalizar_para_tts(msg)}
+
+        categorias_qs = Categoria.objects.filter(activo=True, eliminado=False).values("id", "nombre")
+        msg = f"Abriendo el formulario de edición para {producto.nombre} ({producto.codigo_interno})."
+        return {
+            "tipo": "formulario_editar_producto",
+            "mensaje_pantalla": f"### Edición de Producto: {producto.nombre} (`{producto.codigo_interno}`)\nModifica los campos permitidos y confirma los cambios.",
+            "mensaje_verbal": normalizar_para_tts(f"Abriendo formulario para editar {producto.nombre}."),
+            "datos": {
+                "producto": {
+                    "id": producto.id,
+                    "codigo_interno": producto.codigo_interno,
+                    "nombre": producto.nombre,
+                    "codigo_barras": producto.codigo_barras or "",
+                    "categoria_id": producto.categoria_id,
+                    "categoria_nombre": producto.categoria.nombre,
+                    "stock_minimo": producto.stock_minimo,
+                    "nombre_empaque": producto.nombre_empaque or "",
+                    "unidades_por_empaque": producto.unidades_por_empaque or "",
+                    "descripcion": producto.descripcion or "",
+                    "activo": producto.activo,
+                },
+                "categorias": list(categorias_qs),
+            },
+        }
+
+    # 12. Inhabilitación de producto
+    if intencion.tipo == IntencionTipo.INHABILITAR_PRODUCTO:
+        if usuario.es_usuario_normal:
+            raise PermissionDenied("Solo los Administradores o Superusuarios pueden inhabilitar o archivar productos.")
+
+        producto = intencion.producto
+        if not producto:
+            msg = "¿Cuál producto deseas inhabilitar o archivar del inventario?"
+            return {"tipo": "aclaracion", "mensaje_pantalla": msg, "mensaje_verbal": normalizar_para_tts(msg)}
+
+        propuesta = {
+            "id": str(uuid.uuid4()),
+            "tipo_operacion": "INHABILITAR_PRODUCTO",
+            "producto_id": producto.id,
+            "producto_nombre": producto.nombre,
+            "producto_codigo": producto.codigo_interno,
+            "creado_en": time.time(),
+            "expira_en": time.time() + HAKU_PROPUESTA_TIMEOUT_SEGUNDOS,
+        }
+
+        if estado_operativo:
+            estado_operativo.propuesta_activa = propuesta
+            estado_operativo.registrar_accion(
+                "PROPUESTA_INHABILITAR",
+                producto=producto.nombre,
+                producto_id=producto.id,
+                codigo=producto.codigo_interno,
+            )
+            HakuOperationalContext.guardar(estado_operativo)
+
+        verbal = f"¿Deseas confirmar la inhabilitación del producto {producto.nombre} con código {producto.codigo_interno}?"
+        pantalla = (
+            f"### Propuesta pendiente de confirmación\n"
+            f"- **Operación:** Inhabilitar / archivar producto\n"
+            f"- **Producto:** {producto.nombre} (`{producto.codigo_interno}`)\n"
+            f"- **Estado actual:** {'Activo' if producto.activo else 'Inactivo'}\n\n"
+            f"*Esta acción ocultará el producto de las listas operativas sin borrar su historial.*"
+        )
+        return {
+            "tipo": "propuesta",
+            "requiere_confirmacion": True,
+            "propuesta": propuesta,
+            "mensaje_pantalla": pantalla,
+            "mensaje_verbal": normalizar_para_tts(verbal),
+        }
+
+
     # ─────────────────────────────────────────────────────────────────────────
     # D. LOCUCIÓN FUERA DE DOMINIO (NO_INTENCION_INVENTARIO / CONVERSACION_GENERAL)
     # Haku Inventario NO es un chatbot general: solo gestiona almacén e inventario.
@@ -1921,7 +2119,10 @@ def procesar_comando_inventario(
         "Solo gestiono operaciones y consultas del inventario "
         "(stock, ubicaciones, movimientos, préstamos y métricas del almacén)."
     )
-    msg_verbal = "Solo gestiono operaciones y consultas del inventario."
+    msg_verbal = (
+        "Esa consulta está fuera de mis funciones. Soy HAKU, el asistente de inventario de AudacIA. "
+        "Puedo ayudarte a consultar productos, existencias o movimientos de inventario."
+    )
     return {
         "tipo": "fuera_de_dominio",
         "mensaje_pantalla": msg_fuera_dominio,
@@ -1963,8 +2164,8 @@ def ejecutar_confirmacion_propuesta(
         raise ValidationError("La propuesta ha caducado por superar el límite de 30 minutos. Por favor genera una nueva solicitud.")
 
     tipo_op = propuesta.get("tipo_operacion")
-    cantidad = int(propuesta.get("cantidad", 0))
-    if cantidad <= 0:
+    cantidad = int(propuesta.get("cantidad", 0)) if propuesta.get("cantidad") is not None else 0
+    if tipo_op != "INHABILITAR_PRODUCTO" and cantidad <= 0:
         raise ValidationError("La cantidad debe ser mayor a cero.")
 
     # Generar o validar idempotency_key
@@ -1972,15 +2173,31 @@ def ejecutar_confirmacion_propuesta(
         idempotency_key = f"haku-{propuesta['id']}-{uuid.uuid4().hex[:8]}"
 
     # Verificar si ya fue procesada con esta clave de idempotencia
-    existente = Movimiento.objects.filter(clave_idempotencia=idempotency_key).first()
-    if existente:
-        return {
-            "exito": True,
-            "idempotente": True,
-            "movimiento_id": str(existente.id),
-            "mensaje_pantalla": f"Operación previamente confirmada (Movimiento #{existente.id}).",
-            "mensaje_verbal": "Esta operación ya había sido confirmada previamente.",
-        }
+    if tipo_op == "INHABILITAR_PRODUCTO":
+        aud_existente = Auditoria.objects.filter(
+            accion="INHABILITAR_PRODUCTO",
+            tipo_entidad="Producto",
+            id_entidad=str(propuesta["producto_id"]),
+            motivo__contains=idempotency_key,
+        ).first()
+        if aud_existente:
+            return {
+                "exito": True,
+                "idempotente": True,
+                "movimiento_id": None,
+                "mensaje_pantalla": f"La inhabilitación de este producto ya fue confirmada y ejecutada previamente.",
+                "mensaje_verbal": "Esta operación ya había sido confirmada previamente.",
+            }
+    else:
+        existente = Movimiento.objects.filter(clave_idempotencia=idempotency_key).first()
+        if existente:
+            return {
+                "exito": True,
+                "idempotente": True,
+                "movimiento_id": str(existente.id),
+                "mensaje_pantalla": f"Operación previamente confirmada (Movimiento #{existente.id}).",
+                "mensaje_verbal": "Esta operación ya había sido confirmada previamente.",
+            }
 
     try:
         with transaction.atomic():
@@ -1992,6 +2209,38 @@ def ejecutar_confirmacion_propuesta(
                 )
             except Producto.DoesNotExist:
                 raise ValidationError("El producto asociado a la propuesta ya no existe o fue dado de baja.")
+
+            # Si es inhabilitación de producto, no requiere almacén de origen ni existencias
+            if tipo_op == "INHABILITAR_PRODUCTO":
+                if usuario.es_usuario_normal:
+                    raise PermissionDenied("Solo los Administradores o Superusuarios pueden inhabilitar o archivar productos.")
+                producto = Producto.objects.select_for_update().get(id=propuesta["producto_id"])
+                producto.activo = False
+                producto.archivado = True
+                producto.save(update_fields=["activo", "archivado"])
+
+                Auditoria.objects.create(
+                    usuario=usuario,
+                    accion="INHABILITAR_PRODUCTO",
+                    tipo_entidad="Producto",
+                    id_entidad=str(producto.id),
+                    valores_anteriores={"activo": True, "archivado": False},
+                    valores_nuevos={"activo": False, "archivado": True},
+                    motivo=f"Producto inhabilitado/archivado vía Haku [idempotency:{idempotency_key}] desde IP {ip_origen}",
+                    resultado="OK",
+                    via_haku=True,
+                )
+                from .cache import HakuCacheManager
+                HakuCacheManager.invalidar_catalogo()
+                HakuCacheManager.invalidar_stock(producto.id)
+                HakuCacheManager.invalidar_ubicaciones(producto.id)
+                msg_ok = f"El producto {producto.nombre} ({producto.codigo_interno}) ha sido inhabilitado y archivado correctamente."
+                return {
+                    "exito": True,
+                    "movimiento_id": None,
+                    "mensaje_pantalla": msg_ok,
+                    "mensaje_verbal": normalizar_para_tts(f"El producto {producto.nombre} fue inhabilitado correctamente."),
+                }
 
             # Bloquear almacén con select_for_update() y revalidar acceso
             try:
