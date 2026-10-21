@@ -2,11 +2,12 @@
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
+from django.utils import timezone
 from django.views.generic import CreateView, DetailView, ListView, UpdateView, View
 
 from cuentas.models import UsuarioAudacIA
@@ -35,6 +36,7 @@ from inventario.models import (
     Movimiento,
     Prestamo,
     Producto,
+    ProductoUbicacion,
     TipoCategoria,
     Ubicacion,
 )
@@ -65,10 +67,16 @@ from inventario.servicios.datos_maestros import (
     crear_producto,
     crear_tipo_categoria,
     crear_ubicacion,
+    eliminar_almacen,
+    eliminar_categoria,
     eliminar_tipo_categoria,
+    eliminar_ubicacion,
     fusionar_productos,
     reactivar_almacen,
+    reactivar_categoria,
+    reactivar_ubicacion,
     sincronizar_tipos_categoria,
+    toggle_activo_producto,
 )
 from inventario.servicios.stock import (
     buscar_por_codigo_barras,
@@ -106,12 +114,50 @@ class AlmacenListaView(LoginRequiredMixin, ListView):
         mostrar_inactivos = self.request.GET.get("mostrar_inactivos") == "1"
         if not mostrar_inactivos:
             qs = qs.filter(activo=True)
+        q = self.request.GET.get("q", "").strip()
+        if q:
+            qs = qs.filter(Q(nombre__icontains=q) | Q(descripcion__icontains=q))
         return qs.order_by("nombre")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["mostrar_inactivos"] = self.request.GET.get("mostrar_inactivos") == "1"
+        context["q"] = self.request.GET.get("q", "")
+        context["almacen_form"] = AlmacenForm()
         return context
+
+
+class AlmacenReactivarView(LoginRequiredMixin, RolRequeridoMixin, View):
+    """Reactivación de almacén inhabilitado (solo Administradores y Superusuario)."""
+
+    roles_permitidos = (UsuarioAudacIA.Rol.ADMINISTRADOR, UsuarioAudacIA.Rol.SUPERUSUARIO)
+
+    def post(self, request, pk):
+        almacen = get_object_or_404(Almacen, pk=pk, eliminado=False)
+        try:
+            reactivar_almacen(almacen=almacen, usuario=request.user, ip_origen=_obtener_ip(request))
+            messages.success(request, f"Almacén '{almacen.nombre}' habilitado nuevamente.")
+        except Exception as exc:
+            messages.error(request, str(exc))
+        return redirect(request.POST.get("next") or "inventario:almacen-lista")
+
+
+class AlmacenEliminarView(LoginRequiredMixin, RolRequeridoMixin, View):
+    """Eliminación lógica de un almacén sin stock (o redirección a traslado estructural)."""
+
+    roles_permitidos = (UsuarioAudacIA.Rol.ADMINISTRADOR, UsuarioAudacIA.Rol.SUPERUSUARIO)
+
+    def post(self, request, pk):
+        almacen = get_object_or_404(Almacen, pk=pk, eliminado=False)
+        try:
+            eliminar_almacen(almacen=almacen, usuario=request.user, ip_origen=_obtener_ip(request))
+            messages.success(request, f"Almacén '{almacen.nombre}' eliminado exitosamente.")
+        except NecesitaTraslado as exc:
+            messages.warning(request, str(exc))
+            return redirect("inventario:almacen-desactivar", pk=almacen.pk)
+        except Exception as exc:
+            messages.error(request, str(exc))
+        return redirect(request.POST.get("next") or "inventario:almacen-lista")
 
 
 class AlmacenCrearView(LoginRequiredMixin, RolRequeridoMixin, CreateView):
@@ -175,7 +221,10 @@ class UbicacionListaView(LoginRequiredMixin, ListView):
     context_object_name = "ubicaciones"
 
     def get_queryset(self):
-        qs = Ubicacion.objects.filter(eliminado=False, activo=True)
+        qs = Ubicacion.objects.filter(eliminado=False)
+        mostrar_inactivos = self.request.GET.get("mostrar_inactivos") == "1"
+        if not mostrar_inactivos:
+            qs = qs.filter(activo=True)
         user = self.request.user
         if getattr(user, "es_usuario_normal", False):
             qs = qs.filter(almacen=user.almacen_asignado)
@@ -183,6 +232,9 @@ class UbicacionListaView(LoginRequiredMixin, ListView):
             almacen_id = self.request.GET.get("almacen_id")
             if almacen_id:
                 qs = qs.filter(almacen_id=almacen_id)
+        q = self.request.GET.get("q", "").strip()
+        if q:
+            qs = qs.filter(Q(nombre__icontains=q) | Q(descripcion__icontains=q) | Q(almacen__nombre__icontains=q))
         return qs.select_related("almacen").order_by("almacen__nombre", "nombre")
 
     def get_context_data(self, **kwargs):
@@ -190,7 +242,40 @@ class UbicacionListaView(LoginRequiredMixin, ListView):
         if not getattr(self.request.user, "es_usuario_normal", False):
             context["almacenes"] = Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
             context["almacen_seleccionado"] = self.request.GET.get("almacen_id")
+        context["mostrar_inactivos"] = self.request.GET.get("mostrar_inactivos") == "1"
+        context["q"] = self.request.GET.get("q", "")
+        context["ubicacion_form"] = UbicacionForm(usuario=self.request.user)
         return context
+
+
+class UbicacionReactivarView(LoginRequiredMixin, View):
+    """Reactivación de ubicación física inhabilitada."""
+
+    def post(self, request, pk):
+        ubicacion = get_object_or_404(Ubicacion, pk=pk, eliminado=False)
+        try:
+            reactivar_ubicacion(ubicacion=ubicacion, usuario=request.user, ip_origen=_obtener_ip(request))
+            messages.success(request, f"Ubicación '{ubicacion.nombre}' habilitada nuevamente.")
+        except Exception as exc:
+            messages.error(request, str(exc))
+        return redirect(request.POST.get("next") or "inventario:ubicacion-lista")
+
+
+class UbicacionEliminarView(LoginRequiredMixin, View):
+    """Eliminación lógica de ubicación física (o redirección a traslado si tiene productos)."""
+
+    def post(self, request, pk):
+        ubicacion = get_object_or_404(Ubicacion, pk=pk, eliminado=False)
+        try:
+            eliminar_ubicacion(ubicacion=ubicacion, usuario=request.user, ip_origen=_obtener_ip(request))
+            messages.success(request, f"Ubicación '{ubicacion.nombre}' eliminada exitosamente.")
+        except NecesitaTraslado as exc:
+            messages.warning(request, str(exc))
+            if getattr(request.user, "es_administrador", False):
+                return redirect("inventario:ubicacion-desactivar", pk=ubicacion.pk)
+        except Exception as exc:
+            messages.error(request, str(exc))
+        return redirect(request.POST.get("next") or "inventario:ubicacion-lista")
 
 
 class UbicacionCrearView(LoginRequiredMixin, CreateView):
@@ -276,7 +361,10 @@ class CategoriaListaView(LoginRequiredMixin, ListView):
     context_object_name = "categorias"
 
     def get_queryset(self):
-        qs = Categoria.objects.filter(eliminado=False, activo=True)
+        qs = Categoria.objects.filter(eliminado=False)
+        mostrar_inactivos = self.request.GET.get("mostrar_inactivos") == "1"
+        if not mostrar_inactivos:
+            qs = qs.filter(activo=True)
         user = self.request.user
         if getattr(user, "es_usuario_normal", False):
             qs = qs.filter(almacen_principal=user.almacen_asignado)
@@ -284,6 +372,9 @@ class CategoriaListaView(LoginRequiredMixin, ListView):
             almacen_id = self.request.GET.get("almacen_id")
             if almacen_id:
                 qs = qs.filter(almacen_principal_id=almacen_id)
+        q = self.request.GET.get("q", "").strip()
+        if q:
+            qs = qs.filter(Q(nombre__icontains=q) | Q(prefijo_codigo__icontains=q) | Q(tipos__nombre__icontains=q)).distinct()
         return (
             qs.select_related("almacen_principal")
             .prefetch_related("tipos", "productos")
@@ -295,8 +386,41 @@ class CategoriaListaView(LoginRequiredMixin, ListView):
         if not getattr(self.request.user, "es_usuario_normal", False):
             context["almacenes"] = Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
             context["almacen_seleccionado"] = self.request.GET.get("almacen_id")
+        context["mostrar_inactivos"] = self.request.GET.get("mostrar_inactivos") == "1"
+        context["q"] = self.request.GET.get("q", "")
         context["tipo_form"] = TipoCategoriaForm(usuario=self.request.user)
+        context["categoria_form"] = CategoriaForm(usuario=self.request.user)
         return context
+
+
+class CategoriaReactivarView(LoginRequiredMixin, View):
+    """Reactivación de categoría previamente inhabilitada."""
+
+    def post(self, request, pk):
+        categoria = get_object_or_404(Categoria, pk=pk, eliminado=False)
+        try:
+            reactivar_categoria(categoria=categoria, usuario=request.user, ip_origen=_obtener_ip(request))
+            messages.success(request, f"Categoría '{categoria.nombre}' habilitada nuevamente.")
+        except Exception as exc:
+            messages.error(request, str(exc))
+        return redirect(request.POST.get("next") or "inventario:categoria-lista")
+
+
+class CategoriaEliminarView(LoginRequiredMixin, View):
+    """Eliminación lógica de una categoría sin productos activos."""
+
+    def post(self, request, pk):
+        categoria = get_object_or_404(Categoria, pk=pk, eliminado=False)
+        try:
+            eliminar_categoria(categoria=categoria, usuario=request.user, ip_origen=_obtener_ip(request))
+            messages.success(request, f"Categoría '{categoria.nombre}' eliminada exitosamente.")
+        except NecesitaTraslado as exc:
+            messages.warning(request, str(exc))
+            if getattr(request.user, "es_administrador", False):
+                return redirect("inventario:categoria-trasladar", pk=categoria.pk)
+        except Exception as exc:
+            messages.error(request, str(exc))
+        return redirect(request.POST.get("next") or "inventario:categoria-lista")
 
 
 class CategoriaCrearView(LoginRequiredMixin, CreateView):
@@ -518,6 +642,12 @@ class ProductoListaView(LoginRequiredMixin, ListView):
         if tipo_id:
             qs = qs.filter(tipo_id=tipo_id)
 
+        estado_activo = self.request.GET.get("estado_activo", "")
+        if estado_activo == "activos":
+            qs = qs.filter(activo=True)
+        elif estado_activo == "inhabilitados":
+            qs = qs.filter(activo=False)
+
         return (
             qs.select_related("categoria", "categoria__almacen_principal", "tipo")
             .prefetch_related("existencias", "ubicaciones")
@@ -528,16 +658,24 @@ class ProductoListaView(LoginRequiredMixin, ListView):
         context = super().get_context_data(**kwargs)
         user = self.request.user
         if getattr(user, "es_usuario_normal", False):
-            context["categorias"] = Categoria.objects.filter(
+            cats_qs = Categoria.objects.filter(
                 activo=True, eliminado=False, almacen_principal=user.almacen_asignado
             ).order_by("nombre")
         else:
-            context["categorias"] = Categoria.objects.filter(
+            cats_qs = Categoria.objects.filter(
                 activo=True, eliminado=False
             ).order_by("nombre")
+        context["categorias"] = cats_qs
         context["q"] = self.request.GET.get("q", "")
-        context["categoria_seleccionada"] = self.request.GET.get("categoria_id")
-        context["tipo_seleccionado"] = self.request.GET.get("tipo_id")
+        context["categoria_seleccionada"] = self.request.GET.get("categoria_id", "")
+        context["tipo_seleccionado"] = self.request.GET.get("tipo_id", "")
+        context["estado_activo"] = self.request.GET.get("estado_activo", "")
+        context["producto_form"] = ProductoForm(usuario=user)
+        tipos = TipoCategoria.objects.filter(activo=True, categoria__in=cats_qs).order_by("nombre")
+        context["tipos_por_categoria"] = [
+            {"id": t.id, "nombre": t.nombre, "categoria_id": t.categoria_id}
+            for t in tipos
+        ]
         return context
 
 
@@ -642,6 +780,9 @@ class ProductoEditarView(LoginRequiredMixin, UpdateView):
                 ip_origen=_obtener_ip(self.request),
             )
             messages.success(self.request, f"Producto '{producto.codigo_interno} — {producto.nombre}' actualizado exitosamente.")
+            next_url = self.request.POST.get("next")
+            if next_url:
+                return redirect(next_url)
             return redirect(self.success_url)
         except Exception as exc:
             form.add_error(None, str(exc))
@@ -673,15 +814,42 @@ class ProductoDetalleView(LoginRequiredMixin, DetailView):
                 Q(almacen_origen=almacen) | Q(almacen_destino=almacen)
             ).select_related("usuario", "almacen_origen", "almacen_destino").order_by("-fecha_hora")[:25]
             context["ubicaciones"] = prod.ubicaciones.filter(almacen=almacen).select_related("almacen")
+            cats_qs = Categoria.objects.filter(activo=True, eliminado=False, almacen_principal=almacen)
         else:
             context["existencias"] = prod.existencias.select_related("almacen").all()
             context["movimientos"] = prod.movimientos.select_related("usuario", "almacen_origen", "almacen_destino").order_by("-fecha_hora")[:25]
             context["ubicaciones"] = prod.ubicaciones.select_related("almacen").all()
+            cats_qs = Categoria.objects.filter(activo=True, eliminado=False)
+
+        context["producto_form"] = ProductoForm(instance=prod, usuario=user)
+        tipos = TipoCategoria.objects.filter(activo=True, categoria__in=cats_qs).order_by("nombre")
+        context["tipos_por_categoria"] = [
+            {"id": t.id, "nombre": t.nombre, "categoria_id": t.categoria_id}
+            for t in tipos
+        ]
         return context
 
 
+class ProductoToggleActivoView(LoginRequiredMixin, View):
+    """Inhabilita o reactiva un producto sin eliminarlo del catálogo."""
+
+    def post(self, request, pk):
+        producto = get_object_or_404(Producto, pk=pk, archivado=False)
+        try:
+            actualizado = toggle_activo_producto(
+                producto=producto,
+                usuario=request.user,
+                ip_origen=_obtener_ip(request),
+            )
+            estado_str = "habilitado" if actualizado.activo else "inhabilitado"
+            messages.success(request, f"Producto '{actualizado.codigo_interno} — {actualizado.nombre}' {estado_str} exitosamente.")
+        except Exception as exc:
+            messages.error(request, str(exc))
+        return redirect(request.POST.get("next") or "inventario:producto-lista")
+
+
 class ProductoArchivarView(LoginRequiredMixin, RolRequeridoMixin, View):
-    """Archivado lógico de un producto (solo Administrador o Superusuario)."""
+    """Eliminación / Archivado lógico de un producto (solo Administrador o Superusuario)."""
 
     roles_permitidos = (UsuarioAudacIA.Rol.ADMINISTRADOR, UsuarioAudacIA.Rol.SUPERUSUARIO)
 
@@ -693,7 +861,7 @@ class ProductoArchivarView(LoginRequiredMixin, RolRequeridoMixin, View):
                 usuario=request.user,
                 ip_origen=_obtener_ip(request),
             )
-            messages.success(request, f"Producto '{producto.codigo_interno} — {producto.nombre}' archivado exitosamente.")
+            messages.success(request, f"Producto '{producto.codigo_interno} — {producto.nombre}' eliminado del catálogo activo.")
         except Exception as exc:
             messages.error(request, str(exc))
         return redirect("inventario:producto-lista")
@@ -905,15 +1073,110 @@ class AlertasStockListaView(LoginRequiredMixin, View):
 
     def get(self, request):
         alertas = obtener_alertas_stock(usuario=request.user)
+        leidas = set(request.session.get("alertas_leidas", []))
+        filtro_estado = request.GET.get("estado", "todas")
+        q = request.GET.get("q", "").strip().lower()
+
+        notificaciones = []
+        criticas_filtradas = []
+        bajas_filtradas = []
+        no_leidas_count = 0
+
+        for ex in alertas["criticas"]:
+            clave = f"{ex.producto_id}:{ex.almacen_id}:{ex.stock_disponible}"
+            ex.notificacion_key = clave
+            ex.es_leida = clave in leidas
+            ex.tipo_alerta = "CRITICA"
+            if not ex.es_leida:
+                no_leidas_count += 1
+            if q and q not in ex.producto.nombre.lower() and q not in ex.producto.codigo_interno.lower() and q not in ex.almacen.nombre.lower():
+                continue
+            if filtro_estado == "pendientes" and ex.es_leida:
+                continue
+            criticas_filtradas.append(ex)
+            notificaciones.append(ex)
+
+        for ex in alertas["bajas"]:
+            clave = f"{ex.producto_id}:{ex.almacen_id}:{ex.stock_disponible}"
+            ex.notificacion_key = clave
+            ex.es_leida = clave in leidas
+            ex.tipo_alerta = "BAJA"
+            if not ex.es_leida:
+                no_leidas_count += 1
+            if q and q not in ex.producto.nombre.lower() and q not in ex.producto.codigo_interno.lower() and q not in ex.almacen.nombre.lower():
+                continue
+            if filtro_estado == "pendientes" and ex.es_leida:
+                continue
+            bajas_filtradas.append(ex)
+            notificaciones.append(ex)
+
+        alertas["total_no_leidas"] = no_leidas_count
+
         return render(
             request,
             "inventario/alertas_lista.html",
             {
                 "alertas": alertas,
-                "criticas": alertas["criticas"],
-                "bajas": alertas["bajas"],
+                "criticas": criticas_filtradas,
+                "bajas": bajas_filtradas,
+                "notificaciones": notificaciones,
+                "filtro_estado": filtro_estado,
+                "q": request.GET.get("q", ""),
+                "entrada_form": EntradaForm(usuario=request.user),
             },
         )
+
+
+class AlertaMarcarLeidaView(LoginRequiredMixin, View):
+    """Marca una o todas las notificaciones de stock como leídas y opcionalmente redirige al producto."""
+
+    def post(self, request):
+        leidas = set(request.session.get("alertas_leidas", []))
+        accion = request.POST.get("accion", "una")
+        key = request.POST.get("key", "")
+        redirect_to = request.POST.get("redirect_to", "")
+
+        if accion == "todas":
+            alertas = obtener_alertas_stock(usuario=request.user)
+            for ex in list(alertas["criticas"]) + list(alertas["bajas"]):
+                leidas.add(f"{ex.producto_id}:{ex.almacen_id}:{ex.stock_disponible}")
+            messages.success(request, "Todas las notificaciones actuales fueron marcadas como leídas.")
+        elif accion == "no_leida" and key:
+            leidas.discard(key)
+        elif accion == "limpiar":
+            leidas.clear()
+        elif key:
+            leidas.add(key)
+
+        request.session["alertas_leidas"] = list(leidas)
+        request.session.modified = True
+
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            alertas = obtener_alertas_stock(usuario=request.user)
+            pendientes = 0
+            for ex in list(alertas["criticas"]) + list(alertas["bajas"]):
+                if f"{ex.producto_id}:{ex.almacen_id}:{ex.stock_disponible}" not in leidas:
+                    pendientes += 1
+            return JsonResponse({"ok": True, "total_no_leidas": pendientes})
+
+        if redirect_to:
+            return redirect(redirect_to)
+        return redirect(request.POST.get("next") or "inventario:alertas-lista")
+
+
+class ActualizarNombrePerfilView(LoginRequiredMixin, View):
+    """Permite al usuario autenticado actualizar su nombre completo desde Mi Perfil."""
+
+    def post(self, request):
+        nuevo_nombre = (request.POST.get("nombre_completo") or "").strip()
+        if not nuevo_nombre:
+            messages.error(request, "El nombre completo no puede estar vacío.")
+        else:
+            user = request.user
+            user.nombre_completo = nuevo_nombre
+            user.save(update_fields=["nombre_completo"])
+            messages.success(request, "Tu nombre de perfil ha sido actualizado exitosamente.")
+        return redirect(request.POST.get("next") or "cuentas:cambiar_password")
 
 
 class AlertasStockJSONView(LoginRequiredMixin, View):
@@ -952,7 +1215,7 @@ class AlertasStockJSONView(LoginRequiredMixin, View):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class MovimientoListaView(LoginRequiredMixin, ListView):
-    """Historial y trazabilidad de movimientos de inventario."""
+    """Centro unificado de Movimientos: Entradas, Salidas, Préstamos (con Antigüedad), Traslados y Conteos Físicos."""
 
     model = Movimiento
     template_name = "inventario/movimiento_lista.html"
@@ -961,7 +1224,15 @@ class MovimientoListaView(LoginRequiredMixin, ListView):
 
     def get_queryset(self):
         qs = Movimiento.objects.select_related(
-            "producto", "almacen_origen", "almacen_destino", "ubicacion_origen", "ubicacion_destino", "usuario"
+            "producto",
+            "almacen_origen",
+            "almacen_destino",
+            "ubicacion_origen",
+            "ubicacion_destino",
+            "usuario",
+            "prestamo",
+            "movimiento_original",
+            "movimiento_original__prestamo",
         ).order_by("-fecha_hora")
 
         user = self.request.user
@@ -971,9 +1242,37 @@ class MovimientoListaView(LoginRequiredMixin, ListView):
             else:
                 return qs.none()
 
-        tipo = self.request.GET.get("tipo")
+        vista = self.request.GET.get("vista", "").upper()
+        tipo = self.request.GET.get("tipo", "")
+
+        if not vista or vista == "TODOS":
+            if tipo in ("SALIDA", "PRESTAMO", "DEVOLUCION", "BAJA_PRESTAMO"):
+                vista = "SALIDA"
+            elif tipo in ("TRASLADO_INTERNO", "TRASLADO_ENTRE"):
+                vista = "TRASLADO"
+            else:
+                vista = "ENTRADA"
+
         if tipo:
             qs = qs.filter(tipo=tipo)
+        elif vista == "ENTRADA":
+            qs = qs.filter(tipo=Movimiento.Tipo.ENTRADA)
+        elif vista == "SALIDA":
+            qs = qs.filter(
+                tipo__in=[
+                    Movimiento.Tipo.SALIDA,
+                    Movimiento.Tipo.PRESTAMO,
+                    Movimiento.Tipo.DEVOLUCION,
+                    Movimiento.Tipo.BAJA_PRESTAMO,
+                ]
+            )
+        elif vista == "TRASLADO":
+            qs = qs.filter(
+                tipo__in=[
+                    Movimiento.Tipo.TRASLADO_INTERNO,
+                    Movimiento.Tipo.TRASLADO_ENTRE,
+                ]
+            )
 
         q = self.request.GET.get("q", "").strip()
         if q:
@@ -987,14 +1286,134 @@ class MovimientoListaView(LoginRequiredMixin, ListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        user = self.request.user
+        vista = self.request.GET.get("vista", "").upper()
+        tipo = self.request.GET.get("tipo", "")
+        q = self.request.GET.get("q", "").strip()
+
+        if not vista or vista == "TODOS":
+            if tipo in ("SALIDA", "PRESTAMO", "DEVOLUCION", "BAJA_PRESTAMO"):
+                vista = "SALIDA"
+            elif tipo in ("TRASLADO_INTERNO", "TRASLADO_ENTRE"):
+                vista = "TRASLADO"
+            else:
+                vista = "ENTRADA"
+
+        # Enriquecer cada movimiento con Fecha de Entrega y Fecha de Devolución cuando aplique
+        for mov in context["movimientos"]:
+            mov.fecha_entrega_info = None
+            mov.fecha_devolucion_info = None
+            mov.prestamo_vinculado = None
+
+            if mov.tipo == Movimiento.Tipo.PRESTAMO:
+                mov.fecha_entrega_info = mov.fecha_hora
+                try:
+                    p = mov.prestamo
+                    mov.prestamo_vinculado = p
+                    mov.fecha_devolucion_info = p.fecha_cierre
+                except Exception:
+                    pass
+            elif mov.tipo in (Movimiento.Tipo.DEVOLUCION, Movimiento.Tipo.BAJA_PRESTAMO):
+                mov.fecha_devolucion_info = mov.fecha_hora
+                if mov.movimiento_original_id:
+                    mov.fecha_entrega_info = mov.movimiento_original.fecha_hora
+                    try:
+                        mov.prestamo_vinculado = mov.movimiento_original.prestamo
+                    except Exception:
+                        pass
+            elif mov.tipo == Movimiento.Tipo.SALIDA:
+                mov.fecha_entrega_info = mov.fecha_hora
+
+        # Subsección Préstamos (dentro de Salidas / Movimientos) con Antigüedad de Préstamos
+        prestamos_qs = Prestamo.objects.select_related(
+            "producto", "almacen", "usuario", "ubicacion_origen", "movimiento"
+        ).prefetch_related("devoluciones").order_by("-fecha_creacion")
+        if getattr(user, "es_usuario_normal", False):
+            if user.almacen_asignado:
+                prestamos_qs = prestamos_qs.filter(almacen=user.almacen_asignado)
+            else:
+                prestamos_qs = prestamos_qs.none()
+
+        estado_prestamo = self.request.GET.get("estado_prestamo", "")
+        if estado_prestamo:
+            prestamos_qs = prestamos_qs.filter(estado=estado_prestamo)
+        if q:
+            prestamos_qs = prestamos_qs.filter(
+                Q(producto__nombre__icontains=q)
+                | Q(producto__codigo_interno__icontains=q)
+                | Q(destinatario__icontains=q)
+                | Q(movimiento__motivo__icontains=q)
+            )
+
+        ahora = timezone.now()
+        prestamos_lista = list(prestamos_qs[:100])
+        for p in prestamos_lista:
+            fecha_fin = p.fecha_cierre or ahora
+            p.dias_transcurridos = max(0, (fecha_fin - p.fecha_creacion).days)
+            devs = list(p.devoluciones.all())
+            p.ultima_devolucion_fecha = p.fecha_cierre or (devs[0].fecha if devs else None)
+            p.motivo_prestamo = p.movimiento.motivo if p.movimiento_id else ""
+
+        # Subsección Conteos Físicos (integrada en Movimientos)
+        conteos_qs = ConteoFisico.objects.select_related(
+            "producto", "almacen", "usuario_conteo", "usuario_confirmacion"
+        ).order_by("-fecha_conteo")
+        if getattr(user, "es_usuario_normal", False):
+            if user.almacen_asignado:
+                conteos_qs = conteos_qs.filter(almacen=user.almacen_asignado)
+            else:
+                conteos_qs = conteos_qs.none()
+        if q:
+            conteos_qs = conteos_qs.filter(
+                Q(producto__nombre__icontains=q)
+                | Q(producto__codigo_interno__icontains=q)
+                | Q(motivo__icontains=q)
+            )
+
+        # Subsección Artículos Sin Rotación (integrada en Movimientos)
+        dias_str = self.request.GET.get("dias", "30").strip()
+        dias_estancados = int(dias_str) if dias_str.isdigit() else 30
+        from web.servicios.reportes import obtener_reporte_productos_estancados
+        estancados_lista = obtener_reporte_productos_estancados(usuario=user, dias_inactividad=dias_estancados)
+        if q:
+            q_low = q.lower()
+            estancados_lista = [
+                prod for prod in estancados_lista
+                if q_low in prod.nombre.lower() or q_low in prod.codigo_interno.lower() or q_low in prod.categoria.nombre.lower()
+            ]
+
+        context["vista_actual"] = vista
         context["tipos_movimiento"] = Movimiento.Tipo.choices
-        context["tipo_seleccionado"] = self.request.GET.get("tipo", "")
-        context["q"] = self.request.GET.get("q", "")
+        context["tipo_seleccionado"] = tipo
+        context["estado_prestamo"] = estado_prestamo
+        context["estados_prestamo"] = Prestamo.Estado.choices
+        context["q"] = q
+        context["prestamos_lista"] = prestamos_lista
+        context["conteos_lista"] = conteos_qs[:100]
+        context["estancados_lista"] = estancados_lista
+        context["dias_estancados"] = dias_estancados
+
+        # Formularios para el modal unificado "+ Nuevo Movimiento"
+        context["entrada_form"] = EntradaForm(usuario=user)
+        context["salida_form"] = SalidaForm(usuario=user)
+        context["prestamo_form"] = PrestamoForm(usuario=user)
+        context["traslado_form"] = TrasladoForm(usuario=user)
+        context["conteo_form"] = ConteoFisicoForm(usuario=user)
+
+        # Mapa de ubicación fija por producto (inmutable en entradas de stock)
+        import json
+        mapa_ubic = {}
+        for pu in ProductoUbicacion.objects.select_related("ubicacion").all():
+            mapa_ubic[str(pu.producto_id)] = {
+                "id": str(pu.ubicacion_id),
+                "nombre": pu.ubicacion.nombre,
+            }
+        context["mapa_ubicaciones_json"] = json.dumps(mapa_ubic)
         return context
 
 
 class EntradaCrearView(LoginRequiredMixin, View):
-    """Registro operativo de entrada de mercancía (con soporte de empaques)."""
+    """Registro operativo de entrada de mercancía (con soporte de empaques e idempotencia)."""
 
     def get(self, request):
         form = EntradaForm(usuario=request.user)
@@ -1002,16 +1421,23 @@ class EntradaCrearView(LoginRequiredMixin, View):
 
     def post(self, request):
         form = EntradaForm(request.POST, usuario=request.user)
+        next_url = request.POST.get("next")
         if form.is_valid():
             try:
+                prod = form.cleaned_data["producto"]
+                alm = form.cleaned_data["almacen"]
+                ubic = form.cleaned_data.get("ubicacion")
+                if not ubic:
+                    ubic = prod.ubicaciones.filter(almacen=alm).first() or prod.ubicaciones.first()
                 existencia, mov = registrar_entrada(
-                    producto=form.cleaned_data["producto"],
-                    almacen=form.cleaned_data["almacen"],
+                    producto=prod,
+                    almacen=alm,
                     cantidad=form.cleaned_data.get("cantidad") or 0,
                     usuario=request.user,
-                    ubicacion=form.cleaned_data.get("ubicacion"),
+                    ubicacion=ubic,
                     es_empaque=form.cleaned_data.get("es_empaque", False),
                     cantidad_empaques=form.cleaned_data.get("cantidad_empaques"),
+                    clave_idempotencia=request.POST.get("clave_idempotencia") or None,
                     motivo=form.cleaned_data.get("motivo", ""),
                     observacion=form.cleaned_data.get("observacion", ""),
                     ip_origen=_obtener_ip(request),
@@ -1020,9 +1446,14 @@ class EntradaCrearView(LoginRequiredMixin, View):
                     request,
                     f"Entrada registrada: +{mov.cantidad} unid. de '{existencia.producto.codigo_interno}'. Stock actual: {existencia.stock_disponible}.",
                 )
-                return redirect("inventario:movimiento-lista")
+                return redirect(next_url or "inventario:movimiento-lista")
             except Exception as exc:
                 form.add_error(None, str(exc))
+        if next_url:
+            for errs in form.errors.values():
+                for e in errs:
+                    messages.error(request, str(e))
+            return redirect(next_url)
         return render(request, "inventario/movimiento_entrada.html", {"form": form})
 
 
@@ -1035,6 +1466,7 @@ class SalidaCrearView(LoginRequiredMixin, View):
 
     def post(self, request):
         form = SalidaForm(request.POST, usuario=request.user)
+        next_url = request.POST.get("next")
         if form.is_valid():
             try:
                 existencia, mov, alerta = registrar_salida(
@@ -1045,6 +1477,7 @@ class SalidaCrearView(LoginRequiredMixin, View):
                     destinatario=form.cleaned_data["destinatario"],
                     usuario=request.user,
                     ubicacion=form.cleaned_data.get("ubicacion"),
+                    clave_idempotencia=request.POST.get("clave_idempotencia") or None,
                     observacion=form.cleaned_data.get("observacion", ""),
                     ip_origen=_obtener_ip(request),
                 )
@@ -1054,9 +1487,14 @@ class SalidaCrearView(LoginRequiredMixin, View):
                 )
                 if alerta.get("nivel"):
                     messages.warning(request, alerta["mensaje"])
-                return redirect("inventario:movimiento-lista")
+                return redirect(next_url or "inventario:movimiento-lista")
             except Exception as exc:
                 form.add_error(None, str(exc))
+        if next_url:
+            for errs in form.errors.values():
+                for e in errs:
+                    messages.error(request, str(e))
+            return redirect(next_url)
         return render(request, "inventario/movimiento_salida.html", {"form": form})
 
 
@@ -1111,6 +1549,7 @@ class PrestamoCrearView(LoginRequiredMixin, View):
 
     def post(self, request):
         form = PrestamoForm(request.POST, usuario=request.user)
+        next_url = request.POST.get("next")
         if form.is_valid():
             try:
                 prestamo, mov, alerta = registrar_prestamo(
@@ -1122,6 +1561,7 @@ class PrestamoCrearView(LoginRequiredMixin, View):
                     ubicacion=form.cleaned_data.get("ubicacion"),
                     motivo=form.cleaned_data.get("motivo", ""),
                     observacion=form.cleaned_data.get("observacion", ""),
+                    clave_idempotencia=request.POST.get("clave_idempotencia") or None,
                     ip_origen=_obtener_ip(request),
                 )
                 messages.success(
@@ -1130,9 +1570,14 @@ class PrestamoCrearView(LoginRequiredMixin, View):
                 )
                 if alerta.get("nivel"):
                     messages.warning(request, alerta["mensaje"])
-                return redirect("inventario:prestamo-lista")
+                return redirect(next_url or "inventario:prestamo-lista")
             except Exception as exc:
                 form.add_error(None, str(exc))
+        if next_url:
+            for errs in form.errors.values():
+                for e in errs:
+                    messages.error(request, str(e))
+            return redirect(next_url)
         return render(request, "inventario/prestamo_form.html", {"form": form})
 
 
@@ -1150,6 +1595,7 @@ class PrestamoDevolucionView(LoginRequiredMixin, View):
     def post(self, request, pk):
         prestamo = get_object_or_404(Prestamo, pk=pk)
         form = DevolucionPrestamoForm(request.POST)
+        next_url = request.POST.get("next")
         if form.is_valid():
             try:
                 p_db, dev, mov = registrar_devolucion_prestamo(
@@ -1158,15 +1604,21 @@ class PrestamoDevolucionView(LoginRequiredMixin, View):
                     usuario=request.user,
                     motivo=form.cleaned_data["motivo"],
                     observacion=form.cleaned_data.get("observacion", ""),
+                    clave_idempotencia=request.POST.get("clave_idempotencia") or None,
                     ip_origen=_obtener_ip(request),
                 )
                 messages.success(
                     request,
                     f"Devolución registrada: {dev.cantidad} unid. de '{p_db.producto.codigo_interno}'. Saldo pendiente: {p_db.cantidad_pendiente_devolucion} ({p_db.get_estado_display()}).",
                 )
-                return redirect("inventario:prestamo-lista")
+                return redirect(next_url or "inventario:prestamo-lista")
             except Exception as exc:
                 form.add_error(None, str(exc))
+        if next_url:
+            for errs in form.errors.values():
+                for e in errs:
+                    messages.error(request, str(e))
+            return redirect(next_url)
         return render(request, "inventario/prestamo_devolucion.html", {"prestamo": prestamo, "form": form})
 
 
@@ -1184,6 +1636,7 @@ class PrestamoBajaView(LoginRequiredMixin, View):
     def post(self, request, pk):
         prestamo = get_object_or_404(Prestamo, pk=pk)
         form = BajaPrestamoForm(request.POST)
+        next_url = request.POST.get("next")
         if form.is_valid():
             try:
                 p_db, baja, mov = registrar_baja_prestamo(
@@ -1192,15 +1645,21 @@ class PrestamoBajaView(LoginRequiredMixin, View):
                     usuario=request.user,
                     motivo=form.cleaned_data["motivo"],
                     observacion=form.cleaned_data.get("observacion", ""),
+                    clave_idempotencia=request.POST.get("clave_idempotencia") or None,
                     ip_origen=_obtener_ip(request),
                 )
                 messages.warning(
                     request,
                     f"Baja por daño/pérdida registrada: {baja.cantidad} unid. de '{p_db.producto.codigo_interno}'. Saldo pendiente: {p_db.cantidad_pendiente_devolucion}.",
                 )
-                return redirect("inventario:prestamo-lista")
+                return redirect(next_url or "inventario:prestamo-lista")
             except Exception as exc:
                 form.add_error(None, str(exc))
+        if next_url:
+            for errs in form.errors.values():
+                for e in errs:
+                    messages.error(request, str(e))
+            return redirect(next_url)
         return render(request, "inventario/prestamo_baja.html", {"prestamo": prestamo, "form": form})
 
 
@@ -1217,6 +1676,7 @@ class TrasladoCrearView(LoginRequiredMixin, View):
 
     def post(self, request):
         form = TrasladoForm(request.POST, usuario=request.user)
+        next_url = request.POST.get("next")
         if form.is_valid():
             prod = form.cleaned_data["producto"]
             alm_orig = form.cleaned_data["almacen_origen"]
@@ -1225,6 +1685,7 @@ class TrasladoCrearView(LoginRequiredMixin, View):
             ub_dest = form.cleaned_data.get("ubicacion_destino")
             cant = form.cleaned_data["cantidad"]
             mot = form.cleaned_data.get("motivo", "")
+            idem = request.POST.get("clave_idempotencia") or None
 
             try:
                 if alm_dest and alm_dest.id != alm_orig.id:
@@ -1238,6 +1699,7 @@ class TrasladoCrearView(LoginRequiredMixin, View):
                         ubicacion_origen=ub_orig,
                         ubicacion_destino=ub_dest,
                         motivo=mot,
+                        clave_idempotencia=idem,
                         ip_origen=_obtener_ip(request),
                     )
                     messages.success(
@@ -1255,15 +1717,21 @@ class TrasladoCrearView(LoginRequiredMixin, View):
                         ubicacion_destino=ub_dest,
                         usuario=request.user,
                         motivo=mot,
+                        clave_idempotencia=idem,
                         ip_origen=_obtener_ip(request),
                     )
                     messages.success(
                         request,
                         f"Traslado interno completado: '{prod.codigo_interno}' reubicado de '{ub_orig.nombre}' a '{ub_dest.nombre}'.",
                     )
-                return redirect("inventario:movimiento-lista")
+                return redirect(next_url or "inventario:movimiento-lista")
             except Exception as exc:
                 form.add_error(None, str(exc))
+        if next_url:
+            for errs in form.errors.values():
+                for e in errs:
+                    messages.error(request, str(e))
+            return redirect(next_url)
         return render(request, "inventario/movimiento_traslado.html", {"form": form})
 
 
@@ -1299,6 +1767,7 @@ class ConteoFisicoCrearView(LoginRequiredMixin, View):
 
     def post(self, request):
         form = ConteoFisicoForm(request.POST, usuario=request.user)
+        next_url = request.POST.get("next")
         if form.is_valid():
             try:
                 conteo = registrar_conteo_fisico(
@@ -1313,9 +1782,14 @@ class ConteoFisicoCrearView(LoginRequiredMixin, View):
                     request,
                     f"Conteo registrado: Contado {conteo.cantidad_contada} unid. vs {conteo.stock_sistema} en sistema (Diferencia: {conteo.diferencia:+d}). Pendiente de confirmación administrativa.",
                 )
-                return redirect("inventario:conteo-lista")
+                return redirect(next_url or "inventario:conteo-lista")
             except Exception as exc:
                 form.add_error(None, str(exc))
+        if next_url:
+            for errs in form.errors.values():
+                for e in errs:
+                    messages.error(request, str(e))
+            return redirect(next_url)
         return render(request, "inventario/conteo_form.html", {"form": form})
 
 
@@ -1326,6 +1800,7 @@ class ConteoFisicoConfirmarView(LoginRequiredMixin, RolRequeridoMixin, View):
 
     def post(self, request, pk):
         conteo = get_object_or_404(ConteoFisico, pk=pk)
+        next_url = request.POST.get("next")
         try:
             conteo_db, mov = confirmar_conteo_fisico(
                 conteo=conteo,
@@ -1338,7 +1813,7 @@ class ConteoFisicoConfirmarView(LoginRequiredMixin, RolRequeridoMixin, View):
             )
         except Exception as exc:
             messages.error(request, str(exc))
-        return redirect("inventario:conteo-lista")
+        return redirect(next_url or "inventario:conteo-lista")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -1,110 +1,136 @@
 {% extends "base.html" %}
-{% block page_title %}Detalle de Producto{% endblock %}
+{% block page_title %}Ficha de Producto{% endblock %}
 {% block sidebar_productos %}active{% endblock %}
 
 {% block title %}{{ producto.codigo_interno }} — {{ producto.nombre }} — Inventario AudacIA{% endblock %}
 
+{% block extra_css %}
+<style>
+    .detail-metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 12px;
+    }
+    .detail-metric-box {
+        background: var(--bg-panel);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        padding: 12px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+    .detail-metric-label {
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--text-faint);
+        font-weight: 600;
+    }
+    .detail-metric-val {
+        font-family: var(--font-heading);
+        font-size: 20px;
+        font-weight: 700;
+        line-height: 1.2;
+    }
+    .detail-two-col {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+    }
+    @media (max-width: 768px) {
+        .detail-two-col {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
 {% block content %}
-<div style="display: flex; flex-direction: column; gap: 1.5rem;">
-    <!-- Encabezado del Producto -->
-    <div class="card">
-        <div class="card-header" style="align-items: flex-start;">
+<div style="display: flex; flex-direction: column; gap: 14px;">
+    <!-- Encabezado compacto del Producto -->
+    <div class="card" style="margin-bottom: 0; padding: 16px 18px;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
             <div>
-                <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
-                    <span style="font-family: monospace; font-size: 1.25rem; font-weight: 700; background: rgba(59,111,240,0.12); color: var(--accent-bright); padding: 0.25rem 0.6rem; border-radius: 6px;">
-                        {{ producto.codigo_interno }}
-                    </span>
+                <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 6px;">
+                    <code>{{ producto.codigo_interno }}</code>
                     {% if producto.codigo_barras %}
-                        <span style="font-family: monospace; font-size: 0.85rem; background: var(--bg-panel-2); color: var(--text-muted); padding: 0.25rem 0.5rem; border-radius: 4px;">
-                            EAN: {{ producto.codigo_barras }}
-                        </span>
+                        <span class="badge badge-accent">EAN: {{ producto.codigo_barras }}</span>
+                    {% endif %}
+                    {% if not producto.activo %}
+                        <span class="badge badge-warn">Inhabilitado</span>
+                    {% else %}
+                        <span class="badge badge-ok">Activo</span>
                     {% endif %}
                     {% if producto.archivado %}
-                        <span style="background: var(--crit-bg); color: var(--crit); font-size: 0.75rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: 9999px;">
-                            Archivado
-                        </span>
+                        <span class="badge badge-crit">Archivado</span>
                     {% endif %}
                 </div>
-                <h1 class="card-title" style="font-size: 1.75rem;">{{ producto.nombre }}</h1>
-                <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 0.25rem;">
+                <h1 class="card-title" style="font-size: 18px; line-height: 1.25;">{{ producto.nombre }}</h1>
+                <p style="color: var(--text-dim); font-size: 12.5px; margin-top: 3px;">
                     Categoría: <strong>{{ producto.categoria.nombre }}</strong>
-                    {% if producto.tipo %} · Tipo: <strong style="color: var(--accent-teal);">{{ producto.tipo.nombre }}</strong>{% endif %}
-                    (Almacén principal: {{ producto.categoria.almacen_principal.nombre }})
+                    {% if producto.tipo %} · Tipo: <strong style="color: var(--accent-2);">{{ producto.tipo.nombre }}</strong>{% endif %}
+                    · Bodega principal: <strong>{{ producto.categoria.almacen_principal.nombre }}</strong>
                 </p>
             </div>
-            <div style="display: flex; gap: 0.5rem;">
-                <a href="{% url 'inventario:producto-lista' %}" class="btn btn-secondary">
-                    ← Volver al Catálogo
+            <div class="action-group">
+                <a href="{% url 'inventario:producto-lista' %}" class="btn btn-sm btn-secondary">
+                    ← Catálogo
                 </a>
-                <a href="{% url 'inventario:producto-editar' producto.id %}" class="btn btn-primary">
-                    Editar Producto
-                </a>
+                <button type="button" class="btn btn-sm btn-primary" onclick="openAppModal('modalEditarProductoDetalle')">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -1px; margin-right: 4px;"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Editar
+                </button>
+                <form method="post" action="{% url 'inventario:producto-toggle-activo' producto.id %}" style="display: inline; margin: 0;">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.path }}">
+                    <button type="submit" class="btn btn-sm btn-secondary">
+                        {% if producto.activo %}Inhabilitar{% else %}Habilitar{% endif %}
+                    </button>
+                </form>
             </div>
         </div>
 
         {% if producto.descripcion %}
-            <div style="margin-top: 1rem; padding: 1rem; background: var(--bg-panel-2); border-radius: 6px; font-size: 0.9rem; color: var(--text);">
+            <div style="margin-top: 10px; padding: 8px 12px; background: var(--bg-panel-2); border-radius: 6px; font-size: 12.5px; color: var(--text-dim);">
                 {{ producto.descripcion }}
             </div>
         {% endif %}
     </div>
 
-    <!-- Indicadores de Stock -->
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
-        <div class="card" style="text-align: center;">
-            <div style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">
-                Stock Disponible Total
-            </div>
-            <div style="font-size: 2.25rem; font-weight: 700; color: var(--primary); margin-top: 0.25rem;">
-                {% with total_disp=existencias.0.stock_disponible|default:0 %}
-                    {{ total_disp }}
-                {% endwith %}
-            </div>
-            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Unidades físicas</div>
+    <!-- Indicadores de Stock compactos -->
+    <div class="detail-metrics-grid">
+        <div class="detail-metric-box">
+            <span class="detail-metric-label">Stock Disponible</span>
+            <span class="detail-metric-val" style="color: var(--accent-bright);">
+                {{ existencias.0.stock_disponible|default:0 }} <small style="font-size: 11px; font-weight: 500; color: var(--text-faint);">unid.</small>
+            </span>
         </div>
-
-        <div class="card" style="text-align: center;">
-            <div style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">
-                En Préstamo
-            </div>
-            <div style="font-size: 2.25rem; font-weight: 700; color: var(--warn); margin-top: 0.25rem;">
-                {% with total_prest=existencias.0.stock_en_prestamo|default:0 %}
-                    {{ total_prest }}
-                {% endwith %}
-            </div>
-            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Unidades prestadas</div>
+        <div class="detail-metric-box">
+            <span class="detail-metric-label">En Préstamo</span>
+            <span class="detail-metric-val" style="color: var(--warn);">
+                {{ existencias.0.stock_en_prestamo|default:0 }} <small style="font-size: 11px; font-weight: 500; color: var(--text-faint);">unid.</small>
+            </span>
         </div>
-
-        <div class="card" style="text-align: center;">
-            <div style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">
-                Stock Mínimo
-            </div>
-            <div style="font-size: 2.25rem; font-weight: 700; color: var(--text); margin-top: 0.25rem;">
-                {{ producto.stock_minimo }}
-            </div>
-            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Umbral de alerta</div>
+        <div class="detail-metric-box">
+            <span class="detail-metric-label">Stock Mínimo</span>
+            <span class="detail-metric-val" style="color: var(--text);">
+                {{ producto.stock_minimo }} <small style="font-size: 11px; font-weight: 500; color: var(--text-faint);">umbral</small>
+            </span>
         </div>
-
         {% if producto.nombre_empaque %}
-            <div class="card" style="text-align: center;">
-                <div style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">
-                    Conversión de Empaque
-                </div>
-                <div style="font-size: 1.5rem; font-weight: 700; color: var(--text); margin-top: 0.5rem;">
-                    1 {{ producto.nombre_empaque }}
-                </div>
-                <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem;">
-                    = {{ producto.unidades_por_empaque|default:"—" }} unidades
-                </div>
-            </div>
+        <div class="detail-metric-box">
+            <span class="detail-metric-label">Factor de Empaque</span>
+            <span class="detail-metric-val" style="font-size: 15px; color: var(--accent-2);">
+                1 {{ producto.nombre_empaque }} = {{ producto.unidades_por_empaque|default:"—" }} unid.
+            </span>
+        </div>
         {% endif %}
     </div>
 
     <!-- Existencias y Ubicaciones -->
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
-        <!-- Existencias por Almacén -->
-        <div class="card">
-            <h2 class="card-title" style="margin-bottom: 1rem; font-size: 1.15rem;">Existencias por Almacén</h2>
+    <div class="detail-two-col">
+        <div class="card" style="margin-bottom: 0; padding: 14px 16px;">
+            <h2 class="card-title" style="margin-bottom: 10px; font-size: 13.5px;">Existencias por Almacén</h2>
             <div class="table-responsive">
                 <table class="data-table">
                     <thead>
@@ -131,17 +157,16 @@
             </div>
         </div>
 
-        <!-- Ubicaciones Físicas -->
-        <div class="card">
-            <h2 class="card-title" style="margin-bottom: 1rem; font-size: 1.15rem;">Ubicaciones Físicas</h2>
-            <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem;">
+        <div class="card" style="margin-bottom: 0; padding: 14px 16px;">
+            <h2 class="card-title" style="margin-bottom: 10px; font-size: 13.5px;">Ubicaciones Físicas</h2>
+            <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px;">
                 {% for ub in ubicaciones %}
-                    <li style="padding: 0.6rem 0.8rem; background: var(--bg-panel-2); border-radius: 6px; border: 1px solid var(--border); display: flex; justify-content: space-between;">
+                    <li style="padding: 7px 10px; background: var(--bg-panel-2); border-radius: 6px; border: 1px solid var(--border); display: flex; justify-content: space-between; font-size: 12.5px;">
                         <span><strong>{{ ub.nombre }}</strong></span>
-                        <span style="font-size: 0.8rem; color: var(--text-muted);">{{ ub.almacen.nombre }}</span>
+                        <span style="color: var(--text-faint);">{{ ub.almacen.nombre }}</span>
                     </li>
                 {% empty %}
-                    <li style="color: var(--text-muted); font-size: 0.9rem; padding: 1rem 0;">
+                    <li style="color: var(--text-muted); font-size: 12.5px; padding: 8px 0;">
                         No tiene ubicaciones físicas asignadas.
                     </li>
                 {% endfor %}
@@ -150,17 +175,17 @@
     </div>
 
     <!-- Historial de Movimientos -->
-    <div class="card">
-        <h2 class="card-title" style="margin-bottom: 1rem; font-size: 1.15rem;">Historial de Movimientos Recientes</h2>
+    <div class="card" style="margin-bottom: 0; padding: 14px 16px;">
+        <h2 class="card-title" style="margin-bottom: 10px; font-size: 13.5px;">Historial de Movimientos Recientes</h2>
         <div class="table-responsive">
             <table class="data-table">
                 <thead>
                     <tr>
                         <th>Fecha</th>
                         <th>Tipo</th>
-                        <th>Almacén Destino</th>
+                        <th>Almacén</th>
                         <th style="text-align: right;">Cantidad</th>
-                        <th style="text-align: right;">Stock Resultante</th>
+                        <th style="text-align: right;">Stock Post.</th>
                         <th>Responsable</th>
                         <th>Motivo</th>
                     </tr>
@@ -168,21 +193,17 @@
                 <tbody>
                     {% for mov in movimientos %}
                         <tr>
-                            <td style="font-size: 0.85rem; white-space: nowrap;">{{ mov.fecha_hora|date:"d/m/Y H:i" }}</td>
-                            <td>
-                                <span style="font-size: 0.75rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: 4px; background: rgba(59,111,240,0.12); color: var(--accent-bright);">
-                                    {{ mov.get_tipo_display }}
-                                </span>
-                            </td>
-                            <td>{{ mov.almacen_destino.nombre|default:"—" }}</td>
-                            <td style="text-align: right; font-weight: 600;">+{{ mov.cantidad }}</td>
+                            <td style="font-size: 12px; white-space: nowrap;">{{ mov.fecha_hora|date:"d/m/Y H:i" }}</td>
+                            <td><span class="badge badge-accent">{{ mov.get_tipo_display }}</span></td>
+                            <td>{% if mov.almacen_destino %}{{ mov.almacen_destino.nombre }}{% elif mov.almacen_origen %}{{ mov.almacen_origen.nombre }}{% else %}—{% endif %}</td>
+                            <td style="text-align: right; font-weight: 600;">{{ mov.cantidad }}</td>
                             <td style="text-align: right;">{{ mov.stock_disponible_posterior }}</td>
-                            <td style="font-size: 0.85rem;">{{ mov.usuario.username }}</td>
-                            <td style="font-size: 0.85rem; color: var(--text-muted);">{{ mov.motivo|default:"—" }}</td>
+                            <td style="font-size: 12px;">{{ mov.usuario.username }}</td>
+                            <td style="font-size: 12px; color: var(--text-muted);">{{ mov.motivo|default:"—" }}</td>
                         </tr>
                     {% empty %}
                         <tr>
-                            <td colspan="7" style="text-align: center; padding: 1.5rem; color: var(--text-muted);">
+                            <td colspan="7" style="text-align: center; padding: 1.25rem; color: var(--text-muted);">
                                 No hay movimientos registrados para este producto.
                             </td>
                         </tr>
@@ -192,4 +213,64 @@
         </div>
     </div>
 </div>
+
+<!-- Modal Editar Producto desde Ficha -->
+<dialog id="modalEditarProductoDetalle" class="app-modal">
+    <form method="post" action="{% url 'inventario:producto-editar' producto.id %}" style="display: flex; flex-direction: column; max-height: 90dvh; overflow: hidden;">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.path }}">
+        <div class="app-modal-header">
+            <h2 class="app-modal-title">Editar {{ producto.codigo_interno }}</h2>
+            <button type="button" class="app-modal-close" onclick="closeAppModal('modalEditarProductoDetalle')">&times;</button>
+        </div>
+        <div class="app-modal-body">
+            <div class="form-group">
+                <label>Nombre del Producto *</label>
+                {{ producto_form.nombre }}
+            </div>
+            <div class="form-grid-2">
+                <div class="form-group">
+                    <label>Categoría *</label>
+                    {{ producto_form.categoria }}
+                </div>
+                <div class="form-group">
+                    <label>Tipo (opcional)</label>
+                    {{ producto_form.tipo }}
+                </div>
+            </div>
+            <div class="form-grid-2">
+                <div class="form-group">
+                    <label>Stock Mínimo</label>
+                    {{ producto_form.stock_minimo }}
+                </div>
+                <div class="form-group">
+                    <label>Código de Barras</label>
+                    {{ producto_form.codigo_barras }}
+                </div>
+            </div>
+            <div class="form-grid-2">
+                <div class="form-group">
+                    <label>Nombre de Empaque</label>
+                    {{ producto_form.nombre_empaque }}
+                </div>
+                <div class="form-group">
+                    <label>Unidades por Empaque</label>
+                    {{ producto_form.unidades_por_empaque }}
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Ubicación Física Única</label>
+                {{ producto_form.ubicacion }}
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Descripción</label>
+                {{ producto_form.descripcion }}
+            </div>
+        </div>
+        <div class="app-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalEditarProductoDetalle')">Cancelar</button>
+            <button type="submit" class="btn btn-primary">Guardar Cambios</button>
+        </div>
+    </form>
+</dialog>
 {% endblock %}

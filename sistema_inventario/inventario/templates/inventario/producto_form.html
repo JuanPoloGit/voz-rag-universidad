@@ -166,14 +166,14 @@
                 <h3 style="font-size: 1.1rem; margin-bottom: 1rem; color: var(--text);">Ubicación y Detalles</h3>
 
                 <div class="form-group">
-                    <label for="{{ form.ubicaciones_seleccionadas.id_for_label }}">Ubicaciones autorizadas</label>
-                    {{ form.ubicaciones_seleccionadas }}
-                    {% if form.ubicaciones_seleccionadas.errors %}
+                    <label for="{{ form.ubicacion.id_for_label }}">Ubicación física única</label>
+                    {{ form.ubicacion }}
+                    {% if form.ubicacion.errors %}
                         <div class="form-error">
-                            {% for error in form.ubicaciones_seleccionadas.errors %}{{ error }}{% endfor %}
+                            {% for error in form.ubicacion.errors %}{{ error }}{% endfor %}
                         </div>
                     {% endif %}
-                    <div class="form-help">Mantén presionada la tecla Ctrl para seleccionar múltiples ubicaciones.</div>
+                    <div class="form-help">Ubicación física asignada en bodega para este producto.</div>
                 </div>
 
                 <div class="form-group">

@@ -1,85 +1,31 @@
 {% extends "base.html" %}
-{% block page_title %}Categorías y Tipos{% endblock %}
+{% block page_title %}Categorías y Bodegas{% endblock %}
 {% block sidebar_categorias %}active{% endblock %}
 
 {% block title %}Categorías y Tipos — Inventario AudacIA{% endblock %}
 
 {% block extra_css %}
 <style>
-    .classification-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 20px;
-        margin-bottom: 24px;
-    }
-
-    .cat-cards-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-        gap: 16px;
-        margin-bottom: 24px;
-    }
-
-    .cat-card {
-        background: linear-gradient(160deg, var(--bg-panel), var(--bg-panel-2));
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        padding: 18px 20px;
-        box-shadow: var(--shadow);
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        gap: 14px;
-    }
-
-    .cat-card-head {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 10px;
-    }
-
-    .cat-card-title {
-        font-family: var(--font-heading);
-        font-size: 15px;
-        font-weight: 600;
-        color: var(--text);
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-
-    .cat-dot {
-        width: 10px;
-        height: 10px;
-        border-radius: 3px;
-        background: var(--accent-bright);
-        display: inline-block;
-        flex-shrink: 0;
-    }
-
     .type-list {
         list-style: none;
         padding: 0;
         margin: 0;
         display: flex;
         flex-wrap: wrap;
-        gap: 8px;
+        gap: 6px;
     }
-
     .type-chip {
         display: inline-flex;
         align-items: center;
-        gap: 6px;
-        padding: 4px 10px;
+        gap: 5px;
+        padding: 3px 9px;
         border-radius: 999px;
         background: rgba(59, 111, 240, 0.14);
         border: 1px solid rgba(92, 139, 255, 0.3);
         color: var(--text);
-        font-size: 12px;
+        font-size: 11.5px;
         font-weight: 500;
     }
-
     .type-chip-btn {
         background: none;
         border: none;
@@ -89,71 +35,71 @@
         font-size: 11px;
         line-height: 1;
     }
-
-    .type-chip-btn:hover {
-        color: var(--accent-teal);
-    }
-
-    .type-chip-btn.danger:hover {
-        color: var(--crit);
-    }
-
-    @media (max-width: 980px) {
-        .classification-grid {
-            grid-template-columns: 1fr;
-        }
-    }
+    .type-chip-btn:hover { color: var(--accent-2); }
+    .type-chip-btn.danger:hover { color: var(--crit); }
 </style>
 {% endblock %}
 
 {% block content %}
-<!-- Encabezado y Filtros -->
 <div class="card">
     <div class="card-header">
         <div>
-            <h1 class="card-title">Categorías y Tipos</h1>
-            <p style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.25rem;">
-                Clasificación de productos por almacén principal y tipos opcionales ligados a cada categoría.
+            <h1 class="card-title">Categorías y Tipos Opcionales</h1>
+            <p style="font-size: 12.5px; color: var(--text-muted); margin-top: 2px;">
+                Clasificación de productos por almacén principal y sub-tipos opcionales ligados a cada categoría.
             </p>
         </div>
-        <div style="display: flex; gap: 0.5rem;">
-            <a href="{% url 'inventario:categoria-crear' %}" class="btn btn-primary">
+        <div class="action-group">
+            <button type="button" class="btn btn-primary" id="btnNuevaCategoriaModal">
                 + Nueva Categoría
-            </a>
+            </button>
         </div>
     </div>
 
-    {% if not user.es_usuario_normal and almacenes %}
-        <div style="margin-bottom: 1.25rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
-            <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">Filtrar por almacén principal:</span>
-            <a href="{% url 'inventario:categoria-lista' %}" class="btn btn-sm {% if not almacen_seleccionado %}btn-primary{% else %}btn-secondary{% endif %}">
-                Todos
-            </a>
-            {% for alm in almacenes %}
-                <a href="{% url 'inventario:categoria-lista' %}?almacen_id={{ alm.id }}"
-                   class="btn btn-sm {% if almacen_seleccionado == alm.id|stringformat:'s' %}btn-primary{% else %}btn-secondary{% endif %}">
-                    {{ alm.nombre }}
-                </a>
-            {% endfor %}
+    <!-- Barra de filtros automáticos -->
+    <form method="get" action="{% url 'inventario:categoria-lista' %}" data-auto-filter="true"
+          style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px;">
+        <div style="flex: 2; min-width: 220px;">
+            <input type="text" name="q" value="{{ q }}" class="form-control"
+                   placeholder="Buscar categoría, prefijo o tipo..." autocomplete="off">
         </div>
-    {% endif %}
+        {% if not user.es_usuario_normal and almacenes %}
+            <div style="flex: 1; min-width: 180px;">
+                <select name="almacen_id" class="form-control" aria-label="Filtrar por almacén">
+                    <option value="">Todos los almacenes</option>
+                    {% for alm in almacenes %}
+                        <option value="{{ alm.id }}" {% if almacen_seleccionado == alm.id|stringformat:'s' %}selected{% endif %}>
+                            {{ alm.nombre }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+        {% endif %}
+        <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-dim); cursor: pointer; margin: 0;">
+            <input type="checkbox" name="mostrar_inactivos" value="1" {% if mostrar_inactivos %}checked{% endif %}>
+            <span>Mostrar inhabilitadas</span>
+        </label>
+        {% if q or almacen_seleccionado or mostrar_inactivos %}
+            <a href="{% url 'inventario:categoria-lista' %}" class="btn btn-sm btn-secondary">Limpiar</a>
+        {% endif %}
+    </form>
 
-    <!-- Panel rápido para Agregar / Editar Tipo Opcional (Estilo AudacIA) -->
-    <div style="background: rgba(5, 11, 36, 0.45); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 16px 18px; margin-bottom: 1.5rem;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
-            <h3 id="panel-tipo-titulo" style="font-size: 14px; font-weight: 600; color: var(--accent-teal); margin: 0;">
+    <!-- Panel rápido para Agregar / Editar Tipo Opcional -->
+    <div style="background: rgba(5, 11, 36, 0.45); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; margin-bottom: 18px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+            <h3 id="panel-tipo-titulo" style="font-size: 13.5px; font-weight: 600; color: var(--accent-2); margin: 0;">
                 + Agregar Tipo Opcional a una Categoría
             </h3>
-            <span style="font-size: 12px; color: var(--text-faint);">
-                Cada categoría puede tener tipos opcionales para sub-clasificar artículos (ej. Destornillador, Alicate, Cable).
+            <span style="font-size: 11.5px; color: var(--text-faint);">
+                Sub-clasificación opcional por categoría (ej. Destornillador, Alicate, Cable).
             </span>
         </div>
 
-        <form method="post" action="{% url 'inventario:tipo-categoria-crear' %}" id="form-tipo-rapido" style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
+        <form method="post" action="{% url 'inventario:tipo-categoria-crear' %}" id="form-tipo-rapido" style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">
             {% csrf_token %}
             <input type="hidden" name="next" value="{{ request.get_full_path }}">
 
-            <div style="flex: 1; min-width: 220px;">
+            <div style="flex: 1; min-width: 200px;">
                 <label for="select-tipo-categoria" style="margin-bottom: 4px;">Categoría *</label>
                 <select name="categoria" id="select-tipo-categoria" class="form-control" required>
                     <option value="">Selecciona una categoría...</option>
@@ -163,29 +109,25 @@
                 </select>
             </div>
 
-            <div style="flex: 1.2; min-width: 220px;">
+            <div style="flex: 1.2; min-width: 200px;">
                 <label for="input-tipo-nombre" style="margin-bottom: 4px;">Nombre del tipo *</label>
                 <input type="text" name="nombre" id="input-tipo-nombre" class="form-control" maxlength="100" required placeholder="Ej. Destornillador, Alicate, Solvente...">
             </div>
 
-            <div style="display: flex; gap: 8px;">
-                <button type="submit" class="btn btn-primary" id="btn-guardar-tipo">
-                    Guardar Tipo
-                </button>
-                <button type="button" class="btn btn-secondary" id="btn-cancelar-tipo" style="display: none;">
-                    Cancelar edición
-                </button>
+            <div class="action-group">
+                <button type="submit" class="btn btn-primary" id="btn-guardar-tipo">Guardar Tipo</button>
+                <button type="button" class="btn btn-secondary" id="btn-cancelar-tipo" style="display: none;">Cancelar</button>
             </div>
         </form>
     </div>
 
-    <!-- Tabla de Categorías y sus Tipos Opcionales -->
+    <!-- Tabla de Categorías -->
     <div class="table-responsive">
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>Nombre</th>
-                    <th>Prefijo Código</th>
+                    <th>Categoría</th>
+                    <th>Prefijo</th>
                     <th>Tipos Asociados (Opcional)</th>
                     <th>Almacén Principal</th>
                     <th>Estado</th>
@@ -194,16 +136,14 @@
             </thead>
             <tbody>
                 {% for cat in categorias %}
-                    <tr>
+                    <tr {% if not cat.activo %}style="opacity: 0.62;"{% endif %}>
                         <td>
                             <strong>{{ cat.nombre }}</strong>
-                            <div style="font-size: 11.5px; color: var(--text-faint);">
+                            <div style="font-size: 11px; color: var(--text-faint);">
                                 {{ cat.productos.count }} artículo(s)
                             </div>
                         </td>
-                        <td>
-                            <code>{{ cat.prefijo_codigo }}-XXXX</code>
-                        </td>
+                        <td><code>{{ cat.prefijo_codigo }}-XXXX</code></td>
                         <td>
                             {% with tipos_activos=cat.tipos.all %}
                                 {% if tipos_activos %}
@@ -217,53 +157,84 @@
                                                         data-nombre="{{ t.nombre }}"
                                                         data-cat-id="{{ cat.id }}"
                                                         data-action-url="{% url 'inventario:tipo-categoria-editar' t.id %}"
-                                                        title="Renombrar tipo '{{ t.nombre }}'">
-                                                    ✎
+                                                        title="Renombrar tipo"
+                                                        aria-label="Renombrar tipo">
+                                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                                                 </button>
                                                 <form method="post" action="{% url 'inventario:tipo-categoria-eliminar' t.id %}" style="display: inline; margin: 0;">
                                                     {% csrf_token %}
                                                     <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                                                    <button type="submit"
-                                                            class="type-chip-btn danger"
-                                                            title="Eliminar tipo '{{ t.nombre }}'"
-                                                            onclick="return confirm('¿Eliminar el tipo «{{ t.nombre }}»? Los productos conservarán su categoría.');">
-                                                        ✕
-                                                    </button>
+                                                    <button type="submit" class="type-chip-btn danger"
+                                                            title="Eliminar tipo"
+                                                            onclick="return confirm('¿Eliminar el tipo «{{ t.nombre }}»?');">&times;</button>
                                                 </form>
                                             </span>
                                         {% endfor %}
                                     </div>
                                 {% else %}
-                                    <span style="color: var(--text-faint); font-size: 12px; font-style: italic;">
-                                        Sin tipos ligados (opcional)
-                                    </span>
+                                    <span style="color: var(--text-faint); font-size: 12px; font-style: italic;">Sin tipos</span>
                                 {% endif %}
                             {% endwith %}
                         </td>
-                        <td>{{ cat.almacen_principal.nombre }}</td>
+                        <td><span class="badge badge-accent">{{ cat.almacen_principal.nombre }}</span></td>
                         <td>
                             {% if cat.activo %}
                                 <span class="badge badge-ok">Activa</span>
                             {% else %}
-                                <span class="badge badge-muted">Inactiva</span>
+                                <span class="badge badge-warn">Inhabilitada</span>
                             {% endif %}
                         </td>
                         <td style="text-align: right; white-space: nowrap;">
-                            <button type="button"
-                                    class="btn btn-sm btn-secondary btn-preseleccionar-cat"
-                                    data-cat-id="{{ cat.id }}"
-                                    data-cat-nombre="{{ cat.nombre }}">
-                                + Tipo
-                            </button>
-                            <a href="{% url 'inventario:categoria-editar' cat.id %}" class="btn btn-sm btn-secondary">
-                                Editar
-                            </a>
+                            <div class="action-group">
+                                <button type="button"
+                                        class="btn btn-sm btn-secondary btn-preseleccionar-cat"
+                                        data-cat-id="{{ cat.id }}"
+                                        data-cat-nombre="{{ cat.nombre }}">
+                                    + Tipo
+                                </button>
+                                <button type="button"
+                                        class="btn btn-sm btn-secondary btn-editar-cat-modal"
+                                        data-url="{% url 'inventario:categoria-editar' cat.id %}"
+                                        data-nombre="{{ cat.nombre }}"
+                                        data-almacen="{{ cat.almacen_principal_id }}"
+                                        data-tipos="{% for t in cat.tipos.all %}{{ t.nombre }}{% if not forloop.last %}, {% endif %}{% endfor %}">
+                                    Editar
+                                </button>
+
+                                {% if cat.activo %}
+                                    {% if user.es_administrador %}
+                                        <form method="post" action="{% url 'inventario:categoria-desactivar' cat.id %}" style="display: inline; margin: 0;">
+                                            {% csrf_token %}
+                                            <button type="submit" class="btn btn-sm btn-secondary" style="color: var(--warn);">
+                                                Inhabilitar
+                                            </button>
+                                        </form>
+                                    {% endif %}
+                                {% else %}
+                                    <form method="post" action="{% url 'inventario:categoria-reactivar' cat.id %}" style="display: inline; margin: 0;">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                        <button type="submit" class="btn btn-sm btn-secondary" style="color: var(--ok);">
+                                            Habilitar
+                                        </button>
+                                    </form>
+                                {% endif %}
+
+                                <form method="post" action="{% url 'inventario:categoria-eliminar' cat.id %}" style="display: inline; margin: 0;"
+                                      onsubmit="return confirm('¿Eliminar la categoría «{{ cat.nombre }}»?');">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                    <button type="submit" class="btn btn-sm btn-danger">
+                                        Eliminar
+                                    </button>
+                                </form>
+                            </div>
                         </td>
                     </tr>
                 {% empty %}
                     <tr>
                         <td colspan="6" style="text-align: center; padding: 2rem; color: var(--text-muted);">
-                            No hay categorías registradas en este almacén.
+                            No se encontraron categorías con los criterios actuales.
                         </td>
                     </tr>
                 {% endfor %}
@@ -271,6 +242,40 @@
         </table>
     </div>
 </div>
+
+<!-- ═══ MODAL NUEVA / EDITAR CATEGORÍA ═══ -->
+<dialog id="modalCategoria" class="app-modal">
+    <form method="post" action="{% url 'inventario:categoria-crear' %}" id="formModalCategoria" style="display: flex; flex-direction: column;">
+        {% csrf_token %}
+        <div class="app-modal-header">
+            <h2 class="app-modal-title" id="tituloModalCategoria">Nueva Categoría</h2>
+            <button type="button" class="app-modal-close" onclick="closeAppModal('modalCategoria')">&times;</button>
+        </div>
+        <div class="app-modal-body">
+            <div class="form-group">
+                <label>Nombre de la Categoría *</label>
+                {{ categoria_form.nombre }}
+            </div>
+            {% if not user.es_usuario_normal %}
+            <div class="form-group">
+                <label>Almacén Principal *</label>
+                {{ categoria_form.almacen_principal }}
+            </div>
+            {% else %}
+                {{ categoria_form.almacen_principal }}
+            {% endif %}
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Tipos asociados (opcional, separados por coma)</label>
+                {{ categoria_form.tipos_opcionales }}
+                <div class="form-help">Ej: Destornillador, Alicate, Martillo</div>
+            </div>
+        </div>
+        <div class="app-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalCategoria')">Cancelar</button>
+            <button type="submit" class="btn btn-primary" id="btnSubmitModalCategoria">Guardar Categoría</button>
+        </div>
+    </form>
+</dialog>
 {% endblock %}
 
 {% block extra_js %}
@@ -302,21 +307,52 @@ document.addEventListener("DOMContentLoaded", function() {
 
     document.querySelectorAll(".btn-editar-tipo-chip").forEach(function(btn) {
         btn.addEventListener("click", function() {
-            formTipo.action = btn.getAttribute("data-action-url");
-            selectCat.value = btn.getAttribute("data-cat-id");
-            inputNombre.value = btn.getAttribute("data-nombre");
-            tituloPanel.textContent = "✎ Editar Tipo: " + btn.getAttribute("data-nombre");
-            btnGuardar.textContent = "Actualizar Tipo";
+            var nombreActual = btn.getAttribute("data-nombre");
+            var catId = btn.getAttribute("data-cat-id");
+            var actionUrl = btn.getAttribute("data-action-url");
+
+            formTipo.action = actionUrl;
+            selectCat.value = catId;
+            inputNombre.value = nombreActual;
+            tituloPanel.textContent = "Renombrar Tipo «" + nombreActual + "»";
+            btnGuardar.textContent = "Actualizar Nombre";
             btnCancelar.style.display = "inline-flex";
             inputNombre.focus();
+            inputNombre.select();
         });
     });
 
-    if (btnCancelar) {
-        btnCancelar.addEventListener("click", function() {
-            resetModoCrear();
+    btnCancelar.addEventListener("click", resetModoCrear);
+
+    // Modal Crear / Editar Categoría
+    var formCat = document.getElementById("formModalCategoria");
+    var tituloCat = document.getElementById("tituloModalCategoria");
+    var btnSubCat = document.getElementById("btnSubmitModalCategoria");
+    var urlCatCrear = "{% url 'inventario:categoria-crear' %}";
+
+    document.getElementById("btnNuevaCategoriaModal").addEventListener("click", function() {
+        formCat.reset();
+        formCat.action = urlCatCrear;
+        tituloCat.textContent = "Nueva Categoría";
+        btnSubCat.textContent = "Crear Categoría";
+        openAppModal("modalCategoria");
+    });
+
+    document.querySelectorAll(".btn-editar-cat-modal").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            formCat.reset();
+            formCat.action = btn.getAttribute("data-url");
+            tituloCat.textContent = "Editar Categoría";
+            btnSubCat.textContent = "Guardar Cambios";
+            var inpNom = formCat.querySelector('[name="nombre"]');
+            var selAlm = formCat.querySelector('[name="almacen_principal"]');
+            var inpTipos = formCat.querySelector('[name="tipos_opcionales"]');
+            if (inpNom) inpNom.value = btn.getAttribute("data-nombre") || "";
+            if (selAlm) selAlm.value = btn.getAttribute("data-almacen") || "";
+            if (inpTipos) inpTipos.value = btn.getAttribute("data-tipos") || "";
+            openAppModal("modalCategoria");
         });
-    }
+    });
 });
 </script>
 {% endblock %}

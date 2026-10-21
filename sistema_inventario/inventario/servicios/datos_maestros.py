@@ -151,6 +151,41 @@ def reactivar_almacen(
     return almacen
 
 
+def eliminar_almacen(
+    *,
+    almacen: Almacen,
+    usuario: Any,
+    ip_origen: Optional[str] = None,
+) -> None:
+    """Elimina lógicamente un almacén si no tiene stock disponible ni ubicaciones con artículos."""
+    if not getattr(usuario, "es_administrador", False):
+        raise PermissionDenied("Solo los Administradores o el Superusuario pueden eliminar almacenes.")
+
+    if almacen.existencias.filter(stock_disponible__gt=0).exists():
+        raise NecesitaTraslado(
+            f"El almacén '{almacen.nombre}' tiene stock disponible. Debe trasladar su inventario antes de eliminarlo.",
+            entidad=almacen,
+        )
+
+    with transaction.atomic():
+        almacen.activo = False
+        almacen.eliminado = True
+        almacen.save(update_fields=["activo", "eliminado"])
+
+        registrar_auditoria(
+            usuario=usuario,
+            accion="ELIMINAR_ALMACEN",
+            tipo_entidad="Almacen",
+            id_entidad=str(almacen.id),
+            valores_anteriores={"activo": True, "eliminado": False},
+            valores_nuevos={"activo": False, "eliminado": True},
+            motivo=f"Eliminación lógica de almacén '{almacen.nombre}'",
+            resultado="OK",
+            via_haku=False,
+            ip_origen=ip_origen,
+        )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. UBICACIONES
 # ─────────────────────────────────────────────────────────────────────────────
@@ -257,6 +292,78 @@ def actualizar_ubicacion(
         )
 
     return ubicacion_db
+
+
+def reactivar_ubicacion(
+    *,
+    ubicacion: Ubicacion,
+    usuario: Any,
+    ip_origen: Optional[str] = None,
+) -> Ubicacion:
+    """Reactiva una ubicación física previamente inhabilitada."""
+    if not getattr(usuario, "is_authenticated", False):
+        raise PermissionDenied("Se requiere autenticación.")
+
+    if getattr(usuario, "es_usuario_normal", False):
+        if not usuario.almacen_asignado or usuario.almacen_asignado_id != ubicacion.almacen_id:
+            raise PermissionDenied("No tienes permisos para reactivar ubicaciones de otros almacenes.")
+
+    with transaction.atomic():
+        ubicacion.activo = True
+        ubicacion.save(update_fields=["activo"])
+
+        registrar_auditoria(
+            usuario=usuario,
+            accion="REACTIVAR_UBICACION",
+            tipo_entidad="Ubicacion",
+            id_entidad=str(ubicacion.id),
+            valores_anteriores={"activo": False},
+            valores_nuevos={"activo": True},
+            motivo=f"Reactivación de ubicación '{ubicacion.nombre}'",
+            resultado="OK",
+            via_haku=False,
+            ip_origen=ip_origen,
+        )
+    return ubicacion
+
+
+def eliminar_ubicacion(
+    *,
+    ubicacion: Ubicacion,
+    usuario: Any,
+    ip_origen: Optional[str] = None,
+) -> None:
+    """Elimina lógicamente una ubicación física si no tiene productos asignados."""
+    if not getattr(usuario, "is_authenticated", False):
+        raise PermissionDenied("Se requiere autenticación.")
+
+    if getattr(usuario, "es_usuario_normal", False):
+        if not usuario.almacen_asignado or usuario.almacen_asignado_id != ubicacion.almacen_id:
+            raise PermissionDenied("No tienes permisos para eliminar ubicaciones de otros almacenes.")
+
+    if ProductoUbicacion.objects.filter(ubicacion=ubicacion, producto__archivado=False).exists():
+        raise NecesitaTraslado(
+            f"La ubicación '{ubicacion.nombre}' tiene productos asignados. Reasígnelos antes de eliminarla.",
+            entidad=ubicacion,
+        )
+
+    with transaction.atomic():
+        ubicacion.activo = False
+        ubicacion.eliminado = True
+        ubicacion.save(update_fields=["activo", "eliminado"])
+
+        registrar_auditoria(
+            usuario=usuario,
+            accion="ELIMINAR_UBICACION",
+            tipo_entidad="Ubicacion",
+            id_entidad=str(ubicacion.id),
+            valores_anteriores={"activo": True, "eliminado": False},
+            valores_nuevos={"activo": False, "eliminado": True},
+            motivo=f"Eliminación lógica de ubicación '{ubicacion.nombre}'",
+            resultado="OK",
+            via_haku=False,
+            ip_origen=ip_origen,
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -563,6 +670,78 @@ def sincronizar_tipos_categoria(
     return creados
 
 
+def reactivar_categoria(
+    *,
+    categoria: Categoria,
+    usuario: Any,
+    ip_origen: Optional[str] = None,
+) -> Categoria:
+    """Reactiva una categoría previamente inhabilitada."""
+    if not getattr(usuario, "is_authenticated", False):
+        raise PermissionDenied("Se requiere autenticación.")
+
+    if getattr(usuario, "es_usuario_normal", False):
+        if not usuario.almacen_asignado or usuario.almacen_asignado_id != categoria.almacen_principal_id:
+            raise PermissionDenied("No tienes permisos para reactivar categorías de otros almacenes.")
+
+    with transaction.atomic():
+        categoria.activo = True
+        categoria.save(update_fields=["activo"])
+
+        registrar_auditoria(
+            usuario=usuario,
+            accion="REACTIVAR_CATEGORIA",
+            tipo_entidad="Categoria",
+            id_entidad=str(categoria.id),
+            valores_anteriores={"activo": False},
+            valores_nuevos={"activo": True},
+            motivo=f"Reactivación de categoría '{categoria.nombre}'",
+            resultado="OK",
+            via_haku=False,
+            ip_origen=ip_origen,
+        )
+    return categoria
+
+
+def eliminar_categoria(
+    *,
+    categoria: Categoria,
+    usuario: Any,
+    ip_origen: Optional[str] = None,
+) -> None:
+    """Elimina lógicamente una categoría si no tiene productos activos."""
+    if not getattr(usuario, "is_authenticated", False):
+        raise PermissionDenied("Se requiere autenticación.")
+
+    if getattr(usuario, "es_usuario_normal", False):
+        if not usuario.almacen_asignado or usuario.almacen_asignado_id != categoria.almacen_principal_id:
+            raise PermissionDenied("No tienes permisos para eliminar categorías de otros almacenes.")
+
+    if categoria.productos.filter(archivado=False).exists():
+        raise NecesitaTraslado(
+            f"La categoría '{categoria.nombre}' tiene productos asociados. Debe trasladarlos a otra categoría antes de eliminarla.",
+            entidad=categoria,
+        )
+
+    with transaction.atomic():
+        categoria.activo = False
+        categoria.eliminado = True
+        categoria.save(update_fields=["activo", "eliminado"])
+
+        registrar_auditoria(
+            usuario=usuario,
+            accion="ELIMINAR_CATEGORIA",
+            tipo_entidad="Categoria",
+            id_entidad=str(categoria.id),
+            valores_anteriores={"activo": True, "eliminado": False},
+            valores_nuevos={"activo": False, "eliminado": True},
+            motivo=f"Eliminación lógica de categoría '{categoria.nombre}'",
+            resultado="OK",
+            via_haku=False,
+            ip_origen=ip_origen,
+        )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 4. PRODUCTOS
 # ─────────────────────────────────────────────────────────────────────────────
@@ -758,6 +937,43 @@ def actualizar_producto(
         )
 
     return producto_db
+
+
+def toggle_activo_producto(
+    *,
+    producto: Producto,
+    usuario: Any,
+    ip_origen: Optional[str] = None,
+) -> Producto:
+    """Inhabilita o reactiva un producto sin archivarlo."""
+    if not getattr(usuario, "is_authenticated", False):
+        raise PermissionDenied("Se requiere autenticación.")
+
+    if getattr(usuario, "es_usuario_normal", False):
+        if not usuario.almacen_asignado or producto.categoria.almacen_principal_id != usuario.almacen_asignado_id:
+            raise PermissionDenied("No tienes permisos para cambiar el estado de productos de otros almacenes.")
+
+    anterior = producto.activo
+    nuevo = not anterior
+
+    with transaction.atomic():
+        producto.activo = nuevo
+        producto.save(update_fields=["activo"])
+
+        registrar_auditoria(
+            usuario=usuario,
+            accion="TOGGLE_ACTIVO_PRODUCTO",
+            tipo_entidad="Producto",
+            id_entidad=str(producto.id),
+            valores_anteriores={"activo": anterior},
+            valores_nuevos={"activo": nuevo},
+            motivo=f"{'Reactivación' if nuevo else 'Inhabilitación'} del producto '{producto.codigo_interno} — {producto.nombre}'",
+            resultado="OK",
+            via_haku=False,
+            ip_origen=ip_origen,
+        )
+
+    return producto
 
 
 def archivar_producto(

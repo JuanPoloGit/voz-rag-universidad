@@ -1,38 +1,52 @@
 {% extends "base.html" %}
-{% block page_title %}Ubicaciones{% endblock %}
+{% block page_title %}Categorías y Bodegas{% endblock %}
 {% block sidebar_ubicaciones %}active{% endblock %}
 
-{% block title %}Ubicaciones — Inventario AudacIA{% endblock %}
+{% block title %}Ubicaciones Físicas — Inventario AudacIA{% endblock %}
 
 {% block content %}
 <div class="card">
     <div class="card-header">
         <div>
             <h1 class="card-title">Ubicaciones Físicas</h1>
-            <p style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.25rem;">
-                Estanterías, gavetas y secciones registradas dentro de los almacenes.
+            <p style="font-size: 12.5px; color: var(--text-muted); margin-top: 2px;">
+                Estanterías, gavetas, racks y secciones registradas dentro de los almacenes.
             </p>
         </div>
-        <div>
-            <a href="{% url 'inventario:ubicacion-crear' %}" class="btn btn-primary">
+        <div class="action-group">
+            <button type="button" class="btn btn-primary" id="btnNuevaUbicacionModal">
                 + Nueva Ubicación
-            </a>
+            </button>
         </div>
     </div>
 
-    {% if almacenes %}
-        <div style="margin-bottom: 1.25rem; display: flex; align-items: center; gap: 0.75rem; font-size: 0.875rem;">
-            <span style="font-weight: 600; color: var(--text-muted);">Filtrar por almacén:</span>
-            <a href="{% url 'inventario:ubicacion-lista' %}" class="btn btn-sm {% if not almacen_seleccionado %}btn-primary{% else %}btn-secondary{% endif %}">
-                Todos
-            </a>
-            {% for alm in almacenes %}
-                <a href="{% url 'inventario:ubicacion-lista' %}?almacen_id={{ alm.id }}" class="btn btn-sm {% if almacen_seleccionado == alm.id|stringformat:'s' %}btn-primary{% else %}btn-secondary{% endif %}">
-                    {{ alm.nombre }}
-                </a>
-            {% endfor %}
+    <!-- Filtros automáticos -->
+    <form method="get" action="{% url 'inventario:ubicacion-lista' %}" data-auto-filter="true"
+          style="margin-bottom: 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+        <div style="flex: 2; min-width: 220px;">
+            <input type="text" name="q" value="{{ q }}" class="form-control"
+                   placeholder="Buscar ubicación por nombre, descripción o bodega..." autocomplete="off">
         </div>
-    {% endif %}
+        {% if almacenes %}
+            <div style="flex: 1; min-width: 180px;">
+                <select name="almacen_id" class="form-control" aria-label="Filtrar por almacén">
+                    <option value="">Todos los almacenes</option>
+                    {% for alm in almacenes %}
+                        <option value="{{ alm.id }}" {% if almacen_seleccionado == alm.id|stringformat:'s' %}selected{% endif %}>
+                            {{ alm.nombre }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+        {% endif %}
+        <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-dim); cursor: pointer; margin: 0;">
+            <input type="checkbox" name="mostrar_inactivos" value="1" {% if mostrar_inactivos %}checked{% endif %}>
+            <span>Mostrar inhabilitadas</span>
+        </label>
+        {% if q or almacen_seleccionado or mostrar_inactivos %}
+            <a href="{% url 'inventario:ubicacion-lista' %}" class="btn btn-sm btn-secondary">Limpiar</a>
+        {% endif %}
+    </form>
 
     <div class="table-responsive">
         <table class="data-table">
@@ -41,31 +55,65 @@
                     <th>Nombre de Ubicación</th>
                     <th>Almacén</th>
                     <th>Descripción</th>
+                    <th>Estado</th>
                     <th style="text-align: right;">Acciones</th>
                 </tr>
             </thead>
             <tbody>
                 {% for ubic in ubicaciones %}
-                    <tr>
-                        <td>
-                            <strong>{{ ubic.nombre }}</strong>
-                        </td>
-                        <td>
-                            <span style="display: inline-block; padding: 0.2rem 0.5rem; background: var(--primary-light); color: var(--primary); border-radius: 0.25rem; font-size: 0.775rem; font-weight: 600;">
-                                {{ ubic.almacen.nombre }}
-                            </span>
-                        </td>
+                    <tr {% if not ubic.activo %}style="opacity: 0.62;"{% endif %}>
+                        <td><strong>{{ ubic.nombre }}</strong></td>
+                        <td><span class="badge badge-accent">{{ ubic.almacen.nombre }}</span></td>
                         <td>{{ ubic.descripcion|default:"—" }}</td>
-                        <td style="text-align: right;">
-                            <a href="{% url 'inventario:ubicacion-editar' ubic.id %}" class="btn btn-sm btn-secondary">
-                                Editar
-                            </a>
+                        <td>
+                            {% if ubic.activo %}
+                                <span class="badge badge-ok">Activa</span>
+                            {% else %}
+                                <span class="badge badge-warn">Inhabilitada</span>
+                            {% endif %}
+                        </td>
+                        <td style="text-align: right; white-space: nowrap;">
+                            <div class="action-group">
+                                <button type="button"
+                                        class="btn btn-sm btn-secondary btn-editar-ubic-modal"
+                                        data-url="{% url 'inventario:ubicacion-editar' ubic.id %}"
+                                        data-nombre="{{ ubic.nombre }}"
+                                        data-almacen="{{ ubic.almacen_id }}"
+                                        data-descripcion="{{ ubic.descripcion|default:'' }}">
+                                    Editar
+                                </button>
+
+                                {% if ubic.activo %}
+                                    {% if user.es_administrador %}
+                                        <a href="{% url 'inventario:ubicacion-desactivar' ubic.id %}" class="btn btn-sm btn-secondary" style="color: var(--warn);">
+                                            Inhabilitar
+                                        </a>
+                                    {% endif %}
+                                {% else %}
+                                    <form method="post" action="{% url 'inventario:ubicacion-reactivar' ubic.id %}" style="display: inline; margin: 0;">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                        <button type="submit" class="btn btn-sm btn-secondary" style="color: var(--ok);">
+                                            Habilitar
+                                        </button>
+                                    </form>
+                                {% endif %}
+
+                                <form method="post" action="{% url 'inventario:ubicacion-eliminar' ubic.id %}" style="display: inline; margin: 0;"
+                                      onsubmit="return confirm('¿Eliminar la ubicación «{{ ubic.nombre }}»?');">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                    <button type="submit" class="btn btn-sm btn-danger">
+                                        Eliminar
+                                    </button>
+                                </form>
+                            </div>
                         </td>
                     </tr>
                 {% empty %}
                     <tr>
-                        <td colspan="4" style="text-align: center; padding: 2rem; color: var(--text-muted);">
-                            No hay ubicaciones registradas en este almacén.
+                        <td colspan="5" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                            No hay ubicaciones registradas con los criterios actuales.
                         </td>
                     </tr>
                 {% endfor %}
@@ -73,4 +121,72 @@
         </table>
     </div>
 </div>
+
+<!-- ═══ MODAL NUEVA / EDITAR UBICACIÓN ═══ -->
+<dialog id="modalUbicacion" class="app-modal">
+    <form method="post" action="{% url 'inventario:ubicacion-crear' %}" id="formModalUbicacion" style="display: flex; flex-direction: column;">
+        {% csrf_token %}
+        <div class="app-modal-header">
+            <h2 class="app-modal-title" id="tituloModalUbicacion">Nueva Ubicación Física</h2>
+            <button type="button" class="app-modal-close" onclick="closeAppModal('modalUbicacion')">&times;</button>
+        </div>
+        <div class="app-modal-body">
+            <div class="form-group">
+                <label>Nombre de la Ubicación *</label>
+                {{ ubicacion_form.nombre }}
+            </div>
+            {% if not user.es_usuario_normal %}
+            <div class="form-group">
+                <label>Almacén *</label>
+                {{ ubicacion_form.almacen }}
+            </div>
+            {% else %}
+                {{ ubicacion_form.almacen }}
+            {% endif %}
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Descripción / Referencia Física</label>
+                {{ ubicacion_form.descripcion }}
+            </div>
+        </div>
+        <div class="app-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalUbicacion')">Cancelar</button>
+            <button type="submit" class="btn btn-primary" id="btnSubmitModalUbicacion">Guardar Ubicación</button>
+        </div>
+    </form>
+</dialog>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    var formUbic = document.getElementById("formModalUbicacion");
+    var tituloUbic = document.getElementById("tituloModalUbicacion");
+    var btnSubUbic = document.getElementById("btnSubmitModalUbicacion");
+    var urlCrearUbic = "{% url 'inventario:ubicacion-crear' %}";
+
+    document.getElementById("btnNuevaUbicacionModal").addEventListener("click", function() {
+        formUbic.reset();
+        formUbic.action = urlCrearUbic;
+        tituloUbic.textContent = "Nueva Ubicación Física";
+        btnSubUbic.textContent = "Crear Ubicación";
+        openAppModal("modalUbicacion");
+    });
+
+    document.querySelectorAll(".btn-editar-ubic-modal").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            formUbic.reset();
+            formUbic.action = btn.getAttribute("data-url");
+            tituloUbic.textContent = "Editar Ubicación Física";
+            btnSubUbic.textContent = "Guardar Cambios";
+            var inpNom = formUbic.querySelector('[name="nombre"]');
+            var selAlm = formUbic.querySelector('[name="almacen"]');
+            var inpDesc = formUbic.querySelector('[name="descripcion"]');
+            if (inpNom) inpNom.value = btn.getAttribute("data-nombre") || "";
+            if (selAlm) selAlm.value = btn.getAttribute("data-almacen") || "";
+            if (inpDesc) inpDesc.value = btn.getAttribute("data-descripcion") || "";
+            openAppModal("modalUbicacion");
+        });
+    });
+});
+</script>
 {% endblock %}

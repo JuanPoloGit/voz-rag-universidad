@@ -12,6 +12,8 @@ urlpatterns = [
     path("almacenes/crear/", views.AlmacenCrearView.as_view(), name="almacen-crear"),
     path("almacenes/<int:pk>/editar/", views.AlmacenEditarView.as_view(), name="almacen-editar"),
     path("almacenes/<int:pk>/desactivar/", views.AlmacenDesactivarView.as_view(), name="almacen-desactivar"),
+    path("almacenes/<int:pk>/reactivar/", views.AlmacenReactivarView.as_view(), name="almacen-reactivar"),
+    path("almacenes/<int:pk>/eliminar/", views.AlmacenEliminarView.as_view(), name="almacen-eliminar"),
     path("almacenes/<int:pk>/trasladar/", views.AlmacenDesactivarView.as_view(), name="trasladar-almacen"),
 
     # Ubicaciones
@@ -19,6 +21,8 @@ urlpatterns = [
     path("ubicaciones/crear/", views.UbicacionCrearView.as_view(), name="ubicacion-crear"),
     path("ubicaciones/<int:pk>/editar/", views.UbicacionEditarView.as_view(), name="ubicacion-editar"),
     path("ubicaciones/<int:pk>/desactivar/", views.UbicacionDesactivarView.as_view(), name="ubicacion-desactivar"),
+    path("ubicaciones/<int:pk>/reactivar/", views.UbicacionReactivarView.as_view(), name="ubicacion-reactivar"),
+    path("ubicaciones/<int:pk>/eliminar/", views.UbicacionEliminarView.as_view(), name="ubicacion-eliminar"),
     path("ubicaciones/<int:pk>/trasladar/", views.UbicacionDesactivarView.as_view(), name="trasladar-ubicacion"),
 
     # Categorías y Tipos opcionales
@@ -26,6 +30,8 @@ urlpatterns = [
     path("categorias/crear/", views.CategoriaCrearView.as_view(), name="categoria-crear"),
     path("categorias/<int:pk>/editar/", views.CategoriaEditarView.as_view(), name="categoria-editar"),
     path("categorias/<int:pk>/desactivar/", views.CategoriaDesactivarView.as_view(), name="categoria-desactivar"),
+    path("categorias/<int:pk>/reactivar/", views.CategoriaReactivarView.as_view(), name="categoria-reactivar"),
+    path("categorias/<int:pk>/eliminar/", views.CategoriaEliminarView.as_view(), name="categoria-eliminar"),
     path("categorias/<int:pk>/trasladar/", views.CategoriaTrasladarView.as_view(), name="categoria-trasladar"),
     path("categorias/tipos/crear/", views.TipoCategoriaCrearView.as_view(), name="tipo-categoria-crear"),
     path("categorias/tipos/<int:pk>/editar/", views.TipoCategoriaEditarView.as_view(), name="tipo-categoria-editar"),
@@ -37,12 +43,15 @@ urlpatterns = [
     path("productos/verificar-nombre/", views.ProductoVerificarNombreView.as_view(), name="producto-verificar-nombre"),
     path("productos/<int:pk>/", views.ProductoDetalleView.as_view(), name="producto-detalle"),
     path("productos/<int:pk>/editar/", views.ProductoEditarView.as_view(), name="producto-editar"),
+    path("productos/<int:pk>/toggle-activo/", views.ProductoToggleActivoView.as_view(), name="producto-toggle-activo"),
     path("productos/<int:pk>/archivar/", views.ProductoArchivarView.as_view(), name="producto-archivar"),
     path("productos/<int:pk>/fusionar/", views.ProductoFusionarView.as_view(), name="producto-fusionar"),
 
     # Alertas y Notificaciones de Stock
     path("alertas/", views.AlertasStockListaView.as_view(), name="alertas-lista"),
+    path("alertas/marcar-leida/", views.AlertaMarcarLeidaView.as_view(), name="alerta-marcar-leida"),
     path("alertas/json/", views.AlertasStockJSONView.as_view(), name="alertas-json"),
+    path("perfil/actualizar-nombre/", views.ActualizarNombrePerfilView.as_view(), name="perfil-actualizar-nombre"),
 
     # Movimientos
     path("movimientos/", views.MovimientoListaView.as_view(), name="movimiento-lista"),

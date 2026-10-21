@@ -21,7 +21,7 @@
         {% if tiene_productos %}
             <div style="background: var(--bg-panel-2); border: 1px solid rgba(255,189,92,0.3); border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem;">
                 <h3 style="font-size: 1rem; color: var(--warn); margin-bottom: 0.5rem;">
-                    ⚠️ Reasignación de Ubicación Requerida (§7.2)
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> Reasignación de Ubicación Requerida (§7.2)
                 </h3>
                 <p style="font-size: 0.875rem; color: var(--warn); margin-bottom: 0.75rem;">
                     Esta ubicación contiene productos asignados. Selecciona otra ubicación dentro del almacén
@@ -36,7 +36,7 @@
             </div>
         {% else %}
             <div style="background: var(--bg-panel-2); border: 1px solid rgba(78,230,171,0.3); border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem; color: var(--ok); font-size: 0.875rem;">
-                ✓ Esta ubicación no tiene productos asignados. Puede ser desactivada directamente.
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><polyline points="20 6 9 17 4 12"/></svg> Esta ubicación no tiene productos asignados. Puede ser desactivada directamente.
             </div>
         {% endif %}
 

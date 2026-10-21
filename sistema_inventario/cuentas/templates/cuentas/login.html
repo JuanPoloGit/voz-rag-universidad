@@ -152,6 +152,39 @@
             font-size: 11.5px;
             margin-top: 5px;
         }
+
+        .pwd-input-wrap {
+            position: relative;
+            display: flex;
+            align-items: center;
+            width: 100%;
+        }
+
+        .pwd-input-wrap input {
+            padding-right: 44px;
+        }
+
+        .pwd-toggle-btn {
+            position: absolute;
+            right: 10px;
+            background: transparent;
+            border: none;
+            color: #93a2d6;
+            cursor: pointer;
+            padding: 4px 6px;
+            border-radius: 6px;
+            font-size: 15px;
+            line-height: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: color 0.15s ease, background 0.15s ease;
+        }
+
+        .pwd-toggle-btn:hover {
+            color: #57e8cf;
+            background: rgba(87, 232, 207, 0.10);
+        }
     </style>
 </head>
 <body>
@@ -181,7 +214,12 @@
 
             <div class="form-group">
                 <label for="{{ form.password.id_for_label }}">{{ form.password.label }}</label>
-                {{ form.password }}
+                <div class="pwd-input-wrap">
+                    {{ form.password }}
+                    <button type="button" class="pwd-toggle-btn" id="btnToggleLoginPwd" title="Mostrar / ocultar contraseña" aria-label="Mostrar contraseña">
+                        <svg class="eye-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+                </div>
                 {% if form.password.errors %}
                     <div class="field-error">{{ form.password.errors.0 }}</div>
                 {% endif %}
@@ -195,5 +233,21 @@
             <button type="submit" class="btn-login">Iniciar Sesión</button>
         </form>
     </div>
+
+    <script>
+        (function() {
+            var btn = document.getElementById("btnToggleLoginPwd");
+            var inp = document.getElementById("{{ form.password.id_for_label }}") || document.querySelector('input[name="password"]');
+            var svgEyeOpen = '<svg class="eye-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+            var svgEyeClosed = '<svg class="eye-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+            if (btn && inp) {
+                btn.addEventListener("click", function() {
+                    var isPwd = inp.type === "password";
+                    inp.type = isPwd ? "text" : "password";
+                    btn.innerHTML = isPwd ? svgEyeClosed : svgEyeOpen;
+                });
+            }
+        })();
+    </script>
 </body>
 </html>

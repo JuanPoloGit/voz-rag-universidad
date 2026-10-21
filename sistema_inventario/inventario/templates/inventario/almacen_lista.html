@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block page_title %}Almacenes{% endblock %}
+{% block page_title %}Categorías y Bodegas{% endblock %}
 {% block sidebar_almacenes %}active{% endblock %}
 
 {% block title %}Almacenes — Inventario AudacIA{% endblock %}
@@ -8,77 +8,106 @@
 <div class="card">
     <div class="card-header">
         <div>
-            <h1 class="card-title">Almacenes</h1>
-            <p style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.25rem;">
-                Gestión de bodegas y depósitos físicos autorizados.
+            <h1 class="card-title">Almacenes y Bodegas</h1>
+            <p style="font-size: 12.5px; color: var(--text-muted); margin-top: 2px;">
+                Gestión de bodegas y depósitos físicos autorizados en el sistema.
             </p>
         </div>
-        <div>
-            {% if user.es_administrador %}
-                <a href="{% url 'inventario:almacen-crear' %}" class="btn btn-primary">
-                    + Nuevo Almacén
-                </a>
-            {% endif %}
+        {% if user.es_administrador %}
+        <div class="action-group">
+            <button type="button" class="btn btn-primary" id="btnNuevoAlmacenModal">
+                + Nuevo Almacén
+            </button>
         </div>
-    </div>
-
-    <div style="margin-bottom: 1rem; display: flex; justify-content: flex-end; font-size: 0.875rem;">
-        {% if mostrar_inactivos %}
-            <a href="{% url 'inventario:almacen-lista' %}" class="btn btn-sm btn-secondary">
-                Ocultar inactivos
-            </a>
-        {% else %}
-            <a href="{% url 'inventario:almacen-lista' %}?mostrar_inactivos=1" class="btn btn-sm btn-secondary">
-                Mostrar inactivos
-            </a>
         {% endif %}
     </div>
+
+    <!-- Buscador y filtro automático -->
+    <form method="get" action="{% url 'inventario:almacen-lista' %}" data-auto-filter="true"
+          style="margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 220px; max-width: 420px;">
+            <input type="text" name="q" value="{{ q }}" class="form-control"
+                   placeholder="Buscar almacén por nombre o descripción..." autocomplete="off">
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-dim); cursor: pointer; margin: 0;">
+                <input type="checkbox" name="mostrar_inactivos" value="1" {% if mostrar_inactivos %}checked{% endif %}>
+                <span>Mostrar inhabilitados</span>
+            </label>
+            {% if q or mostrar_inactivos %}
+                <a href="{% url 'inventario:almacen-lista' %}" class="btn btn-sm btn-secondary">Limpiar</a>
+            {% endif %}
+        </div>
+    </form>
 
     <div class="table-responsive">
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>Nombre</th>
-                    <th>Descripción</th>
-                    <th>Estado</th>
-                    <th>Fecha Registro</th>
+                    <th style="width: {% if user.es_administrador %}20%{% else %}30%{% endif %};">Nombre de Bodega</th>
+                    <th style="width: {% if user.es_administrador %}28%{% else %}42%{% endif %};">Descripción</th>
+                    <th style="width: 12%;">Estado</th>
+                    <th style="width: 14%;">Fecha Registro</th>
                     {% if user.es_administrador %}
-                        <th style="text-align: right;">Acciones</th>
+                        <th style="text-align: right; width: 26%; white-space: nowrap;">Acciones</th>
                     {% endif %}
                 </tr>
             </thead>
             <tbody>
                 {% for almacen in almacenes %}
-                    <tr>
-                        <td>
-                            <strong>{{ almacen.nombre }}</strong>
-                        </td>
+                    <tr {% if not almacen.activo %}style="opacity: 0.62;"{% endif %}>
+                        <td><strong>{{ almacen.nombre }}</strong></td>
                         <td>{{ almacen.descripcion|default:"—" }}</td>
                         <td>
                             {% if almacen.activo %}
-                                <span style="display: inline-block; padding: 0.2rem 0.5rem; background: var(--success-bg); color: var(--success); border-radius: 9999px; font-size: 0.75rem; font-weight: 600;">
-                                    Activo
-                                </span>
+                                <span class="badge badge-ok">Activo</span>
                             {% else %}
-                                <span style="display: inline-block; padding: 0.2rem 0.5rem; background: var(--danger-bg); color: var(--danger); border-radius: 9999px; font-size: 0.75rem; font-weight: 600;">
-                                    Inactivo
-                                </span>
+                                <span class="badge badge-warn">Inhabilitado</span>
                             {% endif %}
                         </td>
-                        <td style="font-size: 0.8rem; color: var(--text-muted);">
+                        <td style="font-size: 12px; color: var(--text-muted); white-space: nowrap;">
                             {{ almacen.fecha_creacion|date:"d/m/Y H:i" }}
                         </td>
                         {% if user.es_administrador %}
-                            <td style="text-align: right;">
-                                <a href="{% url 'inventario:almacen-editar' almacen.id %}" class="btn btn-sm btn-secondary">
-                                    Editar
-                                </a>
+                            <td style="text-align: right; white-space: nowrap;">
+                                <div class="action-group" style="display: inline-flex; flex-direction: row; flex-wrap: nowrap; gap: 6px; justify-content: flex-end;">
+                                    <button type="button"
+                                            class="btn btn-sm btn-secondary btn-editar-almacen-modal"
+                                            data-url="{% url 'inventario:almacen-editar' almacen.id %}"
+                                            data-nombre="{{ almacen.nombre }}"
+                                            data-descripcion="{{ almacen.descripcion|default:'' }}">
+                                        Editar
+                                    </button>
+
+                                    {% if almacen.activo %}
+                                        <a href="{% url 'inventario:almacen-desactivar' almacen.id %}" class="btn btn-sm btn-secondary" style="color: var(--warn); white-space: nowrap;">
+                                            Inhabilitar
+                                        </a>
+                                    {% else %}
+                                        <form method="post" action="{% url 'inventario:almacen-reactivar' almacen.id %}" style="display: inline; margin: 0;">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                            <button type="submit" class="btn btn-sm btn-secondary" style="color: var(--ok); white-space: nowrap;">
+                                                Habilitar
+                                            </button>
+                                        </form>
+                                    {% endif %}
+
+                                    <form method="post" action="{% url 'inventario:almacen-eliminar' almacen.id %}" style="display: inline; margin: 0;"
+                                          onsubmit="return confirm('¿Eliminar el almacén «{{ almacen.nombre }}»? Si tiene existencias se solicitará trasladarlas primero.');">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                        <button type="submit" class="btn btn-sm btn-danger" style="white-space: nowrap;">
+                                            Eliminar
+                                        </button>
+                                    </form>
+                                </div>
                             </td>
                         {% endif %}
                     </tr>
                 {% empty %}
                     <tr>
-                        <td colspan="5" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                        <td colspan="{% if user.es_administrador %}5{% else %}4{% endif %}" style="text-align: center; padding: 2rem; color: var(--text-muted);">
                             No hay almacenes registrados{% if not mostrar_inactivos %} activos{% endif %}.
                         </td>
                     </tr>
@@ -87,4 +116,69 @@
         </table>
     </div>
 </div>
+
+{% if user.es_administrador %}
+<!-- ═══ MODAL NUEVO / EDITAR ALMACÉN ═══ -->
+<dialog id="modalAlmacen" class="app-modal">
+    <form method="post" action="{% url 'inventario:almacen-crear' %}" id="formModalAlmacen" style="display: flex; flex-direction: column;">
+        {% csrf_token %}
+        <div class="app-modal-header">
+            <h2 class="app-modal-title" id="tituloModalAlmacen">Nuevo Almacén</h2>
+            <button type="button" class="app-modal-close" onclick="closeAppModal('modalAlmacen')">&times;</button>
+        </div>
+        <div class="app-modal-body">
+            <div class="form-group">
+                <label>Nombre del Almacén *</label>
+                {{ almacen_form.nombre }}
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Descripción / Notas</label>
+                {{ almacen_form.descripcion }}
+            </div>
+        </div>
+        <div class="app-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalAlmacen')">Cancelar</button>
+            <button type="submit" class="btn btn-primary" id="btnSubmitModalAlmacen">Guardar Almacén</button>
+        </div>
+    </form>
+</dialog>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% if user.es_administrador %}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    var formAlm = document.getElementById("formModalAlmacen");
+    var tituloAlm = document.getElementById("tituloModalAlmacen");
+    var btnSubAlm = document.getElementById("btnSubmitModalAlmacen");
+    var urlCrearAlm = "{% url 'inventario:almacen-crear' %}";
+
+    var btnNuevo = document.getElementById("btnNuevoAlmacenModal");
+    if (btnNuevo) {
+        btnNuevo.addEventListener("click", function() {
+            formAlm.reset();
+            formAlm.action = urlCrearAlm;
+            tituloAlm.textContent = "Nuevo Almacén";
+            btnSubAlm.textContent = "Crear Almacén";
+            openAppModal("modalAlmacen");
+        });
+    }
+
+    document.querySelectorAll(".btn-editar-almacen-modal").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            formAlm.reset();
+            formAlm.action = btn.getAttribute("data-url");
+            tituloAlm.textContent = "Editar Almacén";
+            btnSubAlm.textContent = "Guardar Cambios";
+            var inpNom = formAlm.querySelector('[name="nombre"]');
+            var inpDesc = formAlm.querySelector('[name="descripcion"]');
+            if (inpNom) inpNom.value = btn.getAttribute("data-nombre") || "";
+            if (inpDesc) inpDesc.value = btn.getAttribute("data-descripcion") || "";
+            openAppModal("modalAlmacen");
+        });
+    });
+});
+</script>
+{% endif %}
 {% endblock %}

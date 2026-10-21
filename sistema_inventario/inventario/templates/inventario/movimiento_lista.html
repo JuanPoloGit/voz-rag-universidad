@@ -1,121 +1,976 @@
 {% extends "base.html" %}
-{% block page_title %}Historial de Movimientos{% endblock %}
+{% block page_title %}Movimientos{% endblock %}
 {% block sidebar_movimientos %}active{% endblock %}
 
-{% block title %}Historial de Movimientos{% endblock %}
+{% block title %}Movimientos de Inventario — Inventario AudacIA{% endblock %}
+
+{% block extra_css %}
+<style>
+    .mov-type-selector {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 8px;
+        margin-bottom: 18px;
+        padding: 6px;
+        background: var(--bg-deep-2);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+    }
+    .mov-type-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        height: 42px;
+        padding: 0 10px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: var(--bg-panel);
+        color: var(--text-dim);
+        font-size: 12.5px;
+        font-weight: 600;
+        cursor: pointer;
+        text-align: center;
+        white-space: nowrap;
+        transition: all 0.15s ease;
+    }
+    .mov-type-btn svg {
+        width: 14px;
+        height: 14px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        flex-shrink: 0;
+    }
+    .mov-type-btn:hover {
+        color: var(--text);
+        border-color: var(--accent);
+    }
+    .mov-type-btn.active {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent-bright);
+        box-shadow: 0 4px 12px rgba(59, 111, 240, 0.4);
+    }
+    @media (max-width: 820px) {
+        .mov-type-selector {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+    <div class="card-header">
         <div>
-            <h2>Historial de Movimientos de Inventario</h2>
-            <p style="color: var(--text-muted); font-size: 0.9rem;">
-                Trazabilidad inmutable de entradas, salidas, traslados, préstamos y reversiones (§9).
+            <h1 class="card-title">Centro de Movimientos, Préstamos y Conteos</h1>
+            <p style="color: var(--text-muted); font-size: 12.5px; margin-top: 2px;">
+                Control unificado de entradas, salidas (dotación y préstamos con fechas de entrega/devolución), traslados y conteos físicos.
             </p>
         </div>
-        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-            <a href="{% url 'inventario:movimiento-entrada' %}" class="btn btn-primary">+ Entrada</a>
-            <a href="{% url 'inventario:movimiento-salida' %}" class="btn btn-secondary">- Salida</a>
-            <a href="{% url 'inventario:movimiento-traslado' %}" class="btn btn-secondary">⇄ Traslado</a>
+        <div class="action-group">
+            <button type="button" class="btn btn-primary" id="btnAbrirNuevoMovimiento">
+                + Nuevo Movimiento
+            </button>
         </div>
     </div>
 
-    <!-- Barra de Filtros -->
-    <form method="get" style="display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
-        <input type="text" name="q" value="{{ q }}" placeholder="Buscar por producto, destinatario o motivo..." class="form-control" style="flex: 2; min-width: 250px;">
-        <select name="tipo" class="form-control" style="flex: 1; min-width: 180px;">
-            <option value="">-- Todos los tipos --</option>
-            {% for valor, etiqueta in tipos_movimiento %}
-                <option value="{{ valor }}" {% if tipo_seleccionado == valor %}selected{% endif %}>{{ etiqueta }}</option>
-            {% endfor %}
-        </select>
-        <button type="submit" class="btn btn-primary">Filtrar</button>
-        {% if q or tipo_seleccionado %}
-            <a href="{% url 'inventario:movimiento-lista' %}" class="btn btn-secondary">Limpiar</a>
-        {% endif %}
-    </form>
+    <!-- Botones de Filtro por Tipo de Visualización -->
+    <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;">
+        <div class="filter-pills" role="tablist" aria-label="Filtrar vista de movimientos">
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=ENTRADA{% if q %}&q={{ q }}{% endif %}"
+               class="filter-pill {% if vista_actual == 'ENTRADA' %}active{% endif %}">
+                <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Entradas
+            </a>
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=SALIDA{% if q %}&q={{ q }}{% endif %}"
+               class="filter-pill {% if vista_actual == 'SALIDA' %}active{% endif %}">
+                <svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Salidas
+            </a>
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=PRESTAMOS{% if q %}&q={{ q }}{% endif %}"
+               class="filter-pill {% if vista_actual == 'PRESTAMOS' %}active{% endif %}">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                Préstamos
+            </a>
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=TRASLADO{% if q %}&q={{ q }}{% endif %}"
+               class="filter-pill {% if vista_actual == 'TRASLADO' %}active{% endif %}">
+                <svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                Traslados
+            </a>
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=CONTEOS{% if q %}&q={{ q }}{% endif %}"
+               class="filter-pill {% if vista_actual == 'CONTEOS' %}active{% endif %}">
+                <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                Conteos Físicos
+            </a>
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=SIN_ROTACION{% if q %}&q={{ q }}{% endif %}"
+               class="filter-pill {% if vista_actual == 'SIN_ROTACION' %}active{% endif %}">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                Sin Rotación
+            </a>
+        </div>
 
-    {% if movimientos %}
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>Fecha y Hora</th>
-                    <th>Tipo</th>
-                    <th>Producto</th>
-                    <th>Cantidad</th>
-                    <th>Almacén / Ubicación</th>
-                    <th>Destinatario / Motivo</th>
-                    <th>Usuario</th>
-                    <th>Estado</th>
-                    <th>Acción</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for mov in movimientos %}
-                    <tr {% if mov.estado == 'REVERTIDO' %}style="opacity: 0.6; background: var(--bg-panel-2);"{% endif %}>
-                        <td style="font-size: 0.85rem; white-space: nowrap;">{{ mov.fecha_hora|date:"Y-m-d H:i" }}</td>
-                        <td>
-                            <span class="badge" style="
-                                {% if mov.tipo == 'ENTRADA' %}background: var(--success); color: white;
-                                {% elif mov.tipo == 'SALIDA' %}background: var(--danger); color: white;
-                                {% elif mov.tipo == 'PRESTAMO' %}background: #8b5cf6; color: white;
-                                {% elif mov.tipo == 'DEVOLUCION' %}background: var(--accent); color: white;
-                                {% elif mov.tipo == 'BAJA_PRESTAMO' %}background: var(--crit); color: white;
-                                {% elif mov.tipo == 'REVERSION' %}background: var(--bg-elevated); color: white;
-                                {% else %}background: var(--bg-elevated); color: white;{% endif %}
-                            ">
-                                {{ mov.get_tipo_display }}
-                            </span>
-                        </td>
-                        <td>
-                            <strong>{{ mov.producto.codigo_interno }}</strong><br>
-                            <small style="color: var(--text-muted);">{{ mov.producto.nombre|truncatechars:25 }}</small>
-                        </td>
-                        <td><strong>{{ mov.cantidad }}</strong></td>
-                        <td style="font-size: 0.85rem;">
-                            {% if mov.almacen_origen %}{{ mov.almacen_origen.nombre }}{% endif %}
-                            {% if mov.almacen_destino %} → {{ mov.almacen_destino.nombre }}{% endif %}
-                        </td>
-                        <td style="font-size: 0.85rem;">
-                            {% if mov.destinatario %}<strong>A:</strong> {{ mov.destinatario }}<br>{% endif %}
-                            <span style="color: var(--text-muted);">{{ mov.motivo|truncatechars:35 }}</span>
-                        </td>
-                        <td style="font-size: 0.85rem;">{{ mov.usuario.nombre_completo|default:mov.usuario.username }}</td>
-                        <td>
-                            {% if mov.estado == 'REVERTIDO' %}
-                                <span class="badge" style="background: var(--crit); color: white;">REVERTIDO</span>
-                            {% else %}
-                                <span class="badge" style="background: var(--ok); color: white;">OK</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if mov.estado != 'REVERTIDO' and mov.tipo in 'ENTRADA,SALIDA,TRASLADO_ENTRE,AJUSTE_CONTEO' %}
-                                <a href="{% url 'inventario:movimiento-revertir' mov.pk %}" class="btn btn-sm btn-secondary" style="color: var(--danger);">Revertir</a>
-                            {% endif %}
-                        </td>
+        <!-- Buscador y filtro automático -->
+        <form method="get" action="{% url 'inventario:movimiento-lista' %}" data-auto-filter="true"
+              style="display: flex; gap: 8px; flex: 1; min-width: 240px; max-width: 520px; align-items: center;">
+            <input type="hidden" name="vista" value="{{ vista_actual }}">
+            <input type="text" name="q" value="{{ q }}" class="form-control"
+                   placeholder="Buscar producto, código, destinatario..." autocomplete="off">
+            {% if vista_actual == 'PRESTAMOS' %}
+                <select name="estado_prestamo" class="form-control" style="max-width: 170px;">
+                    <option value="">Todos los estados</option>
+                    {% for val, etiq in estados_prestamo %}
+                        <option value="{{ val }}" {% if estado_prestamo == val %}selected{% endif %}>{{ etiq }}</option>
+                    {% endfor %}
+                </select>
+            {% elif vista_actual == 'SIN_ROTACION' %}
+                <select name="dias" class="form-control" style="max-width: 175px;" title="Inactividad mínima">
+                    <option value="15" {% if dias_estancados == 15 %}selected{% endif %}>Sin mov. &ge; 15 días</option>
+                    <option value="30" {% if dias_estancados == 30 %}selected{% endif %}>Sin mov. &ge; 30 días</option>
+                    <option value="60" {% if dias_estancados == 60 %}selected{% endif %}>Sin mov. &ge; 60 días</option>
+                    <option value="90" {% if dias_estancados == 90 %}selected{% endif %}>Sin mov. &ge; 90 días</option>
+                </select>
+            {% endif %}
+            {% if q or estado_prestamo or tipo_seleccionado %}
+                <a href="{% url 'inventario:movimiento-lista' %}?vista={{ vista_actual }}" class="btn btn-sm btn-secondary">Limpiar</a>
+            {% endif %}
+        </form>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         VISTA A: SUBSECCIÓN DE PRÉSTAMOS Y ANTIGÜEDAD (Salidas -> Préstamos)
+         ═══════════════════════════════════════════════════════════════ -->
+    {% if vista_actual == 'PRESTAMOS' %}
+        <div class="table-responsive">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Producto</th>
+                        <th>Destinatario / Responsable</th>
+                        <th>Bodega</th>
+                        <th style="text-align: center;">Entregado</th>
+                        <th style="text-align: center;">Pendiente</th>
+                        <th>Fecha Entrega</th>
+                        <th>Fecha Devolución</th>
+                        <th>Antigüedad</th>
+                        <th>Estado</th>
+                        <th style="text-align: right;">Acciones</th>
                     </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                    {% for p in prestamos_lista %}
+                        <tr>
+                            <td>
+                                <a href="{% url 'inventario:producto-detalle' p.producto.id %}">
+                                    <code>{{ p.producto.codigo_interno }}</code>
+                                </a>
+                                <div><strong>{{ p.producto.nombre|truncatechars:28 }}</strong></div>
+                            </td>
+                            <td>
+                                <strong>{{ p.destinatario }}</strong>
+                                {% if p.motivo_prestamo %}
+                                    <div style="font-size: 11.5px; color: var(--text-faint);">{{ p.motivo_prestamo|truncatechars:35 }}</div>
+                                {% endif %}
+                            </td>
+                            <td>{{ p.almacen.nombre }}</td>
+                            <td style="text-align: center; font-weight: 600;">{{ p.cantidad_original }}</td>
+                            <td style="text-align: center; font-weight: 700; color: {% if p.cantidad_pendiente_devolucion > 0 %}var(--warn){% else %}var(--ok){% endif %};">
+                                {{ p.cantidad_pendiente_devolucion }}
+                            </td>
+                            <td style="white-space: nowrap; font-size: 12px;">
+                                {{ p.fecha_creacion|date:"d/m/Y H:i" }}
+                            </td>
+                            <td style="white-space: nowrap; font-size: 12px;">
+                                {% if p.ultima_devolucion_fecha %}
+                                    <span style="color: var(--ok);">{{ p.ultima_devolucion_fecha|date:"d/m/Y H:i" }}</span>
+                                {% else %}
+                                    <span style="color: var(--text-faint); font-style: italic;">Pendiente</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if p.estado == 'CERRADO' %}
+                                    <span class="badge badge-ok">Cerrado ({{ p.dias_transcurridos }}d)</span>
+                                {% elif p.dias_transcurridos > 15 %}
+                                    <span class="badge badge-crit">{{ p.dias_transcurridos }} días</span>
+                                {% elif p.dias_transcurridos > 7 %}
+                                    <span class="badge badge-warn">{{ p.dias_transcurridos }} días</span>
+                                {% else %}
+                                    <span class="badge badge-accent">{{ p.dias_transcurridos }} día(s)</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if p.estado == 'EN_PRESTAMO' %}
+                                    <span class="badge badge-purple">En Préstamo</span>
+                                {% elif p.estado == 'DEVUELTO_PARCIAL' %}
+                                    <span class="badge badge-warn">Parcial</span>
+                                {% else %}
+                                    <span class="badge badge-ok">Cerrado</span>
+                                {% endif %}
+                            </td>
+                            <td style="text-align: right; white-space: nowrap;">
+                                {% if p.estado != 'CERRADO' %}
+                                    <div class="action-group">
+                                        <button type="button"
+                                                class="btn btn-sm btn-primary btn-abrir-devolucion"
+                                                data-url="{% url 'inventario:prestamo-devolver' p.pk %}"
+                                                data-producto="{{ p.producto.codigo_interno }} — {{ p.producto.nombre }}"
+                                                data-destinatario="{{ p.destinatario }}"
+                                                data-pendiente="{{ p.cantidad_pendiente_devolucion }}">
+                                            Devolver
+                                        </button>
+                                        <button type="button"
+                                                class="btn btn-sm btn-secondary btn-abrir-baja"
+                                                style="color: var(--crit);"
+                                                data-url="{% url 'inventario:prestamo-baja' p.pk %}"
+                                                data-producto="{{ p.producto.codigo_interno }} — {{ p.producto.nombre }}"
+                                                data-destinatario="{{ p.destinatario }}"
+                                                data-pendiente="{{ p.cantidad_pendiente_devolucion }}">
+                                            Baja daño
+                                        </button>
+                                    </div>
+                                {% else %}
+                                    <span style="font-size: 11.5px; color: var(--text-faint);">Completado</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="10" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">
+                                No hay préstamos registrados para el filtro actual.
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
 
-        <!-- Paginación -->
+    <!-- ═══════════════════════════════════════════════════════════════
+         VISTA B: SUBSECCIÓN DE CONTEOS FÍSICOS Y AJUSTES
+         ═══════════════════════════════════════════════════════════════ -->
+    {% elif vista_actual == 'CONTEOS' %}
+        <div class="table-responsive">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Fecha Conteo</th>
+                        <th>Producto</th>
+                        <th>Almacén</th>
+                        <th style="text-align: center;">Stock Sistema</th>
+                        <th style="text-align: center;">Contado Físico</th>
+                        <th style="text-align: center;">Diferencia</th>
+                        <th>Registrado Por</th>
+                        <th>Estado</th>
+                        <th style="text-align: right;">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in conteos_lista %}
+                        <tr>
+                            <td style="white-space: nowrap; font-size: 12px;">{{ c.fecha_conteo|date:"d/m/Y H:i" }}</td>
+                            <td>
+                                <code>{{ c.producto.codigo_interno }}</code>
+                                <div><strong>{{ c.producto.nombre|truncatechars:28 }}</strong></div>
+                            </td>
+                            <td>{{ c.almacen.nombre }}</td>
+                            <td style="text-align: center;">{{ c.stock_sistema }}</td>
+                            <td style="text-align: center; font-weight: 700;">{{ c.cantidad_contada }}</td>
+                            <td style="text-align: center; font-weight: 700; color: {% if c.diferencia < 0 %}var(--crit){% elif c.diferencia > 0 %}var(--ok){% else %}var(--text-dim){% endif %};">
+                                {% if c.diferencia > 0 %}+{{ c.diferencia }}{% else %}{{ c.diferencia }}{% endif %}
+                            </td>
+                            <td style="font-size: 12px;">
+                                {{ c.usuario_conteo.nombre_completo|default:c.usuario_conteo.username }}
+                                {% if c.motivo %}<div style="font-size: 11px; color: var(--text-faint);">{{ c.motivo|truncatechars:30 }}</div>{% endif %}
+                            </td>
+                            <td>
+                                {% if c.estado == 'CONFIRMADO' %}
+                                    <span class="badge badge-ok">Ajuste Aplicado</span>
+                                {% elif c.estado == 'PENDIENTE' %}
+                                    <span class="badge badge-warn">Pendiente Aprobación</span>
+                                {% else %}
+                                    <span class="badge badge-crit">{{ c.get_estado_display }}</span>
+                                {% endif %}
+                            </td>
+                            <td style="text-align: right; white-space: nowrap;">
+                                {% if c.estado == 'PENDIENTE' and user.es_administrador %}
+                                    <form method="post" action="{% url 'inventario:conteo-confirmar' c.pk %}" style="display: inline; margin: 0;">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="next" value="{% url 'inventario:movimiento-lista' %}?vista=CONTEOS">
+                                        <button type="submit" class="btn btn-sm btn-primary"
+                                                onclick="return confirm('¿Confirmar ajuste de stock a {{ c.cantidad_contada }} unidades para {{ c.producto.codigo_interno }}?');">
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><polyline points="20 6 9 17 4 12"/></svg>Aprobar Ajuste
+                                        </button>
+                                    </form>
+                                {% else %}
+                                    <span style="font-size: 11.5px; color: var(--text-faint);">
+                                        {% if c.usuario_confirmacion %}Por {{ c.usuario_confirmacion.username }}{% else %}—{% endif %}
+                                    </span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="9" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">
+                                No hay conteos físicos registrados aún.
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         VISTA B2: SUBSECCIÓN DE ARTÍCULOS SIN ROTACIÓN / INACTIVOS
+         ═══════════════════════════════════════════════════════════════ -->
+    {% elif vista_actual == 'SIN_ROTACION' %}
+        <div class="table-responsive">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Código</th>
+                        <th>Producto</th>
+                        <th>Categoría</th>
+                        <th>Última Actividad</th>
+                        <th>Inactividad Estimada</th>
+                        <th style="text-align: right;">Acción</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in estancados_lista %}
+                        <tr>
+                            <td>
+                                <a href="{% url 'inventario:producto-detalle' p.pk %}" style="font-family: var(--font-mono); font-weight: 700; color: var(--accent-bright);">
+                                    {{ p.codigo_interno }}
+                                </a>
+                            </td>
+                            <td><strong>{{ p.nombre }}</strong></td>
+                            <td>{{ p.categoria.nombre }}</td>
+                            <td>
+                                {% if p.ultima_actividad %}
+                                    {{ p.ultima_actividad|date:"d/m/Y" }}
+                                {% else %}
+                                    <span style="color: var(--text-faint); font-style: italic;">Sin movimientos</span>
+                                {% endif %}
+                            </td>
+                            <td style="white-space: nowrap;">
+                                <span class="status-inline status-warn">
+                                    <span class="status-dot"></span>&ge; {{ p.dias_sin_movimiento }} días
+                                </span>
+                            </td>
+                            <td style="text-align: right; white-space: nowrap;">
+                                <a href="{% url 'inventario:producto-detalle' p.pk %}" class="btn btn-sm btn-secondary">Ver Ficha</a>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="6" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">
+                                No hay artículos sin rotación para el umbral de {{ dias_estancados }} días seleccionado.
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         VISTA C: HISTORIAL DE MOVIMIENTOS (TODOS, ENTRADAS, SALIDAS, TRASLADOS)
+         ═══════════════════════════════════════════════════════════════ -->
+    {% else %}
+        <div class="table-responsive">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Fecha Registro</th>
+                        <th>Tipo</th>
+                        <th>Producto</th>
+                        <th style="text-align: center;">Cant.</th>
+                        <th>Almacén / Ruta</th>
+                        {% if vista_actual == 'SALIDA' %}
+                            <th>Destinatario / Motivo</th>
+                            <th>Fecha Entrega</th>
+                            <th>Fecha Devolución</th>
+                        {% else %}
+                            <th>Motivo / Detalle</th>
+                        {% endif %}
+                        <th>Responsable</th>
+                        <th>Estado</th>
+                        <th style="text-align: right;">Acción</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for mov in movimientos %}
+                        <tr {% if mov.estado == 'REVERTIDO' %}style="opacity: 0.58; background: var(--bg-panel-2);"{% endif %}>
+                            <td style="font-size: 12px; white-space: nowrap;">{{ mov.fecha_hora|date:"d/m/Y H:i" }}</td>
+                            <td>
+                                {% if mov.tipo == 'ENTRADA' %}
+                                    <span class="badge badge-ok">{{ mov.get_tipo_display }}</span>
+                                {% elif mov.tipo == 'SALIDA' %}
+                                    <span class="badge badge-crit">{{ mov.get_tipo_display }}</span>
+                                {% elif mov.tipo == 'PRESTAMO' %}
+                                    <span class="badge badge-purple">{{ mov.get_tipo_display }}</span>
+                                {% elif mov.tipo == 'DEVOLUCION' %}
+                                    <span class="badge badge-accent">{{ mov.get_tipo_display }}</span>
+                                {% elif mov.tipo == 'BAJA_PRESTAMO' %}
+                                    <span class="badge badge-crit">{{ mov.get_tipo_display }}</span>
+                                {% else %}
+                                    <span class="badge badge-warn">{{ mov.get_tipo_display }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <a href="{% url 'inventario:producto-detalle' mov.producto.id %}">
+                                    <code>{{ mov.producto.codigo_interno }}</code>
+                                </a>
+                                <div><strong>{{ mov.producto.nombre|truncatechars:26 }}</strong></div>
+                            </td>
+                            <td style="text-align: center; font-weight: 700; color: var(--text);">
+                                {{ mov.cantidad }}
+                            </td>
+                            <td style="font-size: 12px;">
+                                {% if mov.almacen_origen %}{{ mov.almacen_origen.nombre }}{% endif %}
+                                {% if mov.almacen_origen and mov.almacen_destino %} → {% endif %}
+                                {% if mov.almacen_destino %}{{ mov.almacen_destino.nombre }}{% endif %}
+                                {% if mov.ubicacion_origen or mov.ubicacion_destino %}
+                                    <div style="font-size: 11px; color: var(--text-faint);">
+                                        {{ mov.ubicacion_origen.nombre|default:"" }}
+                                        {% if mov.ubicacion_origen and mov.ubicacion_destino %}→{% endif %}
+                                        {{ mov.ubicacion_destino.nombre|default:"" }}
+                                    </div>
+                                {% endif %}
+                            </td>
+                            {% if vista_actual == 'SALIDA' %}
+                                <td style="font-size: 12px;">
+                                    {% if mov.destinatario %}<strong>A: {{ mov.destinatario }}</strong><br>{% endif %}
+                                    <span style="color: var(--text-dim);">{{ mov.motivo|default:"—"|truncatechars:36 }}</span>
+                                </td>
+                                <td style="white-space: nowrap; font-size: 12px;">
+                                    {% if mov.fecha_entrega_info %}
+                                        {{ mov.fecha_entrega_info|date:"d/m/Y H:i" }}
+                                    {% else %}
+                                        <span style="color: var(--text-faint);">—</span>
+                                    {% endif %}
+                                </td>
+                                <td style="white-space: nowrap; font-size: 12px;">
+                                    {% if mov.fecha_devolucion_info %}
+                                        <span style="color: var(--ok);">{{ mov.fecha_devolucion_info|date:"d/m/Y H:i" }}</span>
+                                    {% elif mov.tipo == 'PRESTAMO' %}
+                                        <span class="badge badge-warn">En curso</span>
+                                    {% else %}
+                                        <span style="color: var(--text-faint);">—</span>
+                                    {% endif %}
+                                </td>
+                            {% else %}
+                                <td style="font-size: 12px;">
+                                    {{ mov.motivo|default:"—"|truncatechars:45 }}
+                                </td>
+                            {% endif %}
+                            <td style="font-size: 12px;">{{ mov.usuario.nombre_completo|default:mov.usuario.username }}</td>
+                            <td>
+                                {% if mov.estado == 'REVERTIDO' %}
+                                    <span class="badge badge-crit">Revertido</span>
+                                {% else %}
+                                    <span class="badge badge-ok">OK</span>
+                                {% endif %}
+                            </td>
+                            <td style="text-align: right; white-space: nowrap;">
+                                {% if mov.estado != 'REVERTIDO' and mov.tipo in 'ENTRADA,SALIDA,TRASLADO_ENTRE,AJUSTE_CONTEO' %}
+                                    <a href="{% url 'inventario:movimiento-revertir' mov.pk %}" class="btn btn-sm btn-secondary" style="color: var(--crit);">
+                                        Revertir
+                                    </a>
+                                {% elif mov.tipo == 'PRESTAMO' and mov.prestamo_vinculado and mov.prestamo_vinculado.estado != 'CERRADO' %}
+                                    <a href="{% url 'inventario:movimiento-lista' %}?vista=PRESTAMOS&q={{ mov.producto.codigo_interno }}" class="btn btn-sm btn-secondary">
+                                        Gestionar Préstamo
+                                    </a>
+                                {% else %}
+                                    <span style="color: var(--text-faint); font-size: 11px;">—</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="11" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">
+                                No se encontraron movimientos registrados con los filtros seleccionados.
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
         {% if is_paginated %}
-            <div style="display: flex; justify-content: center; gap: 0.5rem; margin-top: 1.5rem;">
+            <div class="pagination">
                 {% if page_obj.has_previous %}
-                    <a href="?page={{ page_obj.previous_page_number }}{% if q %}&q={{ q }}{% endif %}{% if tipo_seleccionado %}&tipo={{ tipo_seleccionado }}{% endif %}" class="btn btn-sm btn-secondary">&laquo; Anterior</a>
+                    <a href="?vista={{ vista_actual }}&page={{ page_obj.previous_page_number }}{% if q %}&q={{ q }}{% endif %}" class="btn btn-sm btn-secondary">&laquo; Anterior</a>
                 {% endif %}
-                <span style="align-self: center; font-size: 0.85rem; color: var(--text-muted);">
-                    Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
-                </span>
+                <span class="page-info">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
                 {% if page_obj.has_next %}
-                    <a href="?page={{ page_obj.next_page_number }}{% if q %}&q={{ q }}{% endif %}{% if tipo_seleccionado %}&tipo={{ tipo_seleccionado }}{% endif %}" class="btn btn-sm btn-secondary">Siguiente &raquo;</a>
+                    <a href="?vista={{ vista_actual }}&page={{ page_obj.next_page_number }}{% if q %}&q={{ q }}{% endif %}" class="btn btn-sm btn-secondary">Siguiente &raquo;</a>
                 {% endif %}
             </div>
         {% endif %}
-    {% else %}
-        <p style="text-align: center; color: var(--text-muted); margin: 3rem 0;">
-            No se encontraron movimientos con los criterios especificados.
-        </p>
     {% endif %}
 </div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     MODAL UNIFICADO: "+ NUEVO MOVIMIENTO" (Selección dinámica de tipo)
+     ═══════════════════════════════════════════════════════════════════════════ -->
+<dialog id="modalNuevoMovimiento" class="app-modal">
+    <div class="app-modal-header">
+        <h2 class="app-modal-title">Registrar Nuevo Movimiento</h2>
+        <button type="button" class="app-modal-close" onclick="closeAppModal('modalNuevoMovimiento')">&times;</button>
+    </div>
+
+    <div class="app-modal-body">
+        <label style="font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-faint); margin-bottom: 6px;">
+            1. Selecciona el tipo de operación
+        </label>
+        <div class="mov-type-selector">
+            <button type="button" class="mov-type-btn active" data-target-form="secFormEntrada">
+                <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Entrada
+            </button>
+            <button type="button" class="mov-type-btn" data-target-form="secFormSalida">
+                <svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Salida (Dotación)
+            </button>
+            <button type="button" class="mov-type-btn" data-target-form="secFormPrestamo">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                Préstamo
+            </button>
+            <button type="button" class="mov-type-btn" data-target-form="secFormTraslado">
+                <svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                Traslado
+            </button>
+            <button type="button" class="mov-type-btn" data-target-form="secFormConteo">
+                <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                Conteo Físico
+            </button>
+        </div>
+
+        <!-- 1. FORMULARIO ENTRADA -->
+        <form method="post" action="{% url 'inventario:movimiento-entrada' %}" id="secFormEntrada" class="mov-dynamic-form">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{% url 'inventario:movimiento-lista' %}?vista=ENTRADA">
+            <input type="hidden" name="clave_idempotencia" class="idem-token-input">
+
+            <div class="form-group">
+                <label>Producto *</label>
+                {{ entrada_form.producto }}
+            </div>
+            {% if not user.es_usuario_normal %}
+            <div class="form-group">
+                <label>Almacén Destino *</label>
+                {{ entrada_form.almacen }}
+            </div>
+            {% else %}
+                {{ entrada_form.almacen }}
+            {% endif %}
+            <div class="form-grid-2">
+                <div class="form-group">
+                    <label>Cantidad (Unidades Base) *</label>
+                    {{ entrada_form.cantidad }}
+                </div>
+                <div class="form-group">
+                    <label>Ubicación Física Asignada</label>
+                    <div id="dispUbicacionEntrada" class="form-control" style="background: rgba(255,255,255,0.03); opacity: 0.95; display: flex; align-items: center; gap: 7px; min-height: 40px;">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent-2); flex-shrink: 0;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                        <span id="txtUbicacionEntrada" style="color: var(--text-muted); font-size: 13px;">Selecciona un producto para cargar su ubicación fija</span>
+                    </div>
+                    <input type="hidden" name="ubicacion" id="inputUbicacionEntrada" value="">
+                </div>
+            </div>
+            <div class="form-group">
+                <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer;">
+                    {{ entrada_form.es_empaque }}
+                    <span>¿Ingresar por paquetes / empaques?</span>
+                </label>
+            </div>
+            <div class="form-group" id="boxEmpaquesModal" style="display: none;">
+                <label>Cantidad de Empaques</label>
+                {{ entrada_form.cantidad_empaques }}
+            </div>
+            <div class="form-grid-2">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label>Motivo de la Entrada</label>
+                    {{ entrada_form.motivo }}
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label>Observación</label>
+                    {{ entrada_form.observacion }}
+                </div>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-soft);">
+                <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalNuevoMovimiento')">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Confirmar Entrada</button>
+            </div>
+        </form>
+
+        <!-- 2. FORMULARIO SALIDA (DOTACIÓN / CONSUMO) -->
+        <form method="post" action="{% url 'inventario:movimiento-salida' %}" id="secFormSalida" class="mov-dynamic-form" style="display: none;">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{% url 'inventario:movimiento-lista' %}?vista=SALIDA">
+            <input type="hidden" name="clave_idempotencia" class="idem-token-input">
+
+            <div class="form-group">
+                <label>Producto a Retirar *</label>
+                {{ salida_form.producto }}
+            </div>
+            {% if not user.es_usuario_normal %}
+            <div class="form-group">
+                <label>Almacén Origen *</label>
+                {{ salida_form.almacen }}
+            </div>
+            {% else %}
+                {{ salida_form.almacen }}
+            {% endif %}
+            <div class="form-grid-2">
+                <div class="form-group">
+                    <label>Cantidad a Retirar *</label>
+                    {{ salida_form.cantidad }}
+                </div>
+                <div class="form-group">
+                    <label>Destinatario / Responsable *</label>
+                    {{ salida_form.destinatario }}
+                </div>
+            </div>
+            <div class="form-grid-2">
+                <div class="form-group">
+                    <label>Motivo Obligatorio *</label>
+                    {{ salida_form.motivo }}
+                </div>
+                <div class="form-group">
+                    <label>Ubicación de Origen (opcional)</label>
+                    {{ salida_form.ubicacion }}
+                </div>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Observación Adicional</label>
+                {{ salida_form.observacion }}
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-soft);">
+                <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalNuevoMovimiento')">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Confirmar Salida</button>
+            </div>
+        </form>
+
+        <!-- 3. FORMULARIO SALIDA EN PRÉSTAMO -->
+        <form method="post" action="{% url 'inventario:prestamo-crear' %}" id="secFormPrestamo" class="mov-dynamic-form" style="display: none;">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{% url 'inventario:movimiento-lista' %}?vista=PRESTAMOS">
+            <input type="hidden" name="clave_idempotencia" class="idem-token-input">
+
+            <div class="form-group">
+                <label>Producto a Entregar en Préstamo *</label>
+                {{ prestamo_form.producto }}
+            </div>
+            {% if not user.es_usuario_normal %}
+            <div class="form-group">
+                <label>Almacén Origen *</label>
+                {{ prestamo_form.almacen }}
+            </div>
+            {% else %}
+                {{ prestamo_form.almacen }}
+            {% endif %}
+            <div class="form-grid-2">
+                <div class="form-group">
+                    <label>Cantidad a Prestar *</label>
+                    {{ prestamo_form.cantidad }}
+                </div>
+                <div class="form-group">
+                    <label>Destinatario / Responsable *</label>
+                    {{ prestamo_form.destinatario }}
+                </div>
+            </div>
+            <div class="form-grid-2">
+                <div class="form-group">
+                    <label>Motivo del Préstamo</label>
+                    {{ prestamo_form.motivo }}
+                </div>
+                <div class="form-group">
+                    <label>Ubicación Origen (opcional)</label>
+                    {{ prestamo_form.ubicacion }}
+                </div>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Observación</label>
+                {{ prestamo_form.observacion }}
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-soft);">
+                <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalNuevoMovimiento')">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Entregar Préstamo</button>
+            </div>
+        </form>
+
+        <!-- 4. FORMULARIO TRASLADO -->
+        <form method="post" action="{% url 'inventario:movimiento-traslado' %}" id="secFormTraslado" class="mov-dynamic-form" style="display: none;">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{% url 'inventario:movimiento-lista' %}?vista=TRASLADO">
+            <input type="hidden" name="clave_idempotencia" class="idem-token-input">
+
+            <div class="form-group">
+                <label>Producto a Trasladar *</label>
+                {{ traslado_form.producto }}
+            </div>
+            <div class="form-grid-2">
+                {% if not user.es_usuario_normal %}
+                <div class="form-group">
+                    <label>Almacén Origen *</label>
+                    {{ traslado_form.almacen_origen }}
+                </div>
+                {% else %}
+                    {{ traslado_form.almacen_origen }}
+                {% endif %}
+                <div class="form-group">
+                    <label>Almacén Destino (opcional si es interno)</label>
+                    {{ traslado_form.almacen_destino }}
+                </div>
+            </div>
+            <div class="form-grid-2">
+                <div class="form-group">
+                    <label>Ubicación Origen</label>
+                    {{ traslado_form.ubicacion_origen }}
+                </div>
+                <div class="form-group">
+                    <label>Ubicación Destino</label>
+                    {{ traslado_form.ubicacion_destino }}
+                </div>
+            </div>
+            <div class="form-grid-2">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label>Cantidad *</label>
+                    {{ traslado_form.cantidad }}
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label>Motivo</label>
+                    {{ traslado_form.motivo }}
+                </div>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-soft);">
+                <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalNuevoMovimiento')">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Confirmar Traslado</button>
+            </div>
+        </form>
+
+        <!-- 5. FORMULARIO CONTEO FÍSICO -->
+        <form method="post" action="{% url 'inventario:conteo-crear' %}" id="secFormConteo" class="mov-dynamic-form" style="display: none;">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{% url 'inventario:movimiento-lista' %}?vista=CONTEOS">
+
+            <div class="form-group">
+                <label>Producto Contado *</label>
+                {{ conteo_form.producto }}
+            </div>
+            {% if not user.es_usuario_normal %}
+            <div class="form-group">
+                <label>Almacén *</label>
+                {{ conteo_form.almacen }}
+            </div>
+            {% else %}
+                {{ conteo_form.almacen }}
+            {% endif %}
+            <div class="form-grid-2">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label>Cantidad Física Contada *</label>
+                    {{ conteo_form.cantidad_contada }}
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label>Motivo / Observaciones</label>
+                    {{ conteo_form.motivo }}
+                </div>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-soft);">
+                <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalNuevoMovimiento')">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Registrar Conteo</button>
+            </div>
+        </form>
+    </div>
+</dialog>
+
+<!-- ═══ MODAL DEVOLUCIÓN DE PRÉSTAMO ═══ -->
+<dialog id="modalDevolucionPrestamo" class="app-modal">
+    <form method="post" id="formDevolucionModal" style="display: flex; flex-direction: column;">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{% url 'inventario:movimiento-lista' %}?vista=PRESTAMOS">
+        <input type="hidden" name="clave_idempotencia" id="idemDevolucion">
+        <div class="app-modal-header">
+            <h2 class="app-modal-title">Registrar Devolución de Préstamo</h2>
+            <button type="button" class="app-modal-close" onclick="closeAppModal('modalDevolucionPrestamo')">&times;</button>
+        </div>
+        <div class="app-modal-body">
+            <p id="infoPrestamoDevolver" style="font-size: 13px; color: var(--text-dim); margin-bottom: 14px;"></p>
+            <div class="form-group">
+                <label>Cantidad a Devolver *</label>
+                <input type="number" name="cantidad" id="inputCantDevolver" class="form-control" min="1" required>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Motivo / Estado de Recepción *</label>
+                <input type="text" name="motivo" class="form-control" value="Devolución en buen estado" required>
+            </div>
+        </div>
+        <div class="app-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalDevolucionPrestamo')">Cancelar</button>
+            <button type="submit" class="btn btn-primary">Confirmar Devolución</button>
+        </div>
+    </form>
+</dialog>
+
+<!-- ═══ MODAL BAJA POR DAÑO EN PRÉSTAMO ═══ -->
+<dialog id="modalBajaPrestamo" class="app-modal">
+    <form method="post" id="formBajaModal" style="display: flex; flex-direction: column;">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{% url 'inventario:movimiento-lista' %}?vista=PRESTAMOS">
+        <input type="hidden" name="clave_idempotencia" id="idemBaja">
+        <div class="app-modal-header">
+            <h2 class="app-modal-title">Registrar Baja por Daño o Pérdida</h2>
+            <button type="button" class="app-modal-close" onclick="closeAppModal('modalBajaPrestamo')">&times;</button>
+        </div>
+        <div class="app-modal-body">
+            <p id="infoPrestamoBaja" style="font-size: 13px; color: var(--crit); margin-bottom: 14px;"></p>
+            <div class="form-group">
+                <label>Cantidad Dañada / Perdida *</label>
+                <input type="number" name="cantidad" id="inputCantBaja" class="form-control" min="1" required>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Motivo Obligatorio de la Baja *</label>
+                <input type="text" name="motivo" class="form-control" placeholder="Ej. Daño irreparable durante práctica..." required>
+            </div>
+        </div>
+        <div class="app-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalBajaPrestamo')">Cancelar</button>
+            <button type="submit" class="btn btn-danger">Confirmar Baja</button>
+        </div>
+    </form>
+</dialog>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    var vistaActual = "{{ vista_actual }}";
+    var typeBtns = document.querySelectorAll(".mov-type-btn");
+    var dynamicForms = document.querySelectorAll(".mov-dynamic-form");
+
+    function generarClaveIdempotencia() {
+        return "MOV-" + Date.now() + "-" + Math.random().toString(36).substring(2, 10);
+    }
+
+    function activarFormularioTipo(targetId) {
+        typeBtns.forEach(function(b) {
+            b.classList.toggle("active", b.getAttribute("data-target-form") === targetId);
+        });
+        dynamicForms.forEach(function(f) {
+            f.style.display = (f.id === targetId) ? "block" : "none";
+        });
+        document.querySelectorAll(".idem-token-input").forEach(function(inp) {
+            inp.value = generarClaveIdempotencia();
+        });
+    }
+
+    typeBtns.forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            activarFormularioTipo(btn.getAttribute("data-target-form"));
+        });
+    });
+
+    // Abrir modal "+ Nuevo Movimiento" preseleccionando el tipo según la pestaña activa
+    var btnAbrir = document.getElementById("btnAbrirNuevoMovimiento");
+    if (btnAbrir) {
+        btnAbrir.addEventListener("click", function() {
+            if (vistaActual === "SALIDA") {
+                activarFormularioTipo("secFormSalida");
+            } else if (vistaActual === "PRESTAMOS") {
+                activarFormularioTipo("secFormPrestamo");
+            } else if (vistaActual === "TRASLADO") {
+                activarFormularioTipo("secFormTraslado");
+            } else if (vistaActual === "CONTEOS") {
+                activarFormularioTipo("secFormConteo");
+            } else {
+                activarFormularioTipo("secFormEntrada");
+            }
+            openAppModal("modalNuevoMovimiento");
+        });
+    }
+
+    // Mostrar/ocultar campo de empaques en Entrada
+    var chkEmp = document.querySelector('#secFormEntrada [name="es_empaque"]');
+    var boxEmp = document.getElementById("boxEmpaquesModal");
+    if (chkEmp && boxEmp) {
+        chkEmp.addEventListener("change", function() {
+            boxEmp.style.display = chkEmp.checked ? "block" : "none";
+        });
+    }
+
+    // Protección ante doble envío por red inestable
+    document.querySelectorAll(".mov-dynamic-form, #formDevolucionModal, #formBajaModal").forEach(function(form) {
+        form.addEventListener("submit", function() {
+            var btn = form.querySelector('button[type="submit"]');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = "Procesando...";
+            }
+        });
+    });
+
+    // Modal Devolución de Préstamo
+    document.querySelectorAll(".btn-abrir-devolucion").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            var form = document.getElementById("formDevolucionModal");
+            form.action = btn.getAttribute("data-url");
+            document.getElementById("idemDevolucion").value = generarClaveIdempotencia();
+            var pend = btn.getAttribute("data-pendiente");
+            document.getElementById("infoPrestamoDevolver").textContent =
+                "Artículo: " + btn.getAttribute("data-producto") + " · Responsable: " + btn.getAttribute("data-destinatario") + " (Pendiente: " + pend + " unid.)";
+            var inpCant = document.getElementById("inputCantDevolver");
+            inpCant.max = pend;
+            inpCant.value = pend;
+            openAppModal("modalDevolucionPrestamo");
+        });
+    });
+
+    // Ubicación fija no editable en entradas de stock
+    var mapaUbicacionesStock = {{ mapa_ubicaciones_json|default:'{}'|safe }};
+    var selectProductoEntrada = document.querySelector('#secFormEntrada select[name="producto"]');
+    var txtUbicEntrada = document.getElementById("txtUbicacionEntrada");
+    var inputUbicEntrada = document.getElementById("inputUbicacionEntrada");
+
+    function actualizarUbicacionFijaEntrada(prodId) {
+        if (!txtUbicEntrada || !inputUbicEntrada) return;
+        var info = mapaUbicacionesStock[String(prodId)];
+        if (info && info.id) {
+            inputUbicEntrada.value = info.id;
+            txtUbicEntrada.innerHTML = '<strong style="color: var(--ok);">' + info.nombre + '</strong> <span style="font-size: 11px; color: var(--text-muted); margin-left: 4px;">(Ubicación fija asignada en catálogo)</span>';
+        } else {
+            inputUbicEntrada.value = "";
+            txtUbicEntrada.innerHTML = '<span style="color: var(--text-muted); font-style: italic;">Sin ubicación física asignada en catálogo</span>';
+        }
+    }
+
+    if (selectProductoEntrada) {
+        selectProductoEntrada.addEventListener("change", function() {
+            actualizarUbicacionFijaEntrada(selectProductoEntrada.value);
+        });
+        if (selectProductoEntrada.value) {
+            actualizarUbicacionFijaEntrada(selectProductoEntrada.value);
+        }
+    }
+
+    // Modal Baja de Préstamo
+    document.querySelectorAll(".btn-abrir-baja").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            var form = document.getElementById("formBajaModal");
+            form.action = btn.getAttribute("data-url");
+            document.getElementById("idemBaja").value = generarClaveIdempotencia();
+            var pend = btn.getAttribute("data-pendiente");
+            document.getElementById("infoPrestamoBaja").textContent =
+                "Nota: Esta acción descontará del stock en préstamo sin devolverlo al disponible. Artículo: " +
+                btn.getAttribute("data-producto") + " (Pendiente: " + pend + " unid.)";
+            var inpCant = document.getElementById("inputCantBaja");
+            inpCant.max = pend;
+            inpCant.value = "1";
+            openAppModal("modalBajaPrestamo");
+        });
+    });
+});
+</script>
 {% endblock %}

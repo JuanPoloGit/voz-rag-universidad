@@ -170,12 +170,13 @@ class TipoCategoriaForm(forms.ModelForm):
 class ProductoForm(forms.ModelForm):
     """Formulario para creación y edición de productos."""
 
-    ubicaciones_seleccionadas = forms.ModelMultipleChoiceField(
+    ubicacion = forms.ModelChoiceField(
         queryset=Ubicacion.objects.none(),
         required=False,
-        widget=forms.SelectMultiple(attrs={"class": "form-control"}),
-        label="Ubicaciones físicas",
-        help_text="Ubicaciones físicas autorizadas para este producto.",
+        widget=forms.Select(attrs={"class": "form-control"}),
+        label="Ubicación física única",
+        help_text="Ubicación física única asignada para este producto.",
+        empty_label="Sin ubicación física (opcional)",
     )
 
     class Meta:
@@ -243,7 +244,7 @@ class ProductoForm(forms.ModelForm):
             self.fields["tipo"].queryset = TipoCategoria.objects.filter(
                 activo=True, categoria__in=cats_qs
             ).select_related("categoria").order_by("categoria__nombre", "nombre")
-            self.fields["ubicaciones_seleccionadas"].queryset = Ubicacion.objects.filter(
+            self.fields["ubicacion"].queryset = Ubicacion.objects.filter(
                 activo=True, eliminado=False, almacen=usuario.almacen_asignado
             )
         else:
@@ -252,7 +253,7 @@ class ProductoForm(forms.ModelForm):
             self.fields["tipo"].queryset = TipoCategoria.objects.filter(
                 activo=True, categoria__in=cats_qs
             ).select_related("categoria").order_by("categoria__nombre", "nombre")
-            self.fields["ubicaciones_seleccionadas"].queryset = Ubicacion.objects.filter(activo=True, eliminado=False)
+            self.fields["ubicacion"].queryset = Ubicacion.objects.filter(activo=True, eliminado=False)
 
         self.fields["tipo"].required = False
         self.fields["tipo"].empty_label = "Sin tipo (opcional)"
@@ -260,7 +261,7 @@ class ProductoForm(forms.ModelForm):
         if self.instance and self.instance.pk:
             self.fields["stock_inicial"].disabled = True
             self.fields["stock_inicial"].required = False
-            self.fields["ubicaciones_seleccionadas"].initial = self.instance.ubicaciones.values_list("id", flat=True)
+            self.fields["ubicacion"].initial = self.instance.ubicaciones.first()
 
     def clean(self):
         cleaned_data = super().clean()
@@ -268,6 +269,8 @@ class ProductoForm(forms.ModelForm):
         tipo = cleaned_data.get("tipo")
         if tipo and categoria and tipo.categoria_id != categoria.id:
             self.add_error("tipo", "El tipo seleccionado no pertenece a la categoría elegida.")
+        ub = cleaned_data.get("ubicacion")
+        cleaned_data["ubicaciones_seleccionadas"] = [ub] if ub else []
         return cleaned_data
 
     def clean_codigo_barras(self):

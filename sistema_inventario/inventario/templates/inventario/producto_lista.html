@@ -1,141 +1,503 @@
 {% extends "base.html" %}
-{% block page_title %}Catálogo de Productos{% endblock %}
+{% block page_title %}Catálogo y Stock{% endblock %}
 {% block sidebar_productos %}active{% endblock %}
 
-{% block title %}Productos — Inventario AudacIA{% endblock %}
+{% block title %}Catálogo y Stock — Inventario AudacIA{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Tabla minimalista de Catálogo: sin recuadros en celdas de datos, solo en botones */
+    .catalog-table {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: auto;
+    }
+    .catalog-table th {
+        padding: 10px 16px 12px;
+        color: var(--text-faint);
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 11px;
+        letter-spacing: 0.7px;
+        border-bottom: 1px solid var(--border);
+        white-space: nowrap;
+    }
+    .catalog-table td {
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--border-soft);
+        vertical-align: middle;
+        color: var(--text-dim);
+        font-size: 13.2px;
+    }
+    .catalog-table tbody tr {
+        transition: background 0.14s ease;
+    }
+    .catalog-table tbody tr:hover td {
+        background: rgba(92, 139, 255, 0.05);
+    }
+    .cat-code-link {
+        font-family: var(--font-mono);
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--accent-bright);
+        text-decoration: none;
+        white-space: nowrap;
+    }
+    .cat-code-link:hover {
+        color: var(--accent-2);
+        text-decoration: underline;
+    }
+    .cat-prod-title {
+        font-weight: 600;
+        color: var(--text);
+        font-size: 13.8px;
+        line-height: 1.35;
+    }
+    .cat-prod-sub {
+        font-size: 11.5px;
+        color: var(--text-faint);
+        margin-top: 2px;
+    }
+    .cat-category-text {
+        color: var(--text);
+        font-weight: 500;
+        font-size: 13px;
+        white-space: nowrap;
+    }
+    .cat-type-text {
+        color: var(--accent-2);
+        font-size: 12px;
+        font-weight: 500;
+        margin-top: 2px;
+        white-space: nowrap;
+    }
+    .cat-barcode-text {
+        font-family: var(--font-mono);
+        font-size: 12.5px;
+        color: var(--text-dim);
+        white-space: nowrap;
+        letter-spacing: 0.3px;
+    }
+    .cat-num-cell {
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        font-size: 14px;
+    }
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="card">
     <div class="card-header">
         <div>
-            <h1 class="card-title">Catálogo de Productos</h1>
-            <p style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.25rem;">
-                Control de inventario, categorías, tipos opcionales y búsqueda por código de barras.
+            <h1 class="card-title">Catálogo de Productos y Existencias</h1>
+            <p style="font-size: 12.5px; color: var(--text-muted); margin-top: 2px;">
+                Consulta en tiempo real de artículos, categorías, tipos opcionales y niveles de stock.
             </p>
         </div>
-        <div>
-            <a href="{% url 'inventario:producto-crear' %}" class="btn btn-primary">
+        <div class="action-group">
+            <button type="button" class="btn btn-primary" id="btnNuevoProducto">
                 + Nuevo Producto
-            </a>
+            </button>
         </div>
     </div>
 
-    <!-- Buscador y escáner de código de barras -->
-    <div style="margin-bottom: 1.5rem; display: flex; gap: 1rem; flex-wrap: wrap;">
-        <form method="get" action="{% url 'inventario:producto-lista' %}" style="display: flex; gap: 0.5rem; flex: 1; max-width: 500px;">
+    <!-- Filtros automáticos (sin clic adicional) -->
+    <form method="get" action="{% url 'inventario:producto-lista' %}" data-auto-filter="true"
+          style="margin-bottom: 1.25rem; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+        <div style="flex: 2; min-width: 220px;">
             <input type="text" name="q" value="{{ q }}" class="form-control"
-                   placeholder="Buscar por nombre, código interno, tipo o código de barras..."
-                   autofocus>
-            <button type="submit" class="btn btn-primary">Buscar</button>
-            {% if q %}
-                <a href="{% url 'inventario:producto-lista' %}" class="btn btn-secondary">Limpiar</a>
-            {% endif %}
-        </form>
+                   placeholder="Buscar automáticamente por nombre, código, tipo o código de barras..."
+                   autocomplete="off">
+        </div>
 
-        {% if categorias %}
-            <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
-                <span style="font-size: 0.875rem; color: var(--text-muted); font-weight: 600;">Categoría:</span>
-                <a href="{% url 'inventario:producto-lista' %}{% if q %}?q={{ q }}{% endif %}"
-                   class="btn btn-sm {% if not categoria_seleccionada %}btn-primary{% else %}btn-secondary{% endif %}">
-                    Todas
-                </a>
+        <div style="flex: 1; min-width: 170px;">
+            <select name="categoria_id" class="form-control" aria-label="Filtrar por categoría">
+                <option value="">Todas las categorías</option>
                 {% for cat in categorias %}
-                    <a href="{% url 'inventario:producto-lista' %}?categoria_id={{ cat.id }}{% if q %}&q={{ q }}{% endif %}"
-                       class="btn btn-sm {% if categoria_seleccionada == cat.id|stringformat:'s' %}btn-primary{% else %}btn-secondary{% endif %}">
-                        {{ cat.nombre }}
-                    </a>
+                    <option value="{{ cat.id }}" {% if categoria_seleccionada == cat.id|stringformat:'s' %}selected{% endif %}>
+                        {{ cat.nombre }} ({{ cat.almacen_principal.nombre }})
+                    </option>
                 {% endfor %}
-            </div>
+            </select>
+        </div>
+
+        <div style="min-width: 155px;">
+            <select name="estado_activo" class="form-control" aria-label="Filtrar por estado">
+                <option value="" {% if not estado_activo %}selected{% endif %}>Todos los estados</option>
+                <option value="activos" {% if estado_activo == 'activos' %}selected{% endif %}>Solo habilitados</option>
+                <option value="inhabilitados" {% if estado_activo == 'inhabilitados' %}selected{% endif %}>Inhabilitados</option>
+            </select>
+        </div>
+
+        {% if q or categoria_seleccionada or estado_activo %}
+            <a href="{% url 'inventario:producto-lista' %}" class="btn btn-sm btn-secondary">Limpiar</a>
         {% endif %}
-    </div>
+    </form>
 
     <div class="table-responsive">
-        <table class="data-table">
+        <table class="catalog-table">
             <thead>
                 <tr>
-                    <th>Código</th>
-                    <th>Nombre</th>
-                    <th>Categoría</th>
-                    <th>Tipo</th>
-                    <th>Código Barras</th>
-                    <th style="text-align: center;">Disponible</th>
-                    <th style="text-align: center;">En Préstamo</th>
-                    <th>Estado Stock</th>
+                    <th style="width: 9%;">Código</th>
+                    <th style="width: 26%;">Producto</th>
+                    <th style="width: 16%;">Categoría / Tipo</th>
+                    <th style="width: 13%;">Código Barras</th>
+                    <th style="width: 9%; text-align: center;">Disponible</th>
+                    <th style="width: 9%; text-align: center;">En Préstamo</th>
+                    <th style="width: 11%;">Estado</th>
                     <th style="text-align: right;">Acciones</th>
                 </tr>
             </thead>
             <tbody>
                 {% for prod in productos %}
-                    <tr>
+                    <tr {% if not prod.activo %}style="opacity: 0.6;"{% endif %}>
                         <td>
-                            <a href="{% url 'inventario:producto-detalle' prod.id %}" style="font-family: monospace; font-weight: 700; color: var(--primary);">
+                            <a href="{% url 'inventario:producto-detalle' prod.id %}" class="cat-code-link">
                                 {{ prod.codigo_interno }}
                             </a>
                         </td>
                         <td>
-                            <strong>{{ prod.nombre }}</strong>
+                            <div class="cat-prod-title">{{ prod.nombre }}</div>
                             {% if prod.nombre_empaque %}
-                                <div style="font-size: 0.75rem; color: var(--text-muted);">
+                                <div class="cat-prod-sub">
                                     Empaque: {{ prod.nombre_empaque }} ({{ prod.unidades_por_empaque|default:"—" }} unid.)
                                 </div>
                             {% endif %}
                         </td>
                         <td>
-                            <span class="badge badge-accent">{{ prod.categoria.nombre }}</span>
-                        </td>
-                        <td>
+                            <div class="cat-category-text">{{ prod.categoria.nombre }}</div>
                             {% if prod.tipo %}
-                                <span style="font-size: 0.8rem; color: var(--accent-teal); font-weight: 500;">{{ prod.tipo.nombre }}</span>
-                            {% else %}
-                                <span style="color: var(--text-faint); font-size: 0.8rem;">—</span>
+                                <div class="cat-type-text">{{ prod.tipo.nombre }}</div>
                             {% endif %}
                         </td>
                         <td>
                             {% if prod.codigo_barras %}
-                                <code style="font-size: 0.8rem; background: var(--bg-panel-2); padding: 0.2rem 0.4rem; border-radius: 4px;">{{ prod.codigo_barras }}</code>
+                                <span class="cat-barcode-text">{{ prod.codigo_barras }}</span>
                             {% else %}
-                                <span style="color: var(--text-muted); font-size: 0.8rem;">—</span>
+                                <span style="color: var(--text-faint); font-size: 12px;">—</span>
                             {% endif %}
                         </td>
-                        <td style="text-align: center; font-weight: 700;">
+                        <td class="cat-num-cell" style="font-weight: 700; color: var(--text);">
                             {% with stock_disp=prod.existencias.first.stock_disponible|default:0 %}
                                 {{ stock_disp }}
                             {% endwith %}
                         </td>
-                        <td style="text-align: center; color: var(--text-muted);">
+                        <td class="cat-num-cell" style="color: var(--text-dim);">
                             {% with stock_prest=prod.existencias.first.stock_en_prestamo|default:0 %}
                                 {{ stock_prest }}
                             {% endwith %}
                         </td>
-                        <td>
-                            {% with stock_disp=prod.existencias.first.stock_disponible|default:0 %}
-                                {% if stock_disp == 0 %}
-                                    <span class="badge badge-crit">Sin Stock</span>
-                                {% elif stock_disp < prod.stock_minimo %}
-                                    <span class="badge badge-warn">Stock Bajo (&lt; {{ prod.stock_minimo }})</span>
-                                {% else %}
-                                    <span class="badge badge-ok">Óptimo</span>
-                                {% endif %}
-                            {% endwith %}
+                        <td style="white-space: nowrap;">
+                            {% if not prod.activo %}
+                                <span class="status-inline status-muted">
+                                    <span class="status-dot"></span>Inhabilitado
+                                </span>
+                            {% else %}
+                                {% with stock_disp=prod.existencias.first.stock_disponible|default:0 %}
+                                    {% if stock_disp == 0 %}
+                                        <span class="status-inline status-crit">
+                                            <span class="status-dot"></span>Sin stock
+                                        </span>
+                                    {% elif stock_disp < prod.stock_minimo %}
+                                        <span class="status-inline status-warn">
+                                            <span class="status-dot"></span>Stock bajo (&lt; {{ prod.stock_minimo }})
+                                        </span>
+                                    {% else %}
+                                        <span class="status-inline status-ok">
+                                            <span class="status-dot"></span>Óptimo
+                                        </span>
+                                    {% endif %}
+                                {% endwith %}
+                            {% endif %}
                         </td>
                         <td style="text-align: right; white-space: nowrap;">
-                            <a href="{% url 'inventario:producto-detalle' prod.id %}" class="btn btn-sm btn-secondary">
-                                Ver
-                            </a>
-                            <a href="{% url 'inventario:producto-editar' prod.id %}" class="btn btn-sm btn-secondary">
-                                Editar
-                            </a>
+                            <div class="action-group" style="flex-wrap: nowrap;">
+                                <a href="{% url 'inventario:producto-detalle' prod.id %}" class="btn btn-sm btn-secondary" title="Ver detalle">
+                                    Ver
+                                </a>
+                                <button type="button"
+                                        class="btn btn-sm btn-secondary btn-editar-producto"
+                                        data-url="{% url 'inventario:producto-editar' prod.id %}"
+                                        data-codigo="{{ prod.codigo_interno }}"
+                                        data-nombre="{{ prod.nombre }}"
+                                        data-categoria="{{ prod.categoria_id }}"
+                                        data-tipo="{{ prod.tipo_id|default:'' }}"
+                                        data-stock-inicial="{{ prod.stock_inicial }}"
+                                        data-stock-minimo="{{ prod.stock_minimo }}"
+                                        data-codigo-barras="{{ prod.codigo_barras|default:'' }}"
+                                        data-nombre-empaque="{{ prod.nombre_empaque|default:'' }}"
+                                        data-unidades-empaque="{{ prod.unidades_por_empaque|default:'' }}"
+                                        data-descripcion="{{ prod.descripcion|default:'' }}"
+                                        data-ubicacion="{% with ub=prod.ubicaciones.first %}{{ ub.id|default:'' }}{% endwith %}"
+                                        data-ubicaciones="{% for u in prod.ubicaciones.all %}{{ u.id }}{% if not forloop.last %},{% endif %}{% endfor %}">
+                                    Editar
+                                </button>
+                                <form method="post" action="{% url 'inventario:producto-toggle-activo' prod.id %}" style="display: inline; margin: 0;">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                    <button type="submit" class="btn btn-sm btn-secondary"
+                                            style="color: {% if prod.activo %}var(--warn){% else %}var(--ok){% endif %};"
+                                            title="{% if prod.activo %}Inhabilitar producto{% else %}Habilitar producto{% endif %}">
+                                        {% if prod.activo %}Inhabilitar{% else %}Habilitar{% endif %}
+                                    </button>
+                                </form>
+                                {% if user.es_administrador %}
+                                <form method="post" action="{% url 'inventario:producto-archivar' prod.id %}" style="display: inline; margin: 0;"
+                                      onsubmit="return confirm('¿Eliminar el producto «{{ prod.codigo_interno }} — {{ prod.nombre }}» del catálogo?');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-sm btn-danger" title="Eliminar producto">
+                                        Eliminar
+                                    </button>
+                                </form>
+                                {% endif %}
+                            </div>
                         </td>
                     </tr>
                 {% empty %}
                     <tr>
-                        <td colspan="9" style="text-align: center; padding: 2rem; color: var(--text-muted);">
-                            No se encontraron productos registrados en este almacén.
+                        <td colspan="8" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                            No se encontraron productos con los filtros seleccionados.
                         </td>
                     </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
+
+    {% if is_paginated %}
+        <div class="pagination">
+            {% if page_obj.has_previous %}
+                <a href="?page={{ page_obj.previous_page_number }}{% if q %}&q={{ q }}{% endif %}{% if categoria_seleccionada %}&categoria_id={{ categoria_seleccionada }}{% endif %}{% if estado_activo %}&estado_activo={{ estado_activo }}{% endif %}" class="btn btn-sm btn-secondary">&laquo; Anterior</a>
+            {% endif %}
+            <span class="page-info">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+            {% if page_obj.has_next %}
+                <a href="?page={{ page_obj.next_page_number }}{% if q %}&q={{ q }}{% endif %}{% if categoria_seleccionada %}&categoria_id={{ categoria_seleccionada }}{% endif %}{% if estado_activo %}&estado_activo={{ estado_activo }}{% endif %}" class="btn btn-sm btn-secondary">Siguiente &raquo;</a>
+            {% endif %}
+        </div>
+    {% endif %}
 </div>
+
+<!-- ═══ MODAL NUEVO / EDITAR PRODUCTO ═══ -->
+<dialog id="modalProducto" class="app-modal">
+    <form method="post" action="{% url 'inventario:producto-crear' %}" id="formModalProducto" style="display: flex; flex-direction: column; max-height: 90dvh; overflow: hidden;">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <div class="app-modal-header">
+            <h2 class="app-modal-title" id="modalProductoTitulo">Nuevo Producto en Catálogo</h2>
+            <button type="button" class="app-modal-close" onclick="closeAppModal('modalProducto')" aria-label="Cerrar">&times;</button>
+        </div>
+
+        <div class="app-modal-body">
+            <div class="form-group">
+                <label for="id_nombre">Nombre del Producto *</label>
+                {{ producto_form.nombre }}
+                <div id="alerta-similares" style="display: none; margin-top: 6px; padding: 8px 10px; background: var(--warn-bg); border: 1px solid rgba(255,189,92,0.3); border-radius: 6px; font-size: 12px; color: var(--warn);">
+                    <strong><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> Posibles duplicados detectados:</strong>
+                    <ul id="lista-similares" style="margin: 4px 0 0 16px;"></ul>
+                </div>
+            </div>
+
+            <div class="form-grid-2">
+                <div class="form-group">
+                    <label for="id_categoria">Categoría *</label>
+                    {{ producto_form.categoria }}
+                </div>
+                <div class="form-group">
+                    <label for="id_tipo">Tipo asociado (opcional)</label>
+                    {{ producto_form.tipo }}
+                </div>
+            </div>
+
+            <div class="form-grid-2">
+                <div class="form-group" id="grupoStockInicial">
+                    <label for="id_stock_inicial">Stock Inicial</label>
+                    {{ producto_form.stock_inicial }}
+                    <div class="form-help">Inmutable después de creado.</div>
+                </div>
+                <div class="form-group">
+                    <label for="id_stock_minimo">Stock Mínimo (Umbral Alerta)</label>
+                    {{ producto_form.stock_minimo }}
+                </div>
+            </div>
+
+            <div class="form-grid-2">
+                <div class="form-group">
+                    <label for="id_codigo_barras">Código de Barras (EAN/UPC)</label>
+                    {{ producto_form.codigo_barras }}
+                </div>
+                <div class="form-group">
+                    <label for="id_ubicacion">Ubicación Física Única</label>
+                    {{ producto_form.ubicacion }}
+                </div>
+            </div>
+
+            <div class="form-grid-2">
+                <div class="form-group">
+                    <label for="id_nombre_empaque">Nombre de Empaque (opcional)</label>
+                    {{ producto_form.nombre_empaque }}
+                </div>
+                <div class="form-group">
+                    <label for="id_unidades_por_empaque">Unidades por Empaque</label>
+                    {{ producto_form.unidades_por_empaque }}
+                </div>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="id_descripcion">Descripción / Notas</label>
+                {{ producto_form.descripcion }}
+            </div>
+        </div>
+
+        <div class="app-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalProducto')">Cancelar</button>
+            <button type="submit" class="btn btn-primary" id="btnSubmitModalProducto">Registrar Producto</button>
+        </div>
+    </form>
+</dialog>
+
+{{ tipos_por_categoria|json_script:"tipos-por-categoria-data" }}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    var formModal = document.getElementById("formModalProducto");
+    var tituloModal = document.getElementById("modalProductoTitulo");
+    var btnSubmit = document.getElementById("btnSubmitModalProducto");
+    var urlCrear = "{% url 'inventario:producto-crear' %}";
+
+    var inputNombre = formModal.querySelector('[name="nombre"]');
+    var selectCategoria = formModal.querySelector('[name="categoria"]');
+    var selectTipo = formModal.querySelector('[name="tipo"]');
+    var inputStockIni = formModal.querySelector('[name="stock_inicial"]');
+    var inputStockMin = formModal.querySelector('[name="stock_minimo"]');
+    var inputBarras = formModal.querySelector('[name="codigo_barras"]');
+    var inputEmpaque = formModal.querySelector('[name="nombre_empaque"]');
+    var inputUnidadesEmp = formModal.querySelector('[name="unidades_por_empaque"]');
+    var inputDesc = formModal.querySelector('[name="descripcion"]');
+    var selectUbic = formModal.querySelector('[name="ubicacion"]') || formModal.querySelector('[name="ubicaciones_seleccionadas"]');
+
+    var tiposEl = document.getElementById("tipos-por-categoria-data");
+    var todosLosTipos = tiposEl ? JSON.parse(tiposEl.textContent) : [];
+
+    function filtrarTiposPorCategoria(catId, tipoSeleccionado) {
+        if (!selectTipo) return;
+        selectTipo.innerHTML = '<option value="">Sin tipo (opcional)</option>';
+        if (!catId) return;
+        todosLosTipos.forEach(function(t) {
+            if (String(t.categoria_id) === String(catId)) {
+                var opt = document.createElement("option");
+                opt.value = String(t.id);
+                opt.textContent = t.nombre;
+                if (String(t.id) === String(tipoSeleccionado)) {
+                    opt.selected = true;
+                }
+                selectTipo.appendChild(opt);
+            }
+        });
+    }
+
+    if (selectCategoria) {
+        selectCategoria.addEventListener("change", function() {
+            filtrarTiposPorCategoria(selectCategoria.value, "");
+        });
+    }
+
+    // Abrir modal para Nuevo Producto
+    var btnNuevo = document.getElementById("btnNuevoProducto");
+    if (btnNuevo) {
+        btnNuevo.addEventListener("click", function() {
+            formModal.reset();
+            formModal.action = urlCrear;
+            tituloModal.textContent = "Nuevo Producto en Catálogo";
+            btnSubmit.textContent = "Registrar Producto";
+            if (inputStockIni) {
+                inputStockIni.disabled = false;
+                inputStockIni.value = "0";
+            }
+            if (inputStockMin) inputStockMin.value = "0";
+            if (selectUbic) {
+                selectUbic.value = "";
+                Array.from(selectUbic.options).forEach(function(opt) { opt.selected = false; });
+                if (window.syncMultiSelectDropdown) window.syncMultiSelectDropdown(selectUbic);
+            }
+            filtrarTiposPorCategoria(selectCategoria ? selectCategoria.value : "", "");
+            openAppModal("modalProducto");
+        });
+    }
+
+    // Abrir modal para Editar Producto
+    document.querySelectorAll(".btn-editar-producto").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            formModal.reset();
+            formModal.action = btn.getAttribute("data-url");
+            tituloModal.textContent = "Editar Producto (" + btn.getAttribute("data-codigo") + ")";
+            btnSubmit.textContent = "Guardar Cambios";
+
+            if (inputNombre) inputNombre.value = btn.getAttribute("data-nombre") || "";
+            var catId = btn.getAttribute("data-categoria") || "";
+            var tipoId = btn.getAttribute("data-tipo") || "";
+            if (selectCategoria) selectCategoria.value = catId;
+            filtrarTiposPorCategoria(catId, tipoId);
+
+            if (inputStockIni) {
+                inputStockIni.value = btn.getAttribute("data-stock-inicial") || "0";
+                inputStockIni.disabled = true;
+            }
+            if (inputStockMin) inputStockMin.value = btn.getAttribute("data-stock-minimo") || "0";
+            if (inputBarras) inputBarras.value = btn.getAttribute("data-codigo-barras") || "";
+            if (inputEmpaque) inputEmpaque.value = btn.getAttribute("data-nombre-empaque") || "";
+            if (inputUnidadesEmp) inputUnidadesEmp.value = btn.getAttribute("data-unidades-empaque") || "";
+            if (inputDesc) inputDesc.value = btn.getAttribute("data-descripcion") || "";
+
+            if (selectUbic) {
+                var uIds = (btn.getAttribute("data-ubicaciones") || "").split(",").filter(Boolean);
+                var ubId = btn.getAttribute("data-ubicacion") || (uIds[0] || "");
+                selectUbic.value = ubId;
+                Array.from(selectUbic.options).forEach(function(opt) {
+                    opt.selected = String(opt.value) === String(ubId);
+                });
+                if (window.syncMultiSelectDropdown) window.syncMultiSelectDropdown(selectUbic);
+            }
+
+            openAppModal("modalProducto");
+        });
+    });
+
+    // Verificación AJAX de nombres similares
+    var alertaBox = document.getElementById("alerta-similares");
+    var listaSimilares = document.getElementById("lista-similares");
+    var timerSim = null;
+    if (inputNombre) {
+        inputNombre.addEventListener("input", function() {
+            clearTimeout(timerSim);
+            var q = inputNombre.value.trim();
+            if (q.length < 3) {
+                alertaBox.style.display = "none";
+                return;
+            }
+            timerSim = setTimeout(function() {
+                fetch("{% url 'inventario:producto-verificar-nombre' %}?nombre=" + encodeURIComponent(q))
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        listaSimilares.innerHTML = "";
+                        if (data.similares && data.similares.length > 0) {
+                            data.similares.forEach(function(item) {
+                                var li = document.createElement("li");
+                                li.textContent = item.codigo_interno + " — " + item.nombre;
+                                listaSimilares.appendChild(li);
+                            });
+                            alertaBox.style.display = "block";
+                        } else {
+                            alertaBox.style.display = "none";
+                        }
+                    })
+                    .catch(function() {});
+            }, 350);
+        });
+    }
+});
+</script>
 {% endblock %}

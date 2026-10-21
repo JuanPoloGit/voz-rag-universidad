@@ -294,19 +294,37 @@
             position: relative;
             display: inline-grid;
             place-items: center;
-            width: 34px;
-            height: 34px;
-            border-radius: 8px;
-            background: var(--bg-panel-2);
-            border: 1px solid var(--border);
+            width: 36px;
+            height: 36px;
+            border-radius: 9px;
+            background: var(--bg-panel-2, #111f4d);
+            border: 1px solid var(--border, #1e2e63);
+            color: #e2e8f0;
             text-decoration: none;
-            font-size: 16px;
-            transition: all 0.15s ease;
+            cursor: pointer;
+            transition: all 0.18s ease;
+        }
+
+        .notification-bell svg {
+            width: 19px;
+            height: 19px;
+            stroke: #e2e8f0;
+            fill: none;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            transition: stroke 0.18s ease, transform 0.18s ease;
         }
 
         .notification-bell:hover {
-            border-color: var(--accent);
-            background: var(--bg-elevated);
+            border-color: var(--accent-bright, #5c8bff);
+            background: rgba(59, 111, 240, 0.22);
+            color: #ffffff;
+        }
+
+        .notification-bell:hover svg {
+            stroke: #57e8cf;
+            transform: scale(1.08);
         }
 
         .notification-badge {
@@ -789,8 +807,486 @@
             .kpi-grid { grid-template-columns: repeat(3, 1fr); }
         }
 
+        /* ─── Modals (<dialog>) ───────────────────────────────────── */
+        dialog.app-modal {
+            margin: auto;
+            background: var(--bg-panel);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 0;
+            width: min(640px, 94vw);
+            max-height: 90dvh;
+            box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.75);
+            overflow: hidden;
+        }
+
+        dialog.app-modal[open] {
+            display: flex;
+            flex-direction: column;
+        }
+
+        dialog.app-modal::backdrop {
+            background: rgba(2, 6, 23, 0.72);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+        }
+
+        .app-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            background: var(--bg-deep-2);
+            border-bottom: 1px solid var(--border-soft);
+            flex-shrink: 0;
+        }
+
+        .app-modal-title {
+            font-family: var(--font-heading);
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text);
+            margin: 0;
+        }
+
+        .app-modal-close {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+            width: 30px;
+            height: 30px;
+            border-radius: 7px;
+            cursor: pointer;
+            display: inline-grid;
+            place-items: center;
+            font-size: 15px;
+            line-height: 1;
+            transition: all 0.15s ease;
+        }
+
+        .app-modal-close:hover {
+            color: var(--crit);
+            border-color: var(--crit);
+            background: var(--crit-bg);
+        }
+
+        .app-modal-body {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .app-modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            padding: 14px 20px;
+            background: var(--bg-deep-2);
+            border-top: 1px solid var(--border-soft);
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+
+        /* ─── Single-Input Product Combobox (Buscador Desplegable) ─── */
+        .product-combobox {
+            position: relative;
+            width: 100%;
+        }
+        .product-combobox-input {
+            width: 100%;
+            padding-right: 34px !important;
+            cursor: text;
+        }
+        .product-combobox-arrow {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            pointer-events: none;
+            color: var(--text-dim);
+            font-size: 11px;
+            transition: transform 0.15s ease;
+        }
+        .product-combobox.open .product-combobox-arrow {
+            transform: translateY(-50%) rotate(180deg);
+        }
+        .product-combobox-menu {
+            display: none;
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            right: 0;
+            max-height: 220px;
+            overflow-y: auto;
+            background: var(--bg-deep-2);
+            border: 1px solid var(--accent-bright);
+            border-radius: var(--radius-sm);
+            box-shadow: 0 14px 32px rgba(0, 0, 0, 0.68);
+            z-index: 560;
+            padding: 5px;
+        }
+        .product-combobox.open .product-combobox-menu {
+            display: block;
+        }
+        .product-combobox-option {
+            padding: 8px 10px;
+            border-radius: 6px;
+            font-size: 12.8px;
+            color: var(--text);
+            cursor: pointer;
+            transition: background 0.12s ease;
+        }
+        .product-combobox-option:hover,
+        .product-combobox-option.active {
+            background: rgba(59, 111, 240, 0.22);
+            color: #fff;
+        }
+        .product-combobox-empty {
+            padding: 9px 10px;
+            font-size: 12px;
+            color: var(--text-muted);
+            text-align: center;
+        }
+
+        /* ─── Filter Pills / Tabs ─────────────────────────────────── */
+        .filter-pills {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .filter-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 8px 14px;
+            border-radius: 999px;
+            font-size: 12.5px;
+            font-weight: 600;
+            color: var(--text-dim);
+            background: var(--bg-panel-2);
+            border: 1px solid var(--border);
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .filter-pill svg {
+            width: 14px;
+            height: 14px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            flex-shrink: 0;
+        }
+
+        .filter-pill:hover {
+            color: var(--text);
+            border-color: var(--accent);
+            background: var(--bg-elevated);
+        }
+
+        .filter-pill.active {
+            color: #fff;
+            background: var(--accent);
+            border-color: var(--accent-bright);
+            box-shadow: 0 4px 14px -4px rgba(59, 111, 240, 0.55);
+        }
+
+        /* ─── Compact Action Group ────────────────────────────────── */
+        .action-group {
+            display: inline-flex;
+            gap: 6px;
+            align-items: center;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+        }
+
+        td .action-group {
+            flex-wrap: nowrap;
+            white-space: nowrap;
+        }
+
+        .form-grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+        }
+
+        /* ─── Minimalist Status Indicators (No-wrap) ──────────────── */
+        .status-inline {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            white-space: nowrap;
+            font-size: 12.5px;
+            font-weight: 600;
+            line-height: 1.2;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .status-inline.status-ok { color: var(--ok); }
+        .status-inline.status-ok .status-dot { background: var(--ok); box-shadow: 0 0 8px rgba(59, 226, 154, 0.55); }
+        .status-inline.status-warn { color: var(--warn); }
+        .status-inline.status-warn .status-dot { background: var(--warn); box-shadow: 0 0 8px rgba(255, 189, 92, 0.55); }
+        .status-inline.status-crit { color: var(--crit); }
+        .status-inline.status-crit .status-dot { background: var(--crit); box-shadow: 0 0 8px rgba(255, 107, 122, 0.55); }
+        .status-inline.status-muted { color: var(--text-dim); }
+        .status-inline.status-muted .status-dot { background: var(--text-faint); }
+
+        /* ─── Collapsible Multi-Select Dropdown (Ubicaciones) ─────── */
+        .multi-dropdown {
+            position: relative;
+            width: 100%;
+        }
+        .multi-dropdown-toggle {
+            width: 100%;
+            padding: 10px 12px;
+            font-size: 13.5px;
+            font-family: var(--font-body);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            background: var(--bg-panel-2);
+            color: var(--text);
+            text-align: left;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            transition: border-color 0.15s ease;
+        }
+        .multi-dropdown-toggle:hover,
+        .multi-dropdown.open .multi-dropdown-toggle {
+            border-color: var(--accent-bright);
+        }
+        .multi-dropdown-label {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+        }
+        .multi-dropdown-arrow {
+            font-size: 11px;
+            color: var(--text-dim);
+            transition: transform 0.15s ease;
+        }
+        .multi-dropdown.open .multi-dropdown-arrow {
+            transform: rotate(180deg);
+        }
+        .multi-dropdown-menu {
+            display: none;
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            right: 0;
+            max-height: 210px;
+            overflow-y: auto;
+            background: var(--bg-deep-2);
+            border: 1px solid var(--accent-bright);
+            border-radius: var(--radius-sm);
+            box-shadow: 0 14px 32px rgba(0, 0, 0, 0.65);
+            z-index: 500;
+            padding: 6px;
+        }
+        .multi-dropdown.open .multi-dropdown-menu {
+            display: block;
+        }
+        .multi-dropdown-item {
+            display: flex !important;
+            align-items: center;
+            gap: 9px;
+            padding: 7px 9px;
+            border-radius: 6px;
+            font-size: 12.8px !important;
+            color: var(--text) !important;
+            cursor: pointer;
+            margin: 0 !important;
+            user-select: none;
+        }
+        .multi-dropdown-item:hover {
+            background: rgba(92, 139, 255, 0.12);
+        }
+
+        /* ─── Password Show/Hide Toggle ───────────────────────────── */
+        .pwd-input-wrap {
+            position: relative;
+            display: flex;
+            align-items: center;
+            width: 100%;
+        }
+        .pwd-input-wrap input {
+            padding-right: 42px !important;
+        }
+        .pwd-toggle-btn {
+            position: absolute;
+            right: 8px;
+            background: transparent;
+            border: none;
+            color: var(--text-dim);
+            cursor: pointer;
+            padding: 4px 6px;
+            border-radius: 6px;
+            font-size: 14px;
+            line-height: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: color 0.15s ease, background 0.15s ease;
+        }
+        .pwd-toggle-btn:hover {
+            color: var(--accent-2);
+            background: rgba(87, 232, 207, 0.10);
+        }
+
+        /* ─── Haku IA Button in Sidebar ───────────────────────────── */
+        .haku-sidebar-btn {
+            margin-top: 12px;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            padding: 11px 13px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, rgba(59, 111, 240, 0.24) 0%, rgba(87, 232, 207, 0.18) 100%);
+            border: 1px solid rgba(87, 232, 207, 0.45);
+            color: #ffffff;
+            font-family: var(--font-heading);
+            font-size: 13.5px;
+            font-weight: 600;
+            cursor: pointer;
+            text-align: left;
+            box-shadow: 0 6px 20px -6px rgba(87, 232, 207, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .haku-sidebar-btn:hover {
+            transform: translateY(-1px);
+            border-color: var(--accent-2);
+            box-shadow: 0 10px 26px -6px rgba(87, 232, 207, 0.55);
+            background: linear-gradient(135deg, rgba(59, 111, 240, 0.36) 0%, rgba(87, 232, 207, 0.28) 100%);
+        }
+        .haku-icon-orb {
+            width: 30px;
+            height: 30px;
+            border-radius: 9px;
+            background: linear-gradient(135deg, #3b6ff0, #57e8cf);
+            display: grid;
+            place-items: center;
+            color: #050b24;
+            flex-shrink: 0;
+            box-shadow: 0 0 12px rgba(87, 232, 207, 0.5);
+        }
+        .haku-icon-orb svg {
+            width: 16px;
+            height: 16px;
+            stroke: #050b24;
+            stroke-width: 2.2;
+            fill: none;
+        }
+        .haku-pulse-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--accent-2);
+            box-shadow: 0 0 8px var(--accent-2);
+            margin-left: auto;
+        }
+
+        /* ─── Topbar Bell Popover / Dropdown (Sin desenfoque ni centrado) ─── */
+        .notif-bell-wrapper {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+        }
+        .notification-bell svg {
+            width: 18px;
+            height: 18px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 1.9;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+        .notif-dropdown-panel {
+            display: none;
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            width: min(440px, 92vw);
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.72);
+            z-index: 600;
+            overflow: hidden;
+            flex-direction: column;
+        }
+        .notif-dropdown-panel.open {
+            display: flex;
+        }
+        .notif-dropdown-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            padding: 13px 16px;
+            background: var(--bg-deep-2);
+            border-bottom: 1px solid var(--border-soft);
+        }
+        .notif-dropdown-body {
+            padding: 12px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 9px;
+            max-height: 390px;
+            overflow-y: auto;
+        }
+        .notif-dropdown-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 14px;
+            background: var(--bg-deep-2);
+            border-top: 1px solid var(--border-soft);
+        }
+        .notif-float-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            padding: 11px 13px;
+            border-radius: var(--radius-sm);
+            background: var(--bg-panel-2);
+            border: 1px solid var(--border);
+            border-left: 3px solid var(--accent);
+            transition: border-color 0.15s ease;
+        }
+        .notif-float-item.unread-crit,
+        .notif-float-item.alert-crit {
+            border-left-color: var(--crit);
+            background: linear-gradient(90deg, rgba(255, 107, 122, 0.10), var(--bg-panel-2) 55%);
+        }
+        .notif-float-item.unread-warn,
+        .notif-float-item.alert-warn {
+            border-left-color: var(--warn);
+            background: linear-gradient(90deg, rgba(255, 189, 92, 0.10), var(--bg-panel-2) 55%);
+        }
+        .notif-float-item:hover {
+            border-color: var(--accent-bright);
+        }
+
         /* ═══════════════════════════════════════════════════════════════
-           RESPONSIVE — ≤ 980px
+           RESPONSIVE — Universal (Desktop, Tablet, Apple iOS, Mobile)
            ═══════════════════════════════════════════════════════════════ */
         @media (max-width: 980px) {
             .kpi-grid { grid-template-columns: repeat(2, 1fr); }
@@ -801,7 +1297,7 @@
                 position: fixed;
                 left: -260px;
                 top: 0;
-                height: 100vh;
+                height: 100dvh;
                 transition: left 0.25s ease;
                 z-index: 300;
             }
@@ -819,35 +1315,66 @@
             }
 
             .main-content {
-                padding: 20px 16px 60px;
+                padding: 18px 14px 50px;
             }
 
             .topbar {
-                padding: 14px 16px;
+                padding: 12px 14px;
             }
 
             .topbar-user-pill {
                 display: none;
             }
+
+            .card-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
         }
 
         @media (max-width: 640px) {
-            .kpi-grid { grid-template-columns: 1fr; }
-            .kpi-value { font-size: 26px; }
+            .kpi-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+            .kpi-card { padding: 14px; }
+            .kpi-value { font-size: 22px; }
             .topbar-title {
-                font-size: 16px;
+                font-size: 15.5px;
             }
             .card {
-                padding: 16px;
+                padding: 14px;
                 border-radius: 10px;
             }
+            .form-grid-2 {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
+            dialog.app-modal {
+                width: 96vw;
+                max-height: 92dvh;
+                border-radius: 12px;
+            }
+            .app-modal-body {
+                padding: 14px;
+            }
+            .btn {
+                padding: 9px 14px;
+                font-size: 12.5px;
+            }
+            .btn-sm {
+                padding: 6px 10px;
+                font-size: 11.5px;
+            }
+        }
+
+        @media (max-width: 420px) {
+            .kpi-grid { grid-template-columns: 1fr; }
         }
     </style>
     {% block extra_css %}{% endblock %}
 </head>
 <body>
     <div class="app-layout">
-        <!-- ═══ SIDEBAR (Propuesta A: 7 ítems limpios + pestañas internas por módulo) ═══ -->
+        <!-- ═══ SIDEBAR ═══ -->
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-brand">
                 <a href="{% url 'web:dashboard' %}">
@@ -856,65 +1383,63 @@
                 </a>
             </div>
 
-            <nav class="sidebar-nav">
-                <!-- 1. Resumen General -->
-                <div class="nav-section-label">1. Panorama</div>
+            <nav class="sidebar-nav" style="gap: 6px; padding-top: 16px;">
                 <a href="{% url 'web:dashboard' %}" class="nav-item {% block sidebar_dashboard %}{% endblock %}">
                     <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
                     Resumen General
                 </a>
 
-                <!-- 2. Inventario y Catálogo -->
-                <div class="nav-section-label">2. Inventario</div>
-                <a href="{% url 'inventario:producto-lista' %}" class="nav-item {% block sidebar_productos %}{% endblock %}{% block sidebar_alertas %}{% endblock %}">
+                <a href="{% url 'inventario:producto-lista' %}" class="nav-item {% block sidebar_productos %}{% endblock %}{% block sidebar_alertas %}{% endblock %}{% block sidebar_rep_existencias %}{% endblock %}">
                     <svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
                     Catálogo y Stock
                     {% if alertas_resumen.total_alertas > 0 %}
-                        <span class="badge badge-crit" style="margin-left: auto; font-size: 10px; padding: 2px 7px;" title="{{ alertas_resumen.total_alertas }} alertas de stock">{{ alertas_resumen.total_alertas }}</span>
+                        <span class="badge {% if alertas_resumen.total_criticas > 0 %}badge-crit{% else %}badge-warn{% endif %}" style="margin-left: auto; font-size: 10px; padding: 2px 7px;" title="{{ alertas_resumen.total_alertas }} alertas de stock">{{ alertas_resumen.total_alertas }}</span>
                     {% endif %}
                 </a>
 
-                <!-- 3. Operaciones Diarias -->
-                <div class="nav-section-label">3. Operaciones</div>
-                <a href="{% url 'inventario:movimiento-lista' %}" class="nav-item {% block sidebar_movimientos %}{% endblock %}{% block sidebar_entrada %}{% endblock %}{% block sidebar_salida %}{% endblock %}">
+                <a href="{% url 'inventario:movimiento-lista' %}" class="nav-item {% block sidebar_movimientos %}{% endblock %}{% block sidebar_entrada %}{% endblock %}{% block sidebar_salida %}{% endblock %}{% block sidebar_prestamos %}{% endblock %}{% block sidebar_conteos %}{% endblock %}{% block sidebar_rep_prestamos %}{% endblock %}{% block sidebar_rep_movimientos %}{% endblock %}{% block sidebar_rep_estancados %}{% endblock %}">
                     <svg viewBox="0 0 24 24"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
-                    Entradas y Salidas
-                </a>
-                <a href="{% url 'inventario:prestamo-lista' %}" class="nav-item {% block sidebar_prestamos %}{% endblock %}{% block sidebar_conteos %}{% endblock %}">
-                    <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
-                    Préstamos y Conteos
+                    Movimientos
                 </a>
 
-                <!-- 4. Estructura y Analítica -->
-                <div class="nav-section-label">4. Estructura y Análisis</div>
                 <a href="{% url 'inventario:categoria-lista' %}" class="nav-item {% block sidebar_categorias %}{% endblock %}{% block sidebar_ubicaciones %}{% endblock %}{% block sidebar_almacenes %}{% endblock %}">
                     <svg viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z"/><circle cx="17" cy="17" r="3"/></svg>
                     Categorías y Bodegas
                 </a>
-                <a href="{% url 'web:reporte-existencias' %}" class="nav-item {% block sidebar_rep_existencias %}{% endblock %}{% block sidebar_rep_movimientos %}{% endblock %}{% block sidebar_rep_prestamos %}{% endblock %}{% block sidebar_rep_estancados %}{% endblock %}">
-                    <svg viewBox="0 0 24 24"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
-                    Centro de Reportes
-                </a>
 
                 {% if user.es_administrador %}
-                <!-- 5. Administración -->
-                <div class="nav-section-label">5. Administración</div>
                 <a href="{% url 'cuentas:usuario_lista' %}" class="nav-item {% block sidebar_usuarios %}{% endblock %}">
                     <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
                     Usuarios y Roles
                 </a>
                 {% endif %}
+                <span style="display:none;">{% block sidebar_perfil %}{% endblock %}</span>
+
+                <button type="button" class="haku-sidebar-btn" onclick="openAppModal('modalHakuPreview')" title="Abrir Haku IA" style="margin-top: 14px;">
+                    <span class="haku-icon-orb">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                            <line x1="12" y1="19" x2="12" y2="22"/>
+                        </svg>
+                    </span>
+                    <div style="display: flex; flex-direction: column; line-height: 1.2;">
+                        <span style="font-size: 13.5px; font-weight: 700; color: #fff;">Haku IA</span>
+                        <span style="font-size: 10.5px; color: var(--accent-2); font-weight: 500;">Asistente de Voz</span>
+                    </div>
+                    <span class="haku-pulse-dot"></span>
+                </button>
             </nav>
 
             {% if user.is_authenticated %}
             <div class="sidebar-footer">
-                <div class="sidebar-user">
+                <a href="{% url 'cuentas:cambiar_password' %}" class="sidebar-user" style="text-decoration: none;" title="Mi Perfil — Cambiar nombre y contraseña">
                     <div class="sidebar-user-avatar">{{ user.username|first|upper }}</div>
                     <div class="sidebar-user-info">
                         <div class="sidebar-user-name">{{ user.nombre_completo|default:user.username }}</div>
                         <div class="sidebar-user-role">{{ user.get_rol_display|default:user.rol }}{% if user.almacen_asignado %} · {{ user.almacen_asignado.nombre }}{% endif %}</div>
                     </div>
-                </div>
+                </a>
                 <form action="{% url 'cuentas:logout' %}" method="post">
                     {% csrf_token %}
                     <button type="submit" class="btn-logout-sidebar">Cerrar sesión</button>
@@ -930,23 +1455,131 @@
         <div class="main-wrapper">
             <header class="topbar">
                 <div style="display: flex; align-items: center; gap: 12px;">
-                    <button class="hamburger" id="hamburgerBtn" onclick="toggleSidebar()" aria-label="Menú">☰</button>
+                    <button class="hamburger" id="hamburgerBtn" onclick="toggleSidebar()" aria-label="Menú">
+                        <svg viewBox="0 0 24 24" style="width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round;"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                    </button>
                     <h1 class="topbar-title">{% block page_title %}Inventario AudacIA{% endblock %}</h1>
                 </div>
                 <div class="topbar-right">
                     {% if user.is_authenticated %}
-                    <a href="{% url 'inventario:alertas-lista' %}" class="notification-bell" title="Alertas de Stock">
-                        🔔
-                        {% if alertas_resumen.total_alertas > 0 %}
-                            <span class="notification-badge {% if alertas_resumen.total_criticas == 0 %}warn-badge{% endif %}">
-                                {{ alertas_resumen.total_alertas }}
-                            </span>
-                        {% endif %}
-                    </a>
-                    <div class="topbar-user-pill">
-                        <strong>{{ user.username }}</strong>
-                        <span class="badge badge-accent">{{ user.rol }}</span>
+                    <!-- Campana de Notificaciones con panel desplegable debajo del icono (sin desenfoque ni centrado) -->
+                    <div class="notif-bell-wrapper" id="notifBellWrapper">
+                        <button type="button" class="notification-bell" id="btnToggleNotifDropdown" title="Notificaciones pendientes" aria-label="Notificaciones">
+                            <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+                            {% if alertas_resumen.total_no_leidas > 0 %}
+                                <span class="notification-badge {% if alertas_resumen.total_criticas == 0 %}warn-badge{% endif %}" id="notifBellBadge">
+                                    {{ alertas_resumen.total_no_leidas }}
+                                </span>
+                            {% elif alertas_resumen.total_alertas > 0 %}
+                                <span class="notification-badge warn-badge" id="notifBellBadge" style="display: none;">
+                                    0
+                                </span>
+                            {% endif %}
+                        </button>
+
+                        <!-- Panel desplegable anclado debajo de la campana -->
+                        <div id="panelNotificacionesFlotante" class="notif-dropdown-panel">
+                            <div class="notif-dropdown-header">
+                                <div>
+                                    <div style="font-family: var(--font-heading); font-size: 14.5px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 7px;">
+                                        <svg viewBox="0 0 24 24" style="width: 15px; height: 15px; stroke: var(--accent-2); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+                                        Notificaciones
+                                    </div>
+                                    <div id="notifSubtitleText" style="font-size: 11.5px; color: var(--text-muted); margin-top: 2px;">
+                                        {% if alertas_resumen.total_no_leidas > 0 %}
+                                            Tienes <strong style="color: var(--crit);" id="notifPendingCountText">{{ alertas_resumen.total_no_leidas }}</strong> notificación(es) pendiente(s).
+                                        {% elif alertas_resumen.total_alertas > 0 %}
+                                            Estás al día ({{ alertas_resumen.total_alertas }} alerta(s) revisada(s)).
+                                        {% else %}
+                                            No tienes notificaciones pendientes.
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                {% if alertas_resumen.total_no_leidas > 0 %}
+                                    <form method="post" action="{% url 'inventario:alerta-marcar-leida' %}" class="js-notif-ajax-form" data-accion="todas" style="margin: 0;">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="accion" value="todas">
+                                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                        <button type="submit" class="btn btn-sm btn-secondary" style="padding: 5px 9px; font-size: 11px;">
+                                            Marcar todas
+                                        </button>
+                                    </form>
+                                {% endif %}
+                            </div>
+
+                            <div class="notif-dropdown-body">
+                                {% if alertas_resumen.criticas or alertas_resumen.bajas %}
+                                    {% for ex in alertas_resumen.criticas %}
+                                        <div class="notif-float-item alert-crit" data-notif-item="{{ ex.notificacion_key }}">
+                                            <a href="{% url 'inventario:producto-detalle' ex.producto.pk %}"
+                                               onclick="marcarYRedirigirGlobal(event, '{{ ex.notificacion_key }}', '{% url 'inventario:producto-detalle' ex.producto.pk %}')"
+                                               style="flex: 1; min-width: 0; text-decoration: none; color: inherit; cursor: pointer;">
+                                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                                    <span class="status-inline status-crit"><span class="status-dot"></span>Sin stock</span>
+                                                    <strong style="color: var(--text); font-size: 13px;">{{ ex.producto.codigo_interno }} — {{ ex.producto.nombre }}</strong>
+                                                    <span class="badge badge-accent js-notif-new-badge" style="font-size: 9.5px; padding: 1px 6px; {% if ex.es_leida %}display: none;{% endif %}">Nueva</span>
+                                                </div>
+                                                <div style="font-size: 11.8px; color: var(--text-dim); margin-top: 3px;">
+                                                    Bodega <strong>{{ ex.almacen.nombre }}</strong> · Disponible: <strong>0</strong> (mínimo {{ ex.producto.stock_minimo }})
+                                                </div>
+                                            </a>
+                                            <form method="post" action="{% url 'inventario:alerta-marcar-leida' %}" class="js-notif-ajax-form" style="margin: 0; flex-shrink: 0;">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="key" value="{{ ex.notificacion_key }}">
+                                                <input type="hidden" name="accion" value="{% if ex.es_leida %}no_leida{% else %}una{% endif %}" class="js-notif-accion-input">
+                                                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                                <button type="submit" class="btn btn-sm btn-secondary js-notif-btn-label" style="padding: 5px 9px; font-size: 11px;">
+                                                    {% if ex.es_leida %}Leída{% else %}Marcar leída{% endif %}
+                                                </button>
+                                            </form>
+                                        </div>
+                                    {% endfor %}
+
+                                    {% for ex in alertas_resumen.bajas %}
+                                        <div class="notif-float-item alert-warn" data-notif-item="{{ ex.notificacion_key }}">
+                                            <a href="{% url 'inventario:producto-detalle' ex.producto.pk %}"
+                                               onclick="marcarYRedirigirGlobal(event, '{{ ex.notificacion_key }}', '{% url 'inventario:producto-detalle' ex.producto.pk %}')"
+                                               style="flex: 1; min-width: 0; text-decoration: none; color: inherit; cursor: pointer;">
+                                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                                    <span class="status-inline status-warn"><span class="status-dot"></span>Stock bajo</span>
+                                                    <strong style="color: var(--text); font-size: 13px;">{{ ex.producto.codigo_interno }} — {{ ex.producto.nombre }}</strong>
+                                                    <span class="badge badge-accent js-notif-new-badge" style="font-size: 9.5px; padding: 1px 6px; {% if ex.es_leida %}display: none;{% endif %}">Nueva</span>
+                                                </div>
+                                                <div style="font-size: 11.8px; color: var(--text-dim); margin-top: 3px;">
+                                                    Bodega <strong>{{ ex.almacen.nombre }}</strong> · Disponible: <strong>{{ ex.stock_disponible }}</strong> (mínimo {{ ex.producto.stock_minimo }})
+                                                </div>
+                                            </a>
+                                            <form method="post" action="{% url 'inventario:alerta-marcar-leida' %}" class="js-notif-ajax-form" style="margin: 0; flex-shrink: 0;">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="key" value="{{ ex.notificacion_key }}">
+                                                <input type="hidden" name="accion" value="{% if ex.es_leida %}no_leida{% else %}una{% endif %}" class="js-notif-accion-input">
+                                                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                                <button type="submit" class="btn btn-sm btn-secondary js-notif-btn-label" style="padding: 5px 9px; font-size: 11px;">
+                                                    {% if ex.es_leida %}Leída{% else %}Marcar leída{% endif %}
+                                                </button>
+                                            </form>
+                                        </div>
+                                    {% endfor %}
+                                {% else %}
+                                    <div style="text-align: center; padding: 1.75rem 1rem; color: var(--text-muted); font-size: 12.5px;">
+                                        Todo el inventario se encuentra en niveles óptimos.
+                                    </div>
+                                {% endif %}
+                            </div>
+
+                            <div class="notif-dropdown-footer">
+                                <a href="{% url 'inventario:alertas-lista' %}" class="btn btn-sm btn-secondary">
+                                    Ver Alertas de Stock
+                                </a>
+                                <button type="button" class="btn btn-sm btn-secondary" id="btnCerrarNotifDropdown">Cerrar</button>
+                            </div>
+                        </div>
                     </div>
+
+                    <a href="{% url 'cuentas:cambiar_password' %}" class="topbar-user-pill" style="text-decoration: none;" title="Mi Perfil — Cambiar nombre y contraseña">
+                        <strong>{{ user.nombre_completo|default:user.username }}</strong>
+                        <span class="badge badge-accent">{{ user.rol }}</span>
+                    </a>
                     {% endif %}
                 </div>
             </header>
@@ -963,56 +1596,18 @@
                 {% endif %}
 
                 {% with url_name=request.resolver_match.url_name %}
-                    {% if url_name in 'producto-lista,producto-crear,producto-detalle,producto-editar,producto-fusionar,alertas-lista' %}
-                        <nav class="module-tabs" aria-label="Submenú de Inventario">
-                            <a href="{% url 'inventario:producto-lista' %}" class="module-tab {% if url_name in 'producto-lista,producto-detalle,producto-editar,producto-fusionar' %}active{% endif %}">
+                    {% if url_name in 'producto-lista,producto-detalle,producto-editar,producto-fusionar,alertas-lista' %}
+                        <nav class="module-tabs" aria-label="Submenú de Catálogo y Stock">
+                            <a href="{% url 'inventario:producto-lista' %}" class="module-tab {% if url_name != 'alertas-lista' %}active{% endif %}">
                                 <svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
                                 Catálogo de Productos
-                            </a>
-                            <a href="{% url 'inventario:producto-crear' %}" class="module-tab {% if url_name == 'producto-crear' %}active{% endif %}">
-                                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
-                                + Agregar Producto
                             </a>
                             <a href="{% url 'inventario:alertas-lista' %}" class="module-tab {% if url_name == 'alertas-lista' %}active{% endif %}">
                                 <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
                                 Alertas de Stock
                                 {% if alertas_resumen.total_alertas > 0 %}
-                                    <span class="badge badge-crit" style="font-size: 10px; padding: 1px 6px;">{{ alertas_resumen.total_alertas }}</span>
+                                    <span class="badge {% if alertas_resumen.total_criticas > 0 %}badge-crit{% else %}badge-warn{% endif %}" style="font-size: 10px; padding: 1px 6px;">{{ alertas_resumen.total_alertas }}</span>
                                 {% endif %}
-                            </a>
-                        </nav>
-                    {% elif url_name in 'movimiento-lista,movimiento-entrada,movimiento-salida,movimiento-traslado,movimiento-revertir' %}
-                        <nav class="module-tabs" aria-label="Submenú de Entradas y Salidas">
-                            <a href="{% url 'inventario:movimiento-lista' %}" class="module-tab {% if url_name in 'movimiento-lista,movimiento-revertir' %}active{% endif %}">
-                                <svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
-                                Historial de Movimientos
-                            </a>
-                            <a href="{% url 'inventario:movimiento-entrada' %}" class="module-tab {% if url_name == 'movimiento-entrada' %}active{% endif %}">
-                                <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
-                                + Registrar Entrada
-                            </a>
-                            <a href="{% url 'inventario:movimiento-salida' %}" class="module-tab {% if url_name == 'movimiento-salida' %}active{% endif %}">
-                                <svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
-                                − Registrar Salida
-                            </a>
-                            <a href="{% url 'inventario:movimiento-traslado' %}" class="module-tab {% if url_name == 'movimiento-traslado' %}active{% endif %}">
-                                <svg viewBox="0 0 24 24"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
-                                ⇄ Traslado
-                            </a>
-                        </nav>
-                    {% elif url_name in 'prestamo-lista,prestamo-crear,prestamo-devolver,prestamo-baja,conteo-lista,conteo-crear' %}
-                        <nav class="module-tabs" aria-label="Submenú de Préstamos y Conteos">
-                            <a href="{% url 'inventario:prestamo-lista' %}" class="module-tab {% if url_name in 'prestamo-lista,prestamo-devolver,prestamo-baja' %}active{% endif %}">
-                                <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-                                Préstamos Activos
-                            </a>
-                            <a href="{% url 'inventario:prestamo-crear' %}" class="module-tab {% if url_name == 'prestamo-crear' %}active{% endif %}">
-                                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
-                                + Entregar Préstamo
-                            </a>
-                            <a href="{% url 'inventario:conteo-lista' %}" class="module-tab {% if url_name in 'conteo-lista,conteo-crear' %}active{% endif %}">
-                                <svg viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><path d="M9 14l2 2 4-4"/></svg>
-                                Conteos Físicos
                             </a>
                         </nav>
                     {% elif url_name in 'categoria-lista,categoria-crear,categoria-editar,categoria-desactivar,categoria-trasladar,ubicacion-lista,ubicacion-crear,ubicacion-editar,ubicacion-desactivar,trasladar-ubicacion,almacen-lista,almacen-crear,almacen-editar,almacen-desactivar,trasladar-almacen' %}
@@ -1030,25 +1625,6 @@
                                 Almacenes
                             </a>
                         </nav>
-                    {% elif url_name in 'reporte-existencias,reporte-movimientos,reporte-prestamos,reporte-estancados' %}
-                        <nav class="module-tabs" aria-label="Submenú de Centro de Reportes">
-                            <a href="{% url 'web:reporte-existencias' %}" class="module-tab {% if url_name == 'reporte-existencias' %}active{% endif %}">
-                                <svg viewBox="0 0 24 24"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
-                                Existencias
-                            </a>
-                            <a href="{% url 'web:reporte-movimientos' %}" class="module-tab {% if url_name == 'reporte-movimientos' %}active{% endif %}">
-                                <svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-                                Historial de Movimientos
-                            </a>
-                            <a href="{% url 'web:reporte-prestamos' %}" class="module-tab {% if url_name == 'reporte-prestamos' %}active{% endif %}">
-                                <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
-                                Antigüedad de Préstamos
-                            </a>
-                            <a href="{% url 'web:reporte-estancados' %}" class="module-tab {% if url_name == 'reporte-estancados' %}active{% endif %}">
-                                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-                                Artículos Sin Rotación
-                            </a>
-                        </nav>
                     {% endif %}
                 {% endwith %}
 
@@ -1056,6 +1632,44 @@
             </main>
         </div>
     </div>
+
+    {% if user.is_authenticated %}
+    <form id="formRedirectNotifGlobal" method="post" action="{% url 'inventario:alerta-marcar-leida' %}" style="display: none;">
+        {% csrf_token %}
+        <input type="hidden" name="key" id="inputNotifKeyGlobal">
+        <input type="hidden" name="accion" value="una">
+        <input type="hidden" name="redirect_to" id="inputNotifRedirectGlobal">
+    </form>
+
+    <!-- ═══ MODAL VISUAL HAKU IA ═══ -->
+    <dialog id="modalHakuPreview" class="app-modal" style="width: min(460px, 94vw);">
+        <div class="app-modal-header">
+            <h2 class="app-modal-title" style="display: flex; align-items: center; gap: 8px;">
+                <svg viewBox="0 0 24 24" style="width: 18px; height: 18px; stroke: var(--accent-2); fill: none; stroke-width: 2;"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+                Haku IA — Asistente de Voz
+            </h2>
+            <button type="button" class="app-modal-close" onclick="closeAppModal('modalHakuPreview')" aria-label="Cerrar">×</button>
+        </div>
+        <div class="app-modal-body" style="text-align: center; padding: 28px 22px;">
+            <div style="width: 64px; height: 64px; margin: 0 auto 14px; border-radius: 18px; background: linear-gradient(135deg, #3b6ff0, #57e8cf); display: grid; place-items: center; box-shadow: 0 10px 30px rgba(87, 232, 207, 0.35);">
+                <svg viewBox="0 0 24 24" style="width: 32px; height: 32px; stroke: #050b24; stroke-width: 2.2; fill: none;">
+                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                    <line x1="12" y1="19" x2="12" y2="22"/>
+                </svg>
+            </div>
+            <h3 style="font-family: var(--font-heading); font-size: 17px; color: var(--text); margin-bottom: 6px;">
+                Interfaz Conversacional Haku
+            </h3>
+            <p style="font-size: 13px; color: var(--text-dim); line-height: 1.55;">
+                Desde aquí podrás consultar existencias, registrar entradas, préstamos y traslados mediante comandos de voz e inteligencia artificial.
+            </p>
+        </div>
+        <div class="app-modal-footer">
+            <button type="button" class="btn btn-primary" onclick="closeAppModal('modalHakuPreview')">Entendido</button>
+        </div>
+    </dialog>
+    {% endif %}
 
     <script>
         function toggleSidebar() {
@@ -1066,6 +1680,422 @@
             document.getElementById('sidebar').classList.remove('open');
             document.getElementById('sidebarOverlay').classList.remove('open');
         }
+
+        /* ─── Helpers globales para Modales (<dialog>) ─── */
+        function openAppModal(id) {
+            var dlg = document.getElementById(id);
+            if (dlg && typeof dlg.showModal === 'function') {
+                dlg.showModal();
+            }
+        }
+        function closeAppModal(id) {
+            var dlg = document.getElementById(id);
+            if (dlg && typeof dlg.close === 'function') {
+                dlg.close();
+            }
+        }
+
+        function marcarYRedirigirGlobal(event, key, targetUrl) {
+            event.preventDefault();
+            var form = document.getElementById("formRedirectNotifGlobal");
+            if (!form) {
+                window.location.href = targetUrl;
+                return;
+            }
+            document.getElementById("inputNotifKeyGlobal").value = key;
+            document.getElementById("inputNotifRedirectGlobal").value = targetUrl;
+            form.submit();
+        }
+
+        document.addEventListener("DOMContentLoaded", function() {
+            // 0. Dropdown de Notificaciones bajo la campana (sin cerrar al marcar como leída)
+            var bellWrapper = document.getElementById("notifBellWrapper");
+            var btnBell = document.getElementById("btnToggleNotifDropdown");
+            var panelNotif = document.getElementById("panelNotificacionesFlotante");
+            var btnCerrarNotif = document.getElementById("btnCerrarNotifDropdown");
+
+            if (btnBell && panelNotif) {
+                btnBell.addEventListener("click", function(e) {
+                    e.stopPropagation();
+                    panelNotif.classList.toggle("open");
+                });
+                panelNotif.addEventListener("click", function(e) {
+                    e.stopPropagation();
+                });
+                if (btnCerrarNotif) {
+                    btnCerrarNotif.addEventListener("click", function() {
+                        panelNotif.classList.remove("open");
+                    });
+                }
+                document.addEventListener("click", function(e) {
+                    if (bellWrapper && !bellWrapper.contains(e.target)) {
+                        panelNotif.classList.remove("open");
+                    }
+                });
+
+                function actualizarContadorCampana(totalPendientes) {
+                    var nuevos = (typeof totalPendientes === "number")
+                        ? totalPendientes
+                        : panelNotif.querySelectorAll('.js-notif-new-badge:not([style*="display: none"])').length;
+                    var badge = document.getElementById("notifBellBadge");
+                    var subTxt = document.getElementById("notifSubtitleText");
+                    if (badge) {
+                        if (nuevos > 0) {
+                            badge.textContent = String(nuevos);
+                            badge.style.display = "grid";
+                        } else {
+                            badge.textContent = "0";
+                            badge.style.display = "none";
+                        }
+                    }
+                    if (subTxt) {
+                        if (nuevos > 0) {
+                            subTxt.innerHTML = 'Tienes <strong style="color: var(--crit);">' + nuevos + '</strong> notificación(es) pendiente(s).';
+                        } else {
+                            subTxt.textContent = "Estás al día con tus notificaciones.";
+                        }
+                    }
+                }
+
+                panelNotif.querySelectorAll(".js-notif-ajax-form").forEach(function(form) {
+                    form.addEventListener("submit", function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        var fd = new FormData(form);
+                        var accion = fd.get("accion");
+                        fetch(form.action, {
+                            method: "POST",
+                            body: fd,
+                            headers: { "X-Requested-With": "XMLHttpRequest" },
+                            credentials: "same-origin"
+                        }).then(function(r) {
+                            if (!r.ok) throw new Error("HTTP " + r.status);
+                            return r.json();
+                        }).then(function(data) {
+                            if (accion === "todas") {
+                                panelNotif.querySelectorAll(".js-notif-new-badge").forEach(function(b) {
+                                    b.style.display = "none";
+                                });
+                                panelNotif.querySelectorAll(".js-notif-accion-input").forEach(function(inp) {
+                                    inp.value = "no_leida";
+                                });
+                                panelNotif.querySelectorAll(".js-notif-btn-label").forEach(function(btn) {
+                                    btn.textContent = "Leída";
+                                });
+                                form.style.display = "none";
+                            } else {
+                                var item = form.closest(".notif-float-item");
+                                var newBadge = item ? item.querySelector(".js-notif-new-badge") : null;
+                                var inpAcc = form.querySelector(".js-notif-accion-input");
+                                var btnLbl = form.querySelector(".js-notif-btn-label");
+                                if (accion === "una") {
+                                    if (newBadge) newBadge.style.display = "none";
+                                    if (inpAcc) inpAcc.value = "no_leida";
+                                    if (btnLbl) btnLbl.textContent = "Leída";
+                                } else {
+                                    if (newBadge) newBadge.style.display = "inline-block";
+                                    if (inpAcc) inpAcc.value = "una";
+                                    if (btnLbl) btnLbl.textContent = "Marcar leída";
+                                }
+                            }
+                            actualizarContadorCampana(data ? data.total_no_leidas : undefined);
+                        }).catch(function(err) {
+                            console.error("Error al actualizar notificación:", err);
+                        });
+                    });
+                });
+            }
+
+            // Cerrar modal (<dialog>) al hacer clic en el backdrop
+            document.querySelectorAll("dialog.app-modal").forEach(function(dlg) {
+                dlg.addEventListener("click", function(e) {
+                    var rect = dlg.getBoundingClientRect();
+                    var inDialog = (
+                        rect.top <= e.clientY && e.clientY <= rect.top + rect.height &&
+                        rect.left <= e.clientX && e.clientX <= rect.left + rect.width
+                    );
+                    if (!inDialog) {
+                        dlg.close();
+                    }
+                });
+            });
+
+            // 1. Auto-filtrado sin botón: formularios con data-auto-filter="true"
+            document.querySelectorAll('form[data-auto-filter="true"]').forEach(function(form) {
+                form.querySelectorAll("select, input[type='checkbox'], input[type='radio']").forEach(function(el) {
+                    el.addEventListener("change", function() {
+                        form.submit();
+                    });
+                });
+                var timer = null;
+                form.querySelectorAll("input[type='text'], input[type='search']").forEach(function(input) {
+                    input.addEventListener("input", function() {
+                        clearTimeout(timer);
+                        timer = setTimeout(function() {
+                            form.submit();
+                        }, 420);
+                    });
+                    if (input.value && document.activeElement === input) {
+                        var len = input.value.length;
+                        input.setSelectionRange(len, len);
+                    }
+                });
+            });
+
+            // 2. Un solo campo combobox para productos: al presionar permite escribir y despliega la lista abajo en tiempo real
+            function initSearchableSelects(root) {
+                (root || document).querySelectorAll('select[name="producto"], select[data-searchable="true"]').forEach(function(sel) {
+                    if (sel.dataset.searchInitialized === "1" || sel.dataset.noCombobox === "1") return;
+                    sel.dataset.searchInitialized = "1";
+                    sel.style.display = "none";
+
+                    var combobox = document.createElement("div");
+                    combobox.className = "product-combobox";
+                    sel.parentNode.insertBefore(combobox, sel.nextSibling);
+
+                    var input = document.createElement("input");
+                    input.type = "text";
+                    input.className = "form-control product-combobox-input";
+                    input.placeholder = "Escribe o selecciona un producto...";
+                    input.autocomplete = "off";
+
+                    var arrow = document.createElement("span");
+                    arrow.className = "product-combobox-arrow";
+                    arrow.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+
+                    var menu = document.createElement("div");
+                    menu.className = "product-combobox-menu";
+
+                    combobox.appendChild(input);
+                    combobox.appendChild(arrow);
+                    combobox.appendChild(menu);
+
+                    var allOptions = Array.from(sel.options)
+                        .filter(function(opt) { return Boolean(opt.value); })
+                        .map(function(opt) {
+                            return {
+                                value: String(opt.value),
+                                text: opt.text
+                            };
+                        });
+
+                    function syncFromSelect() {
+                        var currentOpt = allOptions.find(function(o) { return o.value === String(sel.value); });
+                        input.value = currentOpt ? currentOpt.text : "";
+                    }
+
+                    function renderMenu(filterText) {
+                        menu.innerHTML = "";
+                        var q = (filterText || "").trim().toLowerCase();
+                        var matched = allOptions.filter(function(o) {
+                            return !q || o.text.toLowerCase().indexOf(q) !== -1;
+                        });
+
+                        if (matched.length === 0) {
+                            var empty = document.createElement("div");
+                            empty.className = "product-combobox-empty";
+                            empty.textContent = "No se encontraron productos coincidentes";
+                            menu.appendChild(empty);
+                            return;
+                        }
+
+                        matched.forEach(function(o) {
+                            var item = document.createElement("div");
+                            item.className = "product-combobox-option" + (String(sel.value) === o.value ? " active" : "");
+                            item.textContent = o.text;
+                            item.addEventListener("mousedown", function(e) {
+                                e.preventDefault();
+                                sel.value = o.value;
+                                input.value = o.text;
+                                combobox.classList.remove("open");
+                                sel.dispatchEvent(new Event("change", { bubbles: true }));
+                            });
+                            menu.appendChild(item);
+                        });
+                    }
+
+                    input.addEventListener("focus", function() {
+                        renderMenu("");
+                        combobox.classList.add("open");
+                        input.select();
+                    });
+
+                    input.addEventListener("click", function(e) {
+                        e.stopPropagation();
+                        renderMenu(input.value === (allOptions.find(function(o) { return o.value === String(sel.value); }) || {}).text ? "" : input.value);
+                        combobox.classList.add("open");
+                    });
+
+                    input.addEventListener("input", function() {
+                        var q = input.value;
+                        renderMenu(q);
+                        combobox.classList.add("open");
+                        var qLow = q.trim().toLowerCase();
+                        var exactOrSingle = allOptions.filter(function(o) {
+                            return o.text.toLowerCase().indexOf(qLow) !== -1;
+                        });
+                        if (qLow && exactOrSingle.length === 1) {
+                            sel.value = exactOrSingle[0].value;
+                            sel.dispatchEvent(new Event("change", { bubbles: true }));
+                        }
+                    });
+
+                    input.addEventListener("blur", function() {
+                        setTimeout(function() {
+                            combobox.classList.remove("open");
+                            syncFromSelect();
+                        }, 150);
+                    });
+
+                    if (sel.form) {
+                        sel.form.addEventListener("reset", function() {
+                            setTimeout(syncFromSelect, 10);
+                        });
+                    }
+
+                    sel._syncCombobox = syncFromSelect;
+                    syncFromSelect();
+                });
+            }
+            window.initSearchableSelects = initSearchableSelects;
+            initSearchableSelects(document);
+
+            // 3. Lista desplegable colapsable para select[multiple] (Ubicaciones Físicas)
+            function syncMultiSelectDropdown(sel) {
+                if (!sel || !sel._multiDropdownUpdate) return;
+                sel._multiDropdownUpdate();
+            }
+            window.syncMultiSelectDropdown = syncMultiSelectDropdown;
+
+            function initMultiSelectDropdowns(root) {
+                (root || document).querySelectorAll("select[multiple]").forEach(function(sel) {
+                    if (sel.dataset.multiDropdownInit === "1") return;
+                    sel.dataset.multiDropdownInit = "1";
+                    sel.style.display = "none";
+
+                    var container = document.createElement("div");
+                    container.className = "multi-dropdown";
+                    sel.parentNode.insertBefore(container, sel.nextSibling);
+
+                    var toggleBtn = document.createElement("button");
+                    toggleBtn.type = "button";
+                    toggleBtn.className = "multi-dropdown-toggle";
+
+                    var labelSpan = document.createElement("span");
+                    labelSpan.className = "multi-dropdown-label";
+                    var arrowSpan = document.createElement("span");
+                    arrowSpan.className = "multi-dropdown-arrow";
+                    arrowSpan.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+
+                    toggleBtn.appendChild(labelSpan);
+                    toggleBtn.appendChild(arrowSpan);
+
+                    var menu = document.createElement("div");
+                    menu.className = "multi-dropdown-menu";
+
+                    container.appendChild(toggleBtn);
+                    container.appendChild(menu);
+
+                    function renderOptions() {
+                        menu.innerHTML = "";
+                        var opts = Array.from(sel.options);
+                        if (opts.length === 0) {
+                            var emptyMsg = document.createElement("div");
+                            emptyMsg.style.padding = "8px 10px";
+                            emptyMsg.style.fontSize = "12px";
+                            emptyMsg.style.color = "var(--text-muted)";
+                            emptyMsg.textContent = "No hay ubicaciones disponibles";
+                            menu.appendChild(emptyMsg);
+                        } else {
+                            opts.forEach(function(opt) {
+                                var itemLabel = document.createElement("label");
+                                itemLabel.className = "multi-dropdown-item";
+                                var chk = document.createElement("input");
+                                chk.type = "checkbox";
+                                chk.checked = opt.selected;
+                                chk.addEventListener("change", function() {
+                                    opt.selected = chk.checked;
+                                    updateButtonText();
+                                });
+                                var txt = document.createElement("span");
+                                txt.textContent = opt.text;
+                                itemLabel.appendChild(chk);
+                                itemLabel.appendChild(txt);
+                                menu.appendChild(itemLabel);
+                            });
+                        }
+                        updateButtonText();
+                    }
+
+                    function updateButtonText() {
+                        var selectedTexts = Array.from(sel.options)
+                            .filter(function(o) { return o.selected; })
+                            .map(function(o) { return o.text; });
+                        if (selectedTexts.length === 0) {
+                            labelSpan.textContent = "Seleccionar ubicaciones físicas...";
+                            labelSpan.style.color = "var(--text-muted)";
+                        } else if (selectedTexts.length <= 2) {
+                            labelSpan.textContent = selectedTexts.join(", ");
+                            labelSpan.style.color = "var(--text)";
+                        } else {
+                            labelSpan.textContent = selectedTexts.length + " ubicaciones seleccionadas";
+                            labelSpan.style.color = "var(--text)";
+                        }
+                    }
+
+                    toggleBtn.addEventListener("click", function(e) {
+                        e.stopPropagation();
+                        container.classList.toggle("open");
+                    });
+
+                    menu.addEventListener("click", function(e) {
+                        e.stopPropagation();
+                    });
+
+                    document.addEventListener("click", function() {
+                        container.classList.remove("open");
+                    });
+
+                    sel._multiDropdownUpdate = renderOptions;
+                    renderOptions();
+                });
+            }
+            window.initMultiSelectDropdowns = initMultiSelectDropdowns;
+            initMultiSelectDropdowns(document);
+
+            // 4. Botón mostrar/ocultar contraseña en inputs type="password" con iconos SVG vectoriales
+            var svgEyeOpen = '<svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+            var svgEyeClosed = '<svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+
+            function initPasswordToggles(root) {
+                (root || document).querySelectorAll('input[type="password"]').forEach(function(inp) {
+                    if (inp.dataset.pwdToggleInit === "1") return;
+                    inp.dataset.pwdToggleInit = "1";
+
+                    var wrap = document.createElement("div");
+                    wrap.className = "pwd-input-wrap";
+                    inp.parentNode.insertBefore(wrap, inp);
+                    wrap.appendChild(inp);
+
+                    var btn = document.createElement("button");
+                    btn.type = "button";
+                    btn.className = "pwd-toggle-btn";
+                    btn.title = "Mostrar / ocultar contraseña";
+                    btn.setAttribute("aria-label", "Mostrar contraseña");
+                    btn.innerHTML = svgEyeOpen;
+
+                    btn.addEventListener("click", function() {
+                        var isPwd = inp.type === "password";
+                        inp.type = isPwd ? "text" : "password";
+                        btn.innerHTML = isPwd ? svgEyeClosed : svgEyeOpen;
+                    });
+
+                    wrap.appendChild(btn);
+                });
+            }
+            window.initPasswordToggles = initPasswordToggles;
+            initPasswordToggles(document);
+        });
     </script>
     {% block extra_js %}{% endblock %}
 </body>

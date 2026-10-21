@@ -1,21 +1,36 @@
 {% extends "base.html" %}
 
-{% block title %}Gestión de Usuarios{% endblock %}
-{% block page_title %}Gestión de Usuarios{% endblock %}
+{% block title %}Gestión de Usuarios — Inventario AudacIA{% endblock %}
+{% block page_title %}Usuarios y Roles{% endblock %}
 {% block sidebar_usuarios %}active{% endblock %}
 
 {% block content %}
 <div class="card">
     <div class="card-header">
         <div>
-            <h2 class="card-title">Usuarios del sistema</h2>
-            <p class="text-faint" style="font-size: 12.5px; margin-top: 2px;">Roles, almacenes asignados y estado de acceso.</p>
+            <h1 class="card-title">Usuarios y Roles del Sistema</h1>
+            <p class="text-faint" style="font-size: 12.5px; margin-top: 2px;">
+                Administración de cuentas operativas, roles y almacenes asignados.
+            </p>
         </div>
-        <a href="{% url 'cuentas:usuario_crear' %}" class="btn btn-primary">+ Nuevo Usuario</a>
+        <div class="action-group">
+            <button type="button"
+                    class="btn btn-primary btn-abrir-modal-usuario"
+                    data-url="{% url 'cuentas:usuario_crear' %}"
+                    data-titulo="Nuevo Usuario">
+                + Nuevo Usuario
+            </button>
+        </div>
+    </div>
+
+    <!-- Buscador automático en tiempo real -->
+    <div style="margin-bottom: 14px; max-width: 420px;">
+        <input type="text" id="inputFiltroUsuarios" class="form-control"
+               placeholder="Buscar usuario por nombre, rol o almacén..." autocomplete="off">
     </div>
 
     <div class="table-responsive">
-        <table class="data-table">
+        <table class="data-table" id="tablaUsuarios">
             <thead>
                 <tr>
                     <th>Usuario</th>
@@ -28,46 +43,56 @@
             </thead>
             <tbody>
                 {% for u in usuarios %}
-                <tr>
-                    <td><strong>{{ u.username }}</strong></td>
-                    <td>{{ u.nombre_completo }}</td>
-                    <td>
-                        {% if u.rol == "SUPERUSUARIO" %}
-                            <span class="badge badge-warn">Superusuario</span>
-                        {% elif u.rol == "ADMINISTRADOR" %}
-                            <span class="badge badge-purple">Administrador</span>
-                        {% else %}
-                            <span class="badge badge-accent">Usuario</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if u.almacen_asignado %}
-                            {{ u.almacen_asignado.nombre }}
-                        {% else %}
-                            <span class="text-faint">(Todos los almacenes)</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if u.eliminado_logicamente %}
-                            <span class="badge badge-crit">Eliminado lógicamente</span>
-                        {% elif u.is_active %}
-                            <span class="badge badge-ok">Activo</span>
-                        {% else %}
-                            <span class="badge badge-crit">Inactivo</span>
-                        {% endif %}
-                    </td>
-                    <td style="text-align: right; white-space: nowrap;">
-                        {% if not u.es_superusuario_inventario or request.user.es_superusuario_inventario %}
-                            <a href="{% url 'cuentas:usuario_editar' u.pk %}" class="btn btn-secondary btn-sm">Editar</a>
-                            {% if not u.es_superusuario_inventario and not u.eliminado_logicamente %}
-                                <form method="post" action="{% url 'cuentas:usuario_eliminar' u.pk %}" style="display:inline;" onsubmit="return confirm('¿Está seguro de eliminar lógicamente este usuario?');">
-                                    {% csrf_token %}
-                                    <button type="submit" class="btn btn-danger btn-sm">Eliminar</button>
-                                </form>
+                    {% if not u.eliminado_logicamente %}
+                    <tr>
+                        <td><strong>{{ u.username }}</strong></td>
+                        <td>{{ u.nombre_completo }}</td>
+                        <td>
+                            {% if u.rol == "SUPERUSUARIO" %}
+                                <span class="badge badge-warn">Superusuario</span>
+                            {% elif u.rol == "ADMINISTRADOR" %}
+                                <span class="badge badge-purple">Administrador</span>
+                            {% else %}
+                                <span class="badge badge-accent">Usuario</span>
                             {% endif %}
-                        {% endif %}
-                    </td>
-                </tr>
+                        </td>
+                        <td>
+                            {% if u.almacen_asignado %}
+                                {{ u.almacen_asignado.nombre }}
+                            {% else %}
+                                <span class="text-faint">(Todos los almacenes)</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if u.is_active %}
+                                <span class="badge badge-ok">Activo</span>
+                            {% else %}
+                                <span class="badge badge-crit">Inactivo</span>
+                            {% endif %}
+                        </td>
+                        <td style="text-align: right; white-space: nowrap;">
+                            <div class="action-group">
+                                {% if not u.es_superusuario_inventario or request.user.es_superusuario_inventario %}
+                                    <button type="button"
+                                            class="btn btn-secondary btn-sm btn-abrir-modal-usuario"
+                                            data-url="{% url 'cuentas:usuario_editar' u.pk %}"
+                                            data-titulo="Editar Usuario ({{ u.username }})">
+                                        Editar
+                                    </button>
+                                    {% if not u.es_superusuario_inventario %}
+                                        <form method="post" action="{% url 'cuentas:usuario_eliminar' u.pk %}" style="display:inline; margin: 0;"
+                                              onsubmit="return confirm('¿Eliminar al usuario «{{ u.username }}» del sistema?');">
+                                            {% csrf_token %}
+                                            <button type="submit" class="btn btn-danger btn-sm">Eliminar</button>
+                                        </form>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="text-faint" style="font-size: 11.5px;">Protegido</span>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endif %}
                 {% empty %}
                 <tr>
                     <td colspan="6" style="text-align: center; padding: 2rem;" class="text-faint">No hay usuarios registrados.</td>
@@ -77,4 +102,117 @@
         </table>
     </div>
 </div>
+
+<!-- ═══ MODAL DINÁMICO NUEVO / EDITAR USUARIO ═══ -->
+<dialog id="modalUsuario" class="app-modal">
+    <div class="app-modal-header">
+        <h2 class="app-modal-title" id="tituloModalUsuario">Gestión de Usuario</h2>
+        <button type="button" class="app-modal-close" onclick="closeAppModal('modalUsuario')">&times;</button>
+    </div>
+    <div class="app-modal-body" id="cuerpoModalUsuario">
+        <div style="text-align: center; padding: 2rem; color: var(--text-dim);">Cargando formulario...</div>
+    </div>
+</dialog>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    var inputFiltro = document.getElementById("inputFiltroUsuarios");
+    var tabla = document.getElementById("tablaUsuarios");
+    if (inputFiltro && tabla) {
+        inputFiltro.addEventListener("input", function() {
+            var q = inputFiltro.value.trim().toLowerCase();
+            tabla.querySelectorAll("tbody tr").forEach(function(tr) {
+                var txt = tr.textContent.toLowerCase();
+                tr.style.display = (!q || txt.indexOf(q) !== -1) ? "" : "none";
+            });
+        });
+    }
+
+    var cuerpoModal = document.getElementById("cuerpoModalUsuario");
+    var tituloModal = document.getElementById("tituloModalUsuario");
+
+    function enlazarFormularioModal(urlEndpoint) {
+        var form = cuerpoModal.querySelector("form");
+        if (!form) return;
+        form.action = urlEndpoint;
+
+        // Reemplazar enlace "Cancelar" por botón que cierra el modal
+        form.querySelectorAll("a.btn-secondary").forEach(function(link) {
+            link.addEventListener("click", function(e) {
+                e.preventDefault();
+                closeAppModal("modalUsuario");
+            });
+        });
+
+        form.addEventListener("submit", function(e) {
+            e.preventDefault();
+            var formData = new FormData(form);
+            var btnSub = form.querySelector('button[type="submit"]');
+            if (btnSub) {
+                btnSub.disabled = true;
+                btnSub.textContent = "Guardando...";
+            }
+            fetch(urlEndpoint, {
+                method: "POST",
+                body: formData,
+                credentials: "same-origin"
+            })
+            .then(function(resp) {
+                if (resp.redirected) {
+                    window.location.reload();
+                    return null;
+                }
+                return resp.text();
+            })
+            .then(function(html) {
+                if (!html) return;
+                var parser = new DOMParser();
+                var doc = parser.parseFromString(html, "text/html");
+                var nuevoForm = doc.querySelector(".card form") || doc.querySelector("form");
+                var errorBox = doc.querySelector(".alert-error");
+                cuerpoModal.innerHTML = "";
+                if (errorBox) cuerpoModal.appendChild(errorBox);
+                if (nuevoForm) {
+                    cuerpoModal.appendChild(nuevoForm);
+                    enlazarFormularioModal(urlEndpoint);
+                } else {
+                    window.location.reload();
+                }
+            })
+            .catch(function() {
+                form.submit();
+            });
+        });
+    }
+
+    document.querySelectorAll(".btn-abrir-modal-usuario").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            var url = btn.getAttribute("data-url");
+            tituloModal.textContent = btn.getAttribute("data-titulo") || "Usuario";
+            cuerpoModal.innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--text-dim);">Cargando formulario...</div>';
+            openAppModal("modalUsuario");
+
+            fetch(url, { credentials: "same-origin" })
+                .then(function(r) { return r.text(); })
+                .then(function(html) {
+                    var parser = new DOMParser();
+                    var doc = parser.parseFromString(html, "text/html");
+                    var form = doc.querySelector(".card form") || doc.querySelector("form");
+                    if (form) {
+                        cuerpoModal.innerHTML = "";
+                        cuerpoModal.appendChild(form);
+                        enlazarFormularioModal(url);
+                    } else {
+                        window.location.href = url;
+                    }
+                })
+                .catch(function() {
+                    window.location.href = url;
+                });
+        });
+    });
+});
+</script>
 {% endblock %}
