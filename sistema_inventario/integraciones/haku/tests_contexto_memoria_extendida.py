@@ -93,10 +93,10 @@ class HakuMemoriaExtendidaTestCase(TestCase):
         HakuCacheManager.invalidar_todo()
 
     # ─────────────────────────────────────────────────────────────────────────
-    # TEST 1: Contexto mantiene producto después de 1 hora (3600s)
+    # TEST 1: Contexto mantiene producto después de 15 minutos (900s < 1800s)
     # ─────────────────────────────────────────────────────────────────────────
     def test_1_contexto_mantiene_producto_despues_de_1_hora(self):
-        session_key = "sess_1_hora"
+        session_key = "sess_15_min"
         contexto = HakuOperationalContext.obtener_o_crear(
             usuario_id=self.usuario_operador.id,
             session_key=session_key,
@@ -112,16 +112,16 @@ class HakuMemoriaExtendidaTestCase(TestCase):
         self.assertEqual(res_busqueda["tipo"], "consulta")
         self.assertEqual(contexto.producto_id, self.prod_hdmi.id)
 
-        # Simular transcurso de 1 hora (3600 segundos) sin actividad intermedia
-        contexto.ultimo_acceso = time.time() - 3600
+        # Simular transcurso de 15 minutos (900 segundos) sin actividad intermedia
+        contexto.ultimo_acceso = time.time() - 900
         HakuOperationalContext.guardar(contexto)
 
-        # Recuperar después de 1 hora: NO debe estar expirado (límite es 2 horas = 7200s)
+        # Recuperar después de 15 min: NO debe estar expirado (límite es 30 min = 1800s)
         recuperado = HakuOperationalContext.obtener(self.usuario_operador.id, session_key)
-        self.assertIsNotNone(recuperado, "El contexto debe permanecer vivo tras 1 hora")
+        self.assertIsNotNone(recuperado, "El contexto debe permanecer vivo tras 15 minutos")
         self.assertEqual(recuperado.producto_id, self.prod_hdmi.id)
 
-        # El usuario hace una referencia ("sácame tres de esos") tras 1 hora
+        # El usuario hace una referencia ("sácame tres de esos") tras 15 min
         res_referencia = procesar_comando_inventario(
             usuario=self.usuario_operador,
             mensaje="sácame tres de esos para Mantenimiento",

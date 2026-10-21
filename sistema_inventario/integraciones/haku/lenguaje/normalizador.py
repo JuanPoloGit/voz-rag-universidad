@@ -98,6 +98,7 @@ class IntencionTipo(str, Enum):
     ALERTAS_STOCK = "ALERTAS_STOCK"
     PRODUCTOS_SIN_STOCK = "PRODUCTOS_SIN_STOCK"
     PRODUCTOS_BAJO_STOCK = "PRODUCTOS_BAJO_STOCK"
+    CONSULTAR_FALTANTES_REPOSICION = "CONSULTAR_FALTANTES_REPOSICION"
     LISTAR_CATALOGO = "LISTAR_CATALOGO"
     PRODUCTOS_CON_STOCK = "PRODUCTOS_CON_STOCK"
     LISTAR_ALMACENES = "LISTAR_ALMACENES"
@@ -106,12 +107,14 @@ class IntencionTipo(str, Enum):
     REGISTRAR_ENTRADA = "REGISTRAR_ENTRADA"
     PRESTAMO = "PRESTAMO"
     DEVOLUCION = "DEVOLUCION"
+    TRASLADAR_PRODUCTO = "TRASLADAR_PRODUCTO"
     CONSULTAR_METRICAS_MOVIMIENTOS = "CONSULTAR_METRICAS_MOVIMIENTOS"
     CONSULTAR_RESUMEN_INVENTARIO = "CONSULTAR_RESUMEN_INVENTARIO"
     CONSULTAR_PRODUCTO_MOVIMIENTOS = "CONSULTAR_PRODUCTO_MOVIMIENTOS"
     CREAR_PRODUCTO = "CREAR_PRODUCTO"
     EDITAR_PRODUCTO = "EDITAR_PRODUCTO"
     INHABILITAR_PRODUCTO = "INHABILITAR_PRODUCTO"
+    HABILITAR_PRODUCTO = "HABILITAR_PRODUCTO"
     CREAR_USUARIO = "CREAR_USUARIO"
     EDITAR_USUARIO = "EDITAR_USUARIO"
     SOLICITAR_ACLARACION = "SOLICITAR_ACLARACION"
@@ -156,6 +159,7 @@ class RanurasSemanticas:
     condicion: str = "NINGUNA"  # "NINGUNA", "DISPONIBLE", "AGOTADO", "BAJO_STOCK", "EN_PRESTAMO", "ALERTAS"
     metrica_prestamo: str = "GENERAL"  # "GENERAL", "CONTEO_REGISTROS", "CONTEO_UNIDADES", "LISTA_PRODUCTOS", "LISTA_RESPONSABLES"
     destinatario: Optional[str] = None
+    motivo: Optional[str] = None
     almacen_especifico: Optional[Almacen] = None
     filtro_coleccion: Optional[str] = None
     semantic_frame: Optional[SemanticFrame] = None
@@ -164,7 +168,7 @@ class RanurasSemanticas:
 class NormalizadorLenguajeHaku:
     """Analizador lingüístico determinista y sin efectos secundarios en la base de datos."""
 
-    TIMEOUT_CONTEXTO_SEGUNDOS = 7200  # 2 horas (7200 segundos)
+    TIMEOUT_CONTEXTO_SEGUNDOS = 1800  # 30 minutos de inactividad conversacional
 
     @classmethod
     def _resolver_almacen_en_texto(cls, texto: str) -> Optional[Almacen]:
@@ -268,6 +272,8 @@ class NormalizadorLenguajeHaku:
         match_dest = re.search(r"\b(?:de|por|a|para|pa)\s+([A-Za-zÁ-ÿ\s]+?)(?:\s*$)", texto_siglas, re.IGNORECASE)
         if match_dest:
             d = match_dest.group(1).strip()
+            # Limpiar posible sufijo de almacén (ej: "Carlos Andrés Rodríguez en el Almacén Principal")
+            d = re.sub(r"\b(?:en|desde|hacia)\s+(?:el\s+|la\s+)?(?:almac[eé]n|bodega)\b.*$", "", d, flags=re.IGNORECASE).strip()
             d = re.sub(r"\b(pr[eé]stamo|pr[eé]stamos|de|el|la|los|las|inventario|almac[eé]n|bodega)\b", "", d, flags=re.IGNORECASE).strip()
             if d:
                 ranuras.destinatario = d
@@ -306,8 +312,11 @@ class NormalizadorLenguajeHaku:
                 ranuras.acto_de_habla = "CANCELAR"
 
         # 2. Ventana Temporal
-        # "hoy", "día", "jornada", "turno", "fecha", "hasta ahora", "esta mañana", "esta tarde"
-        if re.search(r"\b(hoy|d[ií]a|jornada|turno|fecha|hasta\s+ahora|esta\s+mañana|esta\s+tarde|este\s+turno)\b", texto_limpio):
+        from ..servicios_temporales import resolver_intervalo_temporal
+        intervalo_temp = resolver_intervalo_temporal(texto_limpio)
+        if intervalo_temp:
+            ranuras.ventana_temporal = intervalo_temp.etiqueta
+        elif re.search(r"\b(hoy|d[ií]a|jornada|turno|fecha|hasta\s+ahora|esta\s+mañana|esta\s+tarde|este\s+turno)\b", texto_limpio):
             ranuras.ventana_temporal = "HOY"
 
         # 3. Contexto Físico de Ubicación Interna
@@ -410,10 +419,14 @@ class NormalizadorLenguajeHaku:
             or re.search(r"\b(?:consultar?|revisar?|ver|chequear?|dime|consulta)\s+(?:el\s+)?(?:inventario|almac[eé]n|bodega)\b", texto_limpio)
         )
 
+        meses_y_dias_pat = r"(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre|lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)"
         es_movimientos_global = bool(
-            re.search(r"\b(cu[aá]nt[ao]s?|qu[eé])\s+(?:entradas?|salidas?|despachos?|movimientos?|operaciones|transacciones?|actividades?|actividad|pr[eé]stamos?|devoluciones?)\s+(?:han\s+habido|hubo|se\s+hicieron|se\s+registraron|tuvimos|tuvieron|hay|tenemos)\b", texto_limpio)
+            (ranuras.ventana_temporal is not None and "MOVIMIENTO" in ranuras.conceptos_operativos)
+            or re.search(r"\b(?:mu[eé]strame|dame|ver|consultar?|qu[eé])\s+(?:los\s+)?(?:movimientos?|entradas?|salidas?|traslados?|despachos?)\b", texto_limpio)
+            or re.search(rf"\b(?:movimientos?|entradas?|salidas?|traslados?)\s+(?:de\s+|en\s+|durante\s+)?(?:ayer|hoy|la\s+semana|este\s+mes|el\s+mes|los\s+[uú]ltimos|{meses_y_dias_pat})\b", texto_limpio)
+            or re.search(r"\b(cu[aá]nt[ao]s?|qu[eé])\s+(?:entradas?|salidas?|despachos?|movimientos?|operaciones|transacciones?|actividades?|actividad|pr[eé]stamos?|devoluciones?)\s+(?:han\s+habido|hubo|se\s+hicieron|se\s+registraron|tuvimos|tuvieron|hay|tenemos)\b", texto_limpio)
             or re.search(r"\b(?:qu[eé]|cu[aá]l|cu[aá]les)\s+(?:\w+\s+){0,3}(?:entr[oó]|entraron|ingres[oó]|ingresaron|lleg[oó]|llegaron|sali[oó]|salieron|se\s+despach[oó]|se\s+movi[oó])\b", texto_limpio)
-            or re.search(r"\b(movimientos?\s+(?:de\s+)?hoy|movimientos?\s+del\s+d[ií]a|c[oó]mo\s+van\s+los\s+movimientos|c[oó]mo\s+va\s+la\s+movida|de\s+movida\s+la\s+vaina|el\s+voleo\s+(?:de\s+)?hoy|qu[eé]\s+voleo\s+hay|qu[eé]\s+se\s+ha\s+movido\s+hoy|c[oó]mo\s+va\s+el\s+voleo|c[oó]mo\s+estuvo\s+el\s+voleo|c[oó]mo\s+va\s+el\s+trabajo\s+hoy|qu[eé]\s+tal\s+estuvo\s+la\s+jornada|c[oó]mo\s+estuvo\s+la\s+jornada|c[oó]mo\s+estuvo\s+la\s+vuelta|c[oó]mo\s+va\s+la\s+vaina\s+hoy|c[oó]mo\s+anda\s+la\s+cosa\s+hoy|c[oó]mo\s+va\s+la\s+cosa\s+hoy|c[oó]mo\s+va\s+eso\s+hoy|c[oó]mo\s+va\s+la\s+vaina|c[oó]mo\s+est[aá]\s+la\s+vaina|qu[eé]\s+pas[oó]\s+hoy\s+en\s+(?:el\s+almac[eé]n|la\s+bodega)|c[oó]mo\s+va\s+el\s+d[ií]a|qu[eé]\s+tan\s+movido)\b", texto_limpio)
+            or re.search(r"\b(movimientos?\s+(?:de\s+)?(?:hoy|ayer)|movimientos?\s+del\s+d[ií]a|c[oó]mo\s+van\s+los\s+movimientos|c[oó]mo\s+va\s+la\s+movida|de\s+movida\s+la\s+vaina|el\s+voleo\s+(?:de\s+)?hoy|qu[eé]\s+voleo\s+hay|qu[eé]\s+se\s+ha\s+movido|c[oó]mo\s+va\s+el\s+voleo|c[oó]mo\s+estuvo\s+el\s+voleo|c[oó]mo\s+va\s+el\s+trabajo\s+hoy|qu[eé]\s+tal\s+estuvo\s+la\s+jornada|c[oó]mo\s+estuvo\s+la\s+jornada|c[oó]mo\s+estuvo\s+la\s+vuelta|c[oó]mo\s+va\s+la\s+vaina|c[oó]mo\s+anda\s+la\s+cosa|c[oó]mo\s+va\s+la\s+cosa|c[oó]mo\s+va\s+eso|qu[eé]\s+pas[oó]\s+hoy\s+en\s+(?:el\s+almac[eé]n|la\s+bodega)|c[oó]mo\s+va\s+el\s+d[ií]a|qu[eé]\s+tan\s+movido)\b", texto_limpio)
         )
 
         es_alertas_global = bool(
@@ -427,6 +440,18 @@ class NormalizadorLenguajeHaku:
             )
             and not re.search(r"\b(pelado|pelao|vacio|vac[ií]o|acab[oó]|acabao|escaso|nada)\b", texto_siglas)
             and not re.search(r"\b(?:qu[eé]|cu[aá]les)\s+productos\s+(?:tienen|est[aá]n\s+en|hay\s+en)\s+bajo\s+st(?:ock|op)\b", texto_limpio)
+        )
+
+        es_faltantes_global = bool(
+            re.search(
+                r"\b(?:qu[eé]|cu[aá]l|cu[aá]les)\s+(?:hace\s+falta|falta|hacen\s+falta)\s+(?:por\s+|para\s+)?(?:pedir|comprar|ordenar|reponer|abastecer)\b",
+                texto_limpio,
+            )
+            or re.search(r"\bqu[eé]\s+(?:tengo|tenemos|hay)\s+que\s+(?:pedir|comprar|ordenar|reponer|mandar\s+a\s+pedir)\b", texto_limpio)
+            or re.search(r"\bqu[eé]\s+(?:est[aá]|est[aá]n)\s+por\s+(?:acabarse|terminarse|agotarse)\b", texto_limpio)
+            or re.search(r"\bqu[eé]\s+debo\s+reponer\b", texto_limpio)
+            or re.search(r"\brecomendaci[oó]n\s+de\s+(?:compra|compras|reposici[oó]n)\b", texto_limpio)
+            or re.search(r"\bqu[eé]\s+hace\s+falta\s+(?:en\s+el\s+almac[eé]n|en\s+la\s+bodega|comprar|pedir)\b", texto_limpio)
         )
 
         menciona_producto_potencial = bool(
@@ -443,6 +468,7 @@ class NormalizadorLenguajeHaku:
             es_prestamos_global
             or es_agotados_global
             or es_bajo_stock_global
+            or es_faltantes_global
             or es_alertas_global
             or es_catalogo_resumen_global
             or (es_movimientos_global and not menciona_producto_potencial)
@@ -507,7 +533,8 @@ class NormalizadorLenguajeHaku:
             ranuras.conceptos_operativos.add("UBICACION")
 
         # PRESTAMO:
-        if re.search(r"\b(prestar|presta|preste|presten|pr[eé]stamo|pr[eé]stamos|pr[eé]stame|prestado|prestados|d[eé]jame\s+un[oa])\b", texto_limpio):
+        # Préstamo temporal:
+        if re.search(r"\b(prestar|presta|pr[eé]stale|prestale|preste|presten|pr[eé]stamo|pr[eé]stamos|pr[eé]stame|prestado|prestados|d[eé]jame\s+un[oa]|que\s+(?:lo|los|la|las)\s+devuelva)\b", texto_limpio):
             ranuras.conceptos_operativos.add("PRESTAMO")
 
         # DEVOLUCION:
@@ -529,12 +556,21 @@ class NormalizadorLenguajeHaku:
         if es_consulta_estadistica:
             ranuras.accion = "CONSULTAR"
             ranuras.conceptos_operativos.add("MOVIMIENTO")
+        elif re.search(r"\b(prestar|presta|pr[eé]stale|prestale|preste|presten|pr[eé]stamo|pr[eé]stame|d[eé]jame\s+un[oa]|que\s+(?:lo|los|la|las)\s+devuelva)\b", texto_limpio):
+            ranuras.accion = "PRESTAR"
+            ranuras.conceptos_operativos.add("PRESTAMO")
         elif re.search(r"\b(ingresar|ingreso|llegaron|lleg[oó]|recibir|aumentar|meter|mete|m[eé]telo|m[eé]tame|emboca|emb[oó]calo|agr[eé]gale|agregar|registrar\s+entrada|hacer\s+entrada)\b", texto_limpio) or (re.search(r"\bentrada\b", texto_limpio) and not re.search(r"\b(cu[aá]ntas?|qu[eé]|ver|consultar)\b", texto_limpio)):
             ranuras.accion = "REGISTRAR_ENTRADA"
+        elif re.search(r"\b(dotaci[oó]n|entrega\s+definitiva|definitivamente|entregar?\s+definitivamente|entregar?\s+dotaci[oó]n|dar\s+dotaci[oó]n)\b", texto_limpio):
+            ranuras.accion = "REGISTRAR_SALIDA"
+            ranuras.motivo = "Dotación / entrega definitiva"
         elif re.search(r"\b(retirar|sacar|saca|s[aá]came|desp[aá]chame|despacha|desp[aá]chalo|m[aá]ndame|b[aá]jame|b[aá]jalo|entregar|p[aá]same|gastar|registrar\s+salida|hacer\s+salida)\b", texto_limpio) or (re.search(r"\bsalida\b", texto_limpio) and not re.search(r"\b(cu[aá]ntas?|qu[eé]|ver|consultar)\b", texto_limpio)):
             ranuras.accion = "REGISTRAR_SALIDA"
         elif re.search(r"\b(devolver|devoluci[oó]n|te\s+regreso|regreso|devuelvo|ya\s+volvi[oó]|lo\s+traje\s+otra\s+vez)\b", texto_limpio):
             ranuras.accion = "DEVOLVER"
+        elif re.search(r"\b(trasladar|traslada|trasladom?|trasladem?|traslad[aá]me|transferir|transferencia|transfieram?|mover\s+(?:a\s+)?(?:otro\s+almac[eé]n|otra\s+bodega)|pasar\s+(?:a\s+)?(?:otro\s+almac[eé]n|otra\s+bodega)|llevar\s+a\s+(?:otro\s+almac[eé]n|otra\s+bodega)|enviar\s+a\s+(?:otro\s+almac[eé]n|otra\s+bodega)|mandar\s+(?:a\s+|para\s+)(?:otro\s+almac[eé]n|otra\s+bodega|almac[eé]n|bodega))\b", texto_limpio):
+            ranuras.accion = "TRASLADAR"
+            ranuras.conceptos_operativos.add("MOVIMIENTO")
         elif re.search(r"\b(prestar|presta|pr[eé]stale|prestale|preste|presten|pr[eé]stamo|pr[eé]stame|d[eé]jame\s+un[oa])\b", texto_limpio):
             ranuras.accion = "PRESTAR"
         elif re.search(r"\b(qu[eé]|c[oó]mo|cu[aá]nto|cu[aá]ntos|cu[aá]ntas|d[oó]nde|ver|dime|decir|consultar|conocer|revisar|saber|hubo|han\s+habido|tuvimos|tuvieron|se\s+hicieron|se\s+registraron|se\s+encuentra|guardan|tienen|hay)\b", texto_limpio):
@@ -562,7 +598,7 @@ class NormalizadorLenguajeHaku:
             modalidad_final = ModalidadTipo.SALUDO
         elif ranuras.acto_de_habla == "AGRADECIMIENTO":
             modalidad_final = ModalidadTipo.AGRADECIMIENTO
-        elif ranuras.accion in ("REGISTRAR_ENTRADA", "REGISTRAR_SALIDA", "PRESTAR", "DEVOLVER"):
+        elif ranuras.accion in ("REGISTRAR_ENTRADA", "REGISTRAR_SALIDA", "PRESTAR", "DEVOLVER", "TRASLADAR"):
             modalidad_final = ModalidadTipo.MUTACION
 
         ranuras.semantic_frame = SemanticFrame(
@@ -673,9 +709,8 @@ class NormalizadorLenguajeHaku:
         # 1. Recuperar producto en contexto desde EstadoOperativoHaku (RAM) o diccionario fallback
         if estado_operativo is not None and hasattr(estado_operativo, "esta_expirado"):
             if not estado_operativo.esta_expirado(cls.TIMEOUT_CONTEXTO_SEGUNDOS) and estado_operativo.producto_id:
-                producto_en_contexto = Producto.objects.filter(
-                    id=estado_operativo.producto_id, activo=True, archivado=False
-                ).first()
+                qs_ctx = Producto.objects.all() if (usuario and usuario.es_administrador) else Producto.objects.filter(activo=True, archivado=False)
+                producto_en_contexto = qs_ctx.filter(id=estado_operativo.producto_id).first()
 
         if producto_en_contexto is None and contexto_sesion:
             ahora = time.time()
@@ -683,9 +718,8 @@ class NormalizadorLenguajeHaku:
             if (ahora - ultimo_acceso) <= cls.TIMEOUT_CONTEXTO_SEGUNDOS:
                 prod_id = contexto_sesion.get("haku_ultimo_producto_id")
                 if prod_id:
-                    producto_en_contexto = Producto.objects.filter(
-                        id=prod_id, activo=True, archivado=False
-                    ).first()
+                    qs_ctx = Producto.objects.all() if (usuario and usuario.es_administrador) else Producto.objects.filter(activo=True, archivado=False)
+                    producto_en_contexto = qs_ctx.filter(id=prod_id).first()
 
         # 1. Paso 1: Normalización fonética Whisper (resuelve errores dialectales en transcripción)
         texto_fonetico = InterpretadorCosteno.normalizar_fonetica_whisper(mensaje)
@@ -711,6 +745,20 @@ class NormalizadorLenguajeHaku:
         # Si la consulta es de alcance GLOBAL o ALMACEN, el foco conversacional previo NUNCA se hereda.
         if ranuras.alcance in ("GLOBAL", "ALMACEN"):
             producto_en_contexto = None
+
+        # AISLAMIENTO POR CAMBIO DE FLUJO (FASE 3):
+        # Las intenciones CRUD (crear/editar usuario o producto) implican un flujo completamente
+        # nuevo e independiente del producto anterior en foco. Purgar para evitar contaminación.
+        _es_flujo_crud = bool(
+            re.search(r"\b(?:quiero\s+|deseo\s+|voy\s+a\s+|vamos\s+a\s+|necesito\s+)?(?:crear|registrar|ingresar|dar\s+de\s+alta|editar|modificar|actualizar|inhabilitar|desactivar|archivar|dar\s+de\s+baja)\s+(?:un\s+)?(?:nuevo\s+)?(?:usuario|producto)\b", texto_trabajo)
+        )
+        if _es_flujo_crud:
+            producto_en_contexto = None
+            if estado_operativo:
+                estado_operativo.producto_id = None
+                estado_operativo.producto_codigo = None
+                estado_operativo.producto_nombre = None
+                estado_operativo.candidatos = []
 
         # ─────────────────────────────────────────────────────────────────────
         # REGLA 0: PROTOCOLO SOCIAL Y CONFIRMACIONES / CANCELACIONES PURAS
@@ -754,7 +802,7 @@ class NormalizadorLenguajeHaku:
 
         tiene_operacion = bool(
             ranuras.conceptos_operativos.intersection({"STOCK", "UBICACION", "MOVIMIENTO", "RESUMEN_GENERAL", "PRESTAMO", "DEVOLUCION", "ALERTA"})
-            or (ranuras.accion in {"REGISTRAR_ENTRADA", "REGISTRAR_SALIDA", "PRESTAR", "DEVOLVER"})
+            or (ranuras.accion in {"REGISTRAR_ENTRADA", "REGISTRAR_SALIDA", "PRESTAR", "DEVOLVER", "TRASLADAR"})
         )
 
         if ranuras.acto_de_habla == "SALUDO" and not tiene_operacion:
@@ -783,8 +831,23 @@ class NormalizadorLenguajeHaku:
                 almacen=ranuras.almacen_especifico,
             ))
 
-        # Inhabilitar o archivar producto por voz
-        if re.search(r"\b(?:quiero\s+|deseo\s+|voy\s+a\s+)?(?:inhabilitar|desactivar|archivar|dar\s+de\s+baja)\s+(?:un\s+)?producto\b", texto_trabajo) and not re.search(r"\b[A-Za-z]{2,5}[-_]\d{1,4}\b", texto_siglas):
+        # Intención de habilitar o reactivar producto sin producto en texto ni contexto
+        es_frase_habilitar = bool(re.search(r"\b(?:quiero\s+|deseo\s+|voy\s+a\s+|vamos\s+a\s+)?(?:ir\s+a\s+)?(?:habilitar|activar|reactivar|dar\s+de\s+alta)\b", texto_trabajo))
+        es_frase_inhabilitar = bool(re.search(r"\b(?:quiero\s+|deseo\s+|voy\s+a\s+|vamos\s+a\s+)?(?:ir\s+a\s+)?(?:inhabilitar|desactivar|archivar|dar\s+de\s+baja)\b", texto_trabajo))
+
+        tiene_pronombre_o_demostrativo = bool(
+            analisis.demostrativo_detectado
+            or re.search(r"\b(lo|la|los|las|ese|esa|este|esta|aquel|aquella|dicho|lo\s+quiero|quiero\s+inhabilitarlo|quiero\s+habilitarlo|inhabilitarlo|habilitarlo|desactivarlo|activarlo)\b", texto_trabajo)
+            or re.search(r"\b(?:inhabilit[aá]r?lo|desact[ií]v[aá]r?lo|arch[ií]v[aá]r?lo|inhabil[ií]talo|desact[ií]valo|arch[ií]valo|habilit[aá]r?lo|activ[aá]r?lo|reactiv[aá]r?lo|hab[ií]l[ií]talo|act[ií]valo|react[ií]valo)\b", texto_trabajo)
+        )
+
+        if es_frase_habilitar and not tiene_pronombre_o_demostrativo and not producto_en_contexto and not re.search(r"\b[A-Za-z]{2,5}[-_]\d{1,4}\b", texto_siglas):
+            return _responder(IntencionResultado(
+                tipo=IntencionTipo.HABILITAR_PRODUCTO,
+                almacen=ranuras.almacen_especifico,
+            ))
+
+        if es_frase_inhabilitar and not tiene_pronombre_o_demostrativo and not producto_en_contexto and not re.search(r"\b[A-Za-z]{2,5}[-_]\d{1,4}\b", texto_siglas):
             return _responder(IntencionResultado(
                 tipo=IntencionTipo.INHABILITAR_PRODUCTO,
                 almacen=ranuras.almacen_especifico,
@@ -797,8 +860,10 @@ class NormalizadorLenguajeHaku:
         aclaracion_codigo = None
         lista_candidatos = []
 
-        # Solo buscar producto individual si el alcance NO es GLOBAL, ALMACEN ni COLECCION con filtro
-        if ranuras.alcance not in ("GLOBAL", "ALMACEN") and not (ranuras.alcance == "COLECCION" and ranuras.filtro_coleccion):
+        # Buscar producto individual si el alcance NO es GLOBAL, ALMACEN ni COLECCION con filtro,
+        # o si la acción explícita es una mutación/préstamo (ej. "Préstale 2 cinta aislante a Carlos en el Almacén Principal")
+        es_accion_mutacion = ranuras.accion in ("REGISTRAR_ENTRADA", "REGISTRAR_SALIDA", "PRESTAR", "DEVOLVER", "TRASLADAR")
+        if es_accion_mutacion or (ranuras.alcance not in ("GLOBAL", "ALMACEN") and not (ranuras.alcance == "COLECCION" and ranuras.filtro_coleccion)):
             prod_mencionado, aclaracion_codigo, lista_candidatos = cls._resolver_producto_en_texto(
                 texto_siglas, usuario, candidatos_previos=candidatos_previos
             )
@@ -807,6 +872,9 @@ class NormalizadorLenguajeHaku:
             ranuras.alcance = "INDIVIDUAL"
             ranuras.filtro_coleccion = None
             aclaracion_codigo = None
+            # FASE 3: Un producto explícito nuevo sustituye al anterior y limpia candidatos previos.
+            if estado_operativo and estado_operativo.candidatos:
+                estado_operativo.candidatos = []
         elif aclaracion_codigo and ranuras.alcance == "COLECCION" and ranuras.filtro_coleccion and not ranuras.accion:
             aclaracion_codigo = None
 
@@ -946,6 +1014,28 @@ class NormalizadorLenguajeHaku:
                     almacen=ranuras.almacen_especifico,
                 ))
 
+            # D-0. Consulta de faltantes / compras / reposición integral («¿Qué hace falta por pedir?»)
+            es_consulta_faltantes = bool(
+                re.search(
+                    r"\b(?:qu[eé]|cu[aá]l|cu[aá]les)\s+(?:hace\s+falta|falta|hacen\s+falta)\s+(?:por\s+|para\s+)?(?:pedir|comprar|ordenar|reponer|abastecer)\b",
+                    texto_trabajo,
+                )
+                or re.search(r"\bqu[eé]\s+(?:tengo|tenemos|hay)\s+que\s+(?:pedir|comprar|ordenar|reponer|mandar\s+a\s+pedir)\b", texto_trabajo)
+                or re.search(r"\bqu[eé]\s+(?:est[aá]|est[aá]n)\s+por\s+(?:acabarse|terminarse|agotarse)\b", texto_trabajo)
+                or re.search(r"\bqu[eé]\s+debo\s+reponer\b", texto_trabajo)
+                or re.search(r"\brecomendaci[oó]n\s+de\s+(?:compra|compras|reposici[oó]n)\b", texto_trabajo)
+                or re.search(r"\bqu[eé]\s+hace\s+falta\s+(?:en\s+el\s+almac[eé]n|en\s+la\s+bodega|comprar|pedir)\b", texto_trabajo)
+            )
+            if es_consulta_faltantes:
+                datos = {}
+                if ranuras.filtro_coleccion:
+                    datos["filtro_nombre"] = ranuras.filtro_coleccion
+                return _responder(IntencionResultado(
+                    tipo=IntencionTipo.CONSULTAR_FALTANTES_REPOSICION,
+                    almacen=ranuras.almacen_especifico,
+                    datos_extra=datos or None,
+                ))
+
             # D. Productos por debajo del mínimo / reposición (Global determinista - PRODUCTOS_BAJO_STOCK)
             es_consulta_bajo_stock = bool(
                 ranuras.condicion == "BAJO_STOCK"
@@ -1056,9 +1146,13 @@ class NormalizadorLenguajeHaku:
                     almacen=ranuras.almacen_especifico,
                 ))
 
-            # J. Métricas generales de movimientos del almacén (del día / hoy)
+            # J. Métricas generales de movimientos del almacén (del día / hoy / temporales)
             es_consulta_movimientos_general = bool(
                 ("MOVIMIENTO" in ranuras.conceptos_operativos and ranuras.ventana_temporal is not None)
+                or re.search(
+                    r"\b(?:mu[eé]strame|dame|ver|consultar?|qu[eé])\s+(?:los\s+)?movimientos?\s+(?:de\s+|en\s+|durante\s+)?(?:ayer|hoy|la\s+semana|este\s+mes|el\s+mes|los\s+[uú]ltimos|[a-z]+)\b",
+                    texto_trabajo,
+                )
                 or re.search(
                     r"\b(cu[aá]nt[ao]s?|qu[eé])\s+(?:entradas?|salidas?|despachos?|movimientos?|operaciones|transacciones?|actividades?|actividad|pr[eé]stamos?|devoluciones?)\s+(?:han\s+habido|hubo|se\s+hicieron|se\s+registraron|tuvimos|tuvieron|hay|tenemos)\b",
                     texto_trabajo,
@@ -1072,7 +1166,7 @@ class NormalizadorLenguajeHaku:
                     texto_trabajo,
                 )
                 or re.search(
-                    r"\b(movimientos?\s+(?:de\s+)?hoy|movimientos?\s+del\s+d[ií]a|c[oó]mo\s+van\s+los\s+movimientos|c[oó]mo\s+va\s+la\s+movida|de\s+movida\s+la\s+vaina|el\s+voleo\s+(?:de\s+)?hoy|qu[eé]\s+voleo\s+hay|qu[eé]\s+se\s+ha\s+movido\s+hoy|c[oó]mo\s+va\s+el\s+voleo|c[oó]mo\s+estuvo\s+el\s+voleo|c[oó]mo\s+va\s+el\s+trabajo\s+hoy|qu[eé]\s+tal\s+estuvo\s+la\s+jornada|c[oó]mo\s+estuvo\s+la\s+jornada|c[oó]mo\s+estuvo\s+la\s+vuelta|c[oó]mo\s+va\s+la\s+vaina\s+hoy|c[oó]mo\s+anda\s+la\s+cosa\s+hoy|c[oó]mo\s+va\s+la\s+cosa\s+hoy|c[oó]mo\s+va\s+eso\s+hoy|c[oó]mo\s+va\s+la\s+vaina|c[oó]mo\s+est[aá]\s+la\s+vaina|qu[eé]\s+pas[oó]\s+hoy\s+en\s+(?:el\s+almac[eé]n|la\s+bodega))\b",
+                    r"\b(movimientos?\s+(?:de\s+)?(?:hoy|ayer)|movimientos?\s+del\s+d[ií]a|c[oó]mo\s+van\s+los\s+movimientos|c[oó]mo\s+va\s+la\s+movida|de\s+movida\s+la\s+vaina|el\s+voleo\s+(?:de\s+)?hoy|qu[eé]\s+voleo\s+hay|qu[eé]\s+se\s+ha\s+movido\s+hoy|c[oó]mo\s+va\s+el\s+voleo|c[oó]mo\s+estuvo\s+el\s+voleo|c[oó]mo\s+va\s+el\s+trabajo\s+hoy|qu[eé]\s+tal\s+estuvo\s+la\s+jornada|c[oó]mo\s+estuvo\s+la\s+jornada|c[oó]mo\s+estuvo\s+la\s+vuelta|c[oó]mo\s+va\s+la\s+vaina\s+hoy|c[oó]mo\s+anda\s+la\s+cosa\s+hoy|c[oó]mo\s+va\s+la\s+cosa\s+hoy|c[oó]mo\s+va\s+eso\s+hoy|c[oó]mo\s+va\s+la\s+vaina|c[oó]mo\s+est[aá]\s+la\s+vaina|qu[eé]\s+pas[oó]\s+hoy\s+en\s+(?:el\s+almac[eé]n|la\s+bodega))\b",
                     texto_trabajo,
                 )
             )
@@ -1109,10 +1203,13 @@ class NormalizadorLenguajeHaku:
         else:
             tiene_justificacion = False
 
-            # 1. Referencia demostrativa explícita o genérica al producto en foco
+            # 1. Referencia demostrativa o pronominal explícita al producto en foco
             es_ref_demostrativa = bool(
                 analisis.demostrativo_detectado
                 or re.search(r"\b(ese|esa|este|esta|aquel|aquella|eso|esos|esas|estos|estas|aquellos|aquellas|su|sus|de\s+es[eoa]s?|de\s+aquell[oas]+|dicho\s+producto|el\s+producto\s+anterior|el\s+mismo|la\s+misma|esa\s+vaina|esta\s+vaina|la\s+vaina|vaina)\b", texto_trabajo)
+                or re.search(r"\b(lo\s+quiero|la\s+quiero|quiero\s+(?:inhabilitarlo|habilitarlo|desactivarlo|activarlo|archivarlo)|inhabilitarlo|habilitarlo|desactivarlo|activarlo|archivarlo|darlo\s+de\s+(?:alta|baja))\b", texto_trabajo)
+                or re.search(r"\b(?:inhabilit[aá]r?lo|desact[ií]v[aá]r?lo|arch[ií]v[aá]r?lo|inhabil[ií]talo|desact[ií]valo|arch[ií]valo|habilit[aá]r?lo|activ[aá]r?lo|reactiv[aá]r?lo|hab[ií]l[ií]talo|act[ií]valo|react[ií]valo)\b", texto_trabajo)
+                or (re.search(r"\b(?:lo|la)\b", texto_trabajo) and re.search(r"\b(?:inhabilitar|desactivar|habilitar|activar|archivar)\b", texto_trabajo))
             )
 
             # 2. Respuesta a aclaración o propuesta pendiente
@@ -1167,7 +1264,7 @@ class NormalizadorLenguajeHaku:
         # ─────────────────────────────────────────────────────────────────────
         if producto_objetivo:
             # 2.A Movimientos de producto específico (incluye "cómo va esa vaina", "qué pasó con esa vaina", etc.)
-            if ("MOVIMIENTO" in ranuras.conceptos_operativos and ranuras.accion not in ("REGISTRAR_ENTRADA", "REGISTRAR_SALIDA", "PRESTAR", "DEVOLVER")) or re.search(
+            if ("MOVIMIENTO" in ranuras.conceptos_operativos and ranuras.accion not in ("REGISTRAR_ENTRADA", "REGISTRAR_SALIDA", "PRESTAR", "DEVOLVER", "TRASLADAR")) or re.search(
                 r"\b(c[oó]mo\s+se\s+ha\s+movido|qu[eé]\s+tanto\s+(?:ha\s+salido|se\s+ha\s+movido)|c[oó]mo\s+se\s+ha\s+despachado|movimientos?\s+del?\s+|qu[eé]\s+movimientos\s+(?:tiene|ha\s+tenido)|cu[aá]nto\s+ha\s+salido|c[oó]mo\s+va\s+(?:esa\s+vaina|este\s+cable|el\s+cable|este\s+producto|eso|aquello)|qu[eé]\s+pas[oó]\s+con\s+(?:esa\s+vaina|este\s+cable|el\s+cable|este\s+producto|eso|aquello)|qu[eé]\s+movimiento\s+tuvo|c[oó]mo\s+ha\s+estado\s+saliendo)\b",
                 texto_trabajo,
             ):
@@ -1181,7 +1278,7 @@ class NormalizadorLenguajeHaku:
             if ("UBICACION" in ranuras.conceptos_operativos or ranuras.contexto_fisico or re.search(
                 r"\b(d[oó]nde|ubicaci[oó]n|localizaci[oó]n|estante|caj[oó]n|rack|pasillo|gaveta|repisa|secci[oó]n|posici[oó]n|en\s+qu[eé]\s+lado|d[oó]nde\s+guardan|d[oó]nde\s+se\s+encuentra)\b",
                 texto_trabajo,
-            )) and ranuras.accion not in ("REGISTRAR_ENTRADA", "REGISTRAR_SALIDA", "PRESTAR", "DEVOLVER"):
+            )) and ranuras.accion not in ("REGISTRAR_ENTRADA", "REGISTRAR_SALIDA", "PRESTAR", "DEVOLVER", "TRASLADAR"):
                 return _responder(IntencionResultado(
                     tipo=IntencionTipo.CONSULTAR_UBICACION,
                     producto=producto_objetivo,
@@ -1190,7 +1287,7 @@ class NormalizadorLenguajeHaku:
 
             # 2.B-bis Consulta de préstamos activos / quién tiene el producto en préstamo
             if (
-                ranuras.accion not in ("PRESTAR", "DEVOLVER", "REGISTRAR_ENTRADA", "REGISTRAR_SALIDA")
+                ranuras.accion not in ("PRESTAR", "DEVOLVER", "REGISTRAR_ENTRADA", "REGISTRAR_SALIDA", "TRASLADAR")
                 and not re.search(r"\b(te\s+regreso|regreso|devuelvo|devolver|devoluci[oó]n|d[eé]jame\s+un[oa]|p[aá]same\s+un[oa]\s+prestado)\b", texto_trabajo)
                 and (
                     re.search(r"\b(pr[eé]stamos activos|qui[eé]n tiene|pr[eé]stamos pendientes|est[aá]\s+prestado|tiene\s+prestado|hay\s+presta(?:d[oa]|o)s?|queda\s+presta(?:d[oa]|o)s?|cu[aá]nto\s+(?:hay\s+|queda\s+)?presta(?:d[oa]|o)s?|cu[aá]ntas\s+unidades\s+(?:hay\s+)?presta(?:d[oa]|o)s?)\b", texto_trabajo)
@@ -1207,7 +1304,7 @@ class NormalizadorLenguajeHaku:
             if ("STOCK" in ranuras.conceptos_operativos or re.search(
                 r"\b(stock|cu[aá]nto|cu[aá]ntos|cu[aá]ntas|hay|existencias?|quedan?|queda|disponible|disponibilidad|saldo|saldos|unidades?|piezas?|cantidad|cantidades|tenemos|contamos|quedan\s+muchos|quedan\s+pocos|quedan\s+bastantes|hay\s+bastante|hay\s+algo|todav[ií]a\s+hay|qued[oó]\s+pelado|qued[oó]\s+vac[ií]o|se\s+acab[oó]|se\s+acabado|acabado|acabados|acab[oó]|agotado|agotados|no\s+hay\s+nada|est[aá]\s+pelado|est[aá]\s+escaso|est[aá]\s+flojo|est[aá]\s+agotado)\b",
                 texto_trabajo,
-            )) and ranuras.accion not in ("REGISTRAR_ENTRADA", "REGISTRAR_SALIDA", "PRESTAR", "DEVOLVER"):
+            )) and ranuras.accion not in ("REGISTRAR_ENTRADA", "REGISTRAR_SALIDA", "PRESTAR", "DEVOLVER", "TRASLADAR"):
                 es_otro_alm = bool(re.search(r"\b(?:otro\s+almac[eé]n|otra\s+bodega)\b", texto_trabajo))
                 return _responder(IntencionResultado(
                     tipo=IntencionTipo.CONSULTAR_STOCK,
@@ -1237,6 +1334,7 @@ class NormalizadorLenguajeHaku:
                 match_dest = re.search(r"\b(?:para|a)\s+([A-Za-zÁ-ÿ\s]+?)(?:\s+(?:por|motivo)|\s*$)", texto_siglas, re.IGNORECASE)
                 dest = match_dest.group(1).strip() if match_dest else None
                 if dest:
+                    dest = re.sub(r"\b(?:en|desde|hacia)\s+(?:el\s+|la\s+)?(?:almac[eé]n|bodega)\b.*$", "", dest, flags=re.IGNORECASE).strip()
                     # Si el destinatario capturó el nombre del producto (ej. "a Yankar del segundo producto" o "del producto a Yankar")
                     # limpiar el nombre del producto o referencias ordinales
                     dest = re.sub(r"\b(?:del?|de\s+la|el|la)\s+(?:segundo|primer|tercer|segunda|primera|tercera)\s+producto\b", "", dest, flags=re.IGNORECASE).strip()
@@ -1261,12 +1359,76 @@ class NormalizadorLenguajeHaku:
                 ))
 
             # 2.E-ter Inhabilitar o archivar producto identificado
-            if re.search(r"\b(?:quiero\s+|deseo\s+|voy\s+a\s+)?(?:inhabilitar|desactivar|archivar|dar\s+de\s+baja)\b", texto_trabajo):
+            if re.search(r"\b(?:quiero\s+|deseo\s+|voy\s+a\s+)?(?:ir\s+a\s+)?(?:inhabilitar|desactivar|archivar|dar\s+de\s+baja)\b", texto_trabajo) or re.search(r"\b(?:inhabilit[aá]r?lo|desact[ií]v[aá]r?lo|arch[ií]v[aá]r?lo|inhabil[ií]talo|desact[ií]valo|arch[ií]valo)\b", texto_trabajo):
                 return _responder(IntencionResultado(
                     tipo=IntencionTipo.INHABILITAR_PRODUCTO,
                     producto=producto_objetivo,
                     almacen=ranuras.almacen_especifico,
                     requiere_confirmacion=True,
+                ))
+
+            # 2.E-ter-bis Habilitar o reactivar producto identificado
+            if re.search(r"\b(?:quiero\s+|deseo\s+|voy\s+a\s+)?(?:ir\s+a\s+)?(?:habilitar|activar|reactivar|dar\s+de\s+alta)\b", texto_trabajo) or re.search(r"\b(?:habilit[aá]r?lo|activ[aá]r?lo|reactiv[aá]r?lo|hab[ií]l[ií]talo|act[ií]valo|react[ií]valo)\b", texto_trabajo):
+                return _responder(IntencionResultado(
+                    tipo=IntencionTipo.HABILITAR_PRODUCTO,
+                    producto=producto_objetivo,
+                    almacen=ranuras.almacen_especifico,
+                    requiere_confirmacion=True,
+                ))
+
+            # 2.E-quater Traslado entre almacenes con producto identificado
+            if ranuras.accion == "TRASLADAR" or re.search(r"\b(trasladar|transferir|transferencia|mover\s+a\s+(?:otro\s+almac[eé]n|otra\s+bodega)|pasar\s+a\s+(?:otro\s+almac[eé]n|otra\s+bodega))\b", texto_trabajo):
+                almacen_destino = None
+                almacen_origen = None
+                texto_norm_completo = _quitar_tildes(texto_trabajo.lower())
+                qs_alm = list(Almacen.objects.filter(activo=True, eliminado=False))
+
+                # 1. Coincidencia de almacén destino (precedido por a, al, hacia, para)
+                for alm in qs_alm:
+                    alm_norm = _quitar_tildes(alm.nombre.lower().strip())
+                    patron = rf"\b(?:a|al|hacia|para)\s+(?:el\s+|la\s+)?(?:almac[eé]n\s+|bodega\s+)?{re.escape(alm_norm)}\b"
+                    if re.search(patron, texto_norm_completo):
+                        almacen_destino = alm
+                        break
+
+                if not almacen_destino:
+                    match_destino = re.search(
+                        r"\b(?:a(?:l)?|hacia|para)\s+(?:el\s+|la\s+)?(?:almac[eé]n|bodega)\s+([A-Za-zÁ-ÿ0-9\s]+?)(?:\s*$|\s+\d|\s+del?\s+)",
+                        texto_trabajo,
+                    )
+                    if match_destino:
+                        nombre_dest = match_destino.group(1).strip()
+                        texto_norm_dest = _quitar_tildes(nombre_dest.lower())
+                        for alm in qs_alm:
+                            if _quitar_tildes(alm.nombre.lower()) in texto_norm_dest or texto_norm_dest in _quitar_tildes(alm.nombre.lower()):
+                                almacen_destino = alm
+                                break
+
+                # 2. Coincidencia de almacén origen (precedido por desde, del, de)
+                for alm in qs_alm:
+                    alm_norm = _quitar_tildes(alm.nombre.lower().strip())
+                    patron_orig = rf"\b(?:desde|del?)\s+(?:el\s+|la\s+)?(?:almac[eé]n\s+|bodega\s+)?{re.escape(alm_norm)}\b"
+                    if re.search(patron_orig, texto_norm_completo):
+                        almacen_origen = alm
+                        break
+
+                # 3. Si no hay origen explícito pero ranuras detectó un almacén y no es el destino:
+                if not almacen_origen:
+                    if ranuras.almacen_especifico and (not almacen_destino or ranuras.almacen_especifico.id != almacen_destino.id):
+                        almacen_origen = ranuras.almacen_especifico
+
+                datos = {}
+                if almacen_destino:
+                    datos["almacen_destino_id"] = almacen_destino.id
+                    datos["almacen_destino_nombre"] = almacen_destino.nombre
+
+                return _responder(IntencionResultado(
+                    tipo=IntencionTipo.TRASLADAR_PRODUCTO,
+                    producto=producto_objetivo,
+                    almacen=almacen_origen,
+                    cantidad=analisis.cantidad_detectada,
+                    requiere_confirmacion=True,
+                    datos_extra=datos or None,
                 ))
 
             # 2.F Entrada de stock
@@ -1283,9 +1445,11 @@ class NormalizadorLenguajeHaku:
             if ranuras.accion == "REGISTRAR_SALIDA" or re.search(r"\b(salida|retirar|sacar|saca|s[aá]came|desp[aá]chame|despacha|desp[aá]chalo|m[aá]ndame|b[aá]jame|b[aá]jalo|entregar|p[aá]same|gastar)\b", texto_trabajo):
                 match_dest = re.search(r"\b(?:para|a)\s+([A-Za-zÁ-ÿ\s]+?)(?:\s+(?:por|motivo)|\s*$)", texto_siglas, re.IGNORECASE)
                 dest = match_dest.group(1).strip() if match_dest else None
+                if dest:
+                    dest = re.sub(r"\b(?:en|desde|hacia)\s+(?:el\s+|la\s+)?(?:almac[eé]n|bodega)\b.*$", "", dest, flags=re.IGNORECASE).strip()
 
                 match_mot = re.search(r"\b(?:motivo|por)\s+([A-Za-zÁ-ÿ\s0-9]+)$", texto_siglas, re.IGNORECASE)
-                mot = match_mot.group(1).strip() if match_mot else None
+                mot = match_mot.group(1).strip() if match_mot else ranuras.motivo
 
                 return _responder(IntencionResultado(
                     tipo=IntencionTipo.REGISTRAR_SALIDA,
@@ -1350,6 +1514,12 @@ class NormalizadorLenguajeHaku:
             return _responder(IntencionResultado(
                 tipo=IntencionTipo.SOLICITAR_ACLARACION,
                 mensaje_aclaracion="Por favor indica qué producto deseas prestar.",
+            ))
+
+        if ranuras.accion == "TRASLADAR" or re.search(r"\b(trasladar|transferir|transferencia|mover\s+a\s+(?:otro\s+almac[eé]n|otra\s+bodega)|pasar\s+a\s+(?:otro\s+almac[eé]n|otra\s+bodega))\b", texto_trabajo):
+            return _responder(IntencionResultado(
+                tipo=IntencionTipo.SOLICITAR_ACLARACION,
+                mensaje_aclaracion="Indica el nombre o código del producto que deseas trasladar entre almacenes.",
             ))
 
         if re.search(r"\b(c[oó]mo\s+se\s+ha\s+movido|qu[eé]\s+tanto\s+(?:ha\s+salido|se\s+ha\s+movido)|c[oó]mo\s+se\s+ha\s+despachado|movimientos?\s+del?\s+|qu[eé]\s+movimientos\s+(?:tiene|ha\s+tenido)|cu[aá]nto\s+ha\s+salido)\b", texto_trabajo):
@@ -1500,7 +1670,17 @@ class NormalizadorLenguajeHaku:
         if cls._es_fuera_de_dominio(texto_limpio):
             return IntencionTipo.NO_INTENCION_INVENTARIO
 
-        # TERCERO: Cualquier caso ambiguo devuelve SOLICITUD_NO_COMPRENDIDA
+        # TERCERO: Detección parcial de intención incompleta (el usuario mencionó algo de
+        # inventario pero sin la información mínima para clasificar). Distinguir de producto
+        # ambiguo: si el texto menciona términos operativos genéricos, es intención incompleta.
+        _mencion_inventario_generica = bool(
+            re.search(r"\b(trasladar|mover|transferir|cambiar|pasar)\b", texto_limpio)
+            or re.search(r"\b(producto|articulo|referencia|material|equipo|herramienta)\b", texto_limpio)
+        )
+        if _mencion_inventario_generica:
+            return IntencionTipo.SOLICITUD_NO_COMPRENDIDA
+
+        # CUARTO: Cualquier caso ambiguo devuelve SOLICITUD_NO_COMPRENDIDA
         return IntencionTipo.SOLICITUD_NO_COMPRENDIDA
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -1514,13 +1694,18 @@ class NormalizadorLenguajeHaku:
         usuario: UsuarioAudacIA,
         candidatos_previos: Optional[List[Dict[str, Any]]] = None,
     ) -> tuple[Optional[Producto], Optional[str], List[Dict[str, Any]]]:
-        """Busca productos resolviendo códigos y nombres sin selección arbitraria ni ambigüedad."""
-        qs = Producto.objects.filter(activo=True, archivado=False)
+        # Para operaciones de reactivación, inhabilitación o consulta directa de código, los administradores
+        # deben poder resolver el producto por código aunque esté inactivo.
+        qs = Producto.objects.all() if usuario.es_administrador else Producto.objects.filter(activo=True, archivado=False)
         if usuario.es_usuario_normal:
-            if usuario.almacen_asignado:
-                qs = qs.filter(categoria__almacen_principal=usuario.almacen_asignado)
+            if usuario.acceso_todos_almacenes:
+                pass
             else:
-                qs = qs.none()
+                alms_accesibles = usuario.obtener_almacenes_accesibles()
+                if alms_accesibles.exists():
+                    qs = qs.filter(categoria__almacen_principal__in=alms_accesibles).distinct()
+                else:
+                    qs = qs.none()
 
         texto_clean = _quitar_tildes(re.sub(r"[¿?¡!.,:;()\[\]\"'`]", " ", texto).strip().lower())
 

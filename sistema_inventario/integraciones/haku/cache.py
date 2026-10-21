@@ -31,6 +31,7 @@ ALIAS_STOCK = "haku_stock"
 TTL_CATALOGO = 1800     # 30 minutos
 TTL_UBICACIONES = 900   # 15 minutos
 TTL_STOCK = 15          # 15 segundos máximo
+TTL_FALTANTES = 60      # 60 segundos para consultas agregadas de faltantes/reposición
 
 
 class HakuCacheManager:
@@ -43,6 +44,8 @@ class HakuCacheManager:
     _location_misses: int = 0
     _stock_hits: int = 0
     _stock_misses: int = 0
+    _faltantes_hits: int = 0
+    _faltantes_misses: int = 0
     _intenciones_detectadas: Dict[str, int] = {}
 
     @classmethod
@@ -94,6 +97,7 @@ class HakuCacheManager:
         """Invalida el catálogo completo en RAM."""
         cache = cls._cache(ALIAS_CATALOGO)
         cache.clear()
+        cls.invalidar_faltantes()
         logger.debug("Caché de catálogo invalidado")
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -182,7 +186,42 @@ class HakuCacheManager:
             cache.delete(f"stock:{producto_id}:all")
         else:
             cache.clear()
+        cls.invalidar_faltantes(almacen_id)
         logger.debug("Caché de stock invalidado (producto=%s, almacen=%s)", producto_id, almacen_id)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 4. CACHÉ DE FALTANTES Y REPOSICIÓN (TTL 60s)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    @classmethod
+    def obtener_faltantes(cls, almacen_id: Optional[int] = None, categoria_id: Optional[int] = None, scope_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        cache = cls._cache(ALIAS_STOCK)
+        key = f"faltantes:{almacen_id or 'all'}:{categoria_id or 'all'}:{scope_id or 'global'}"
+        data = cache.get(key)
+        with cls._lock:
+            if data is not None:
+                cls._faltantes_hits += 1
+            else:
+                cls._faltantes_misses += 1
+        return data
+
+    @classmethod
+    def guardar_faltantes(cls, data: Dict[str, Any], almacen_id: Optional[int] = None, categoria_id: Optional[int] = None, scope_id: Optional[str] = None) -> None:
+        cache = cls._cache(ALIAS_STOCK)
+        key = f"faltantes:{almacen_id or 'all'}:{categoria_id or 'all'}:{scope_id or 'global'}"
+        cache.set(key, data, timeout=TTL_FALTANTES)
+
+    @classmethod
+    def invalidar_faltantes(cls, almacen_id: Optional[int] = None) -> None:
+        cache = cls._cache(ALIAS_STOCK)
+        if almacen_id:
+            # Elimina claves conocidas para ese almacén y globales
+            cache.delete(f"faltantes:{almacen_id}:all:global")
+            cache.delete(f"faltantes:all:all:global")
+        else:
+            cache.delete(f"faltantes:all:all:global")
+        # Además, como LocMemCache o Dummy no soportan patrones wildcard, se borran las variantes globales directas
+        cache.clear()
 
     # ─────────────────────────────────────────────────────────────────────────
     # GESTIÓN Y MÉTRICAS
@@ -194,6 +233,12 @@ class HakuCacheManager:
         cls.invalidar_catalogo()
         cls.invalidar_ubicaciones()
         cls.invalidar_stock()
+        cls.invalidar_faltantes()
+        try:
+            from .servicios_personas import HakuPersonasService
+            HakuPersonasService.invalidar_cache_personas()
+        except Exception:
+            pass
 
     @classmethod
     def obtener_metricas(cls) -> Dict[str, int]:
@@ -206,6 +251,8 @@ class HakuCacheManager:
                 "location_misses": cls._location_misses,
                 "stock_hits": cls._stock_hits,
                 "stock_misses": cls._stock_misses,
+                "faltantes_hits": cls._faltantes_hits,
+                "faltantes_misses": cls._faltantes_misses,
             }
 
     @classmethod
@@ -231,6 +278,8 @@ class HakuCacheManager:
             cls._location_misses = 0
             cls._stock_hits = 0
             cls._stock_misses = 0
+            cls._faltantes_hits = 0
+            cls._faltantes_misses = 0
             cls._intenciones_detectadas = {}
 
 
@@ -240,35 +289,67 @@ class HakuCacheManager:
 
 def _on_producto_modificado(sender, instance, **kwargs):
     """Invalida catálogo y ubicaciones cuando un producto se crea, edita o archiva."""
-    HakuCacheManager.invalidar_catalogo()
-    HakuCacheManager.invalidar_ubicaciones(instance.id)
-    HakuCacheManager.invalidar_stock(instance.id)
+    from django.db import transaction
+
+    def _invalidar():
+        HakuCacheManager.invalidar_catalogo()
+        HakuCacheManager.invalidar_ubicaciones(instance.id)
+        HakuCacheManager.invalidar_stock(instance.id)
+
+    # Si estamos en un TestCase sin commit de transacción o sin bloque atómico,
+    # ejecutar de inmediato; de lo contrario en on_commit
+    try:
+        transaction.on_commit(_invalidar)
+    except Exception:
+        _invalidar()
+    # Además, para asegurar que TestCase (que no hace commit real) invalide en memoria:
+    _invalidar()
 
 
 def _on_existencia_o_movimiento_modificado(sender, instance, **kwargs):
-    """Invalida stock inmediatamente cuando hay movimientos o cambios en existencias."""
+    """Invalida stock inmediatamente tras confirmarse cambios en base de datos."""
+    from django.db import transaction
     prod_id = getattr(instance, "producto_id", None)
     almacen_id = getattr(instance, "almacen_id", None) or getattr(instance, "almacen_origen_id", None)
-    HakuCacheManager.invalidar_stock(prod_id, almacen_id)
+
+    def _invalidar():
+        HakuCacheManager.invalidar_stock(prod_id, almacen_id)
+
+    transaction.on_commit(_invalidar)
+
+
+def _on_usuario_modificado(sender, instance, **kwargs):
+    """Invalida caché de faltantes y personas cuando cambian permisos, roles o estado de un usuario."""
+    from django.db import transaction
+
+    def _invalidar():
+        HakuCacheManager.invalidar_faltantes()
+        HakuCacheManager.invalidar_todo()
+
+    transaction.on_commit(_invalidar)
 
 
 _senales_conectadas = False
 
 def conectar_senales_cache():
-    """Conecta los listeners de invalidación a los modelos de inventario."""
+    """Conecta los listeners de invalidación a los modelos de inventario y usuarios."""
     global _senales_conectadas
     if _senales_conectadas:
         return
 
     try:
         from inventario.models import Existencia, Movimiento, Prestamo, Producto
+        from cuentas.models import UsuarioAudacIA
         post_save.connect(_on_producto_modificado, sender=Producto, dispatch_uid="haku_prod_save")
         post_delete.connect(_on_producto_modificado, sender=Producto, dispatch_uid="haku_prod_del")
 
         post_save.connect(_on_existencia_o_movimiento_modificado, sender=Existencia, dispatch_uid="haku_exist_save")
         post_save.connect(_on_existencia_o_movimiento_modificado, sender=Movimiento, dispatch_uid="haku_mov_save")
         post_save.connect(_on_existencia_o_movimiento_modificado, sender=Prestamo, dispatch_uid="haku_prest_save")
+
+        post_save.connect(_on_usuario_modificado, sender=UsuarioAudacIA, dispatch_uid="haku_user_save")
         _senales_conectadas = True
         logger.info("Señales de invalidación de caché Haku conectadas con éxito")
     except Exception as exc:
         logger.warning("No se pudieron conectar las señales de caché Haku (%s)", exc)
+

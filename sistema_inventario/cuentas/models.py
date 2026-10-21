@@ -45,19 +45,38 @@ class UsuarioAudacIA(AbstractUser):
         help_text=_("Define los permisos del usuario en el sistema."),
     )
 
-    # El almacén se asigna obligatoriamente a los usuarios con rol USUARIO.
-    # Administradores y Superusuario tienen acceso a todos los almacenes
-    # y este campo queda en null.
+    # El almacén se asigna obligatoriamente a los usuarios con rol USUARIO
+    # (a menos que tengan acceso_todos_almacenes habilitado explícitamente).
+    # Administradores y Superusuario tienen acceso global intrínseco.
     almacen_asignado = models.ForeignKey(
         "inventario.Almacen",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
         related_name="usuarios_asignados",
-        verbose_name=_("almacén asignado"),
+        verbose_name=_("almacén asignado principal"),
         help_text=_(
-            "Almacén al que pertenece este usuario. "
-            "Obligatorio para rol Usuario; null para Administrador y Superusuario."
+            "Almacén principal por defecto de este usuario. "
+            "Mantenido por retrocompatibilidad operativa."
+        ),
+    )
+
+    almacenes_asignados = models.ManyToManyField(
+        "inventario.Almacen",
+        blank=True,
+        related_name="usuarios_asignados_multi",
+        verbose_name=_("almacenes asignados"),
+        help_text=_(
+            "Conjunto de almacenes autorizados explícitamente para este usuario."
+        ),
+    )
+
+    acceso_todos_almacenes = models.BooleanField(
+        _("acceso a todos los almacenes"),
+        default=False,
+        help_text=_(
+            "Permite operar o consultar en todos los almacenes sin conceder privilegios de administrador. "
+            "Solo puede ser concedido o revocado por Administradores o Superusuarios."
         ),
     )
 
@@ -115,12 +134,48 @@ class UsuarioAudacIA(AbstractUser):
     def tiene_acceso_almacen(self, almacen):
         """¿Puede este usuario operar en el almacén dado?
 
-        - Superusuario y Administrador: todos los almacenes.
-        - Usuario: solo su almacén asignado.
+        - Superusuario y Administrador: todos los almacenes activos.
+        - Usuario con acceso_todos_almacenes: todos los almacenes activos (sin ser admin).
+        - Usuario normal: su almacén principal asignado o cualquiera en almacenes_asignados.
+        - En todos los casos ordinarios, el almacén debe existir, estar activo y no eliminado.
         """
-        if self.es_administrador:
+        if not almacen:
+            return False
+
+        # Si el almacén está inactivo o eliminado lógicamente, nadie opera normalmente en él
+        if not getattr(almacen, "activo", True) or getattr(almacen, "eliminado", False):
+            return False
+
+        if self.es_administrador or self.acceso_todos_almacenes:
             return True
-        return self.almacen_asignado_id == almacen.id if almacen else False
+
+        if self.almacen_asignado_id and self.almacen_asignado_id == almacen.id:
+            return True
+
+        if self.pk:
+            return self.almacenes_asignados.filter(id=almacen.id, activo=True, eliminado=False).exists()
+
+        return False
+
+    def obtener_almacenes_accesibles(self):
+        """Retorna el QuerySet de almacenes activos sobre los que este usuario puede operar.
+        
+        - Superusuario y Administrador: todos los almacenes activos y no eliminados.
+        - Usuario con acceso_todos_almacenes: todos los almacenes activos y no eliminados.
+        - Usuario normal: sus almacenes asignados (principal + multialmacén activos).
+        """
+        from inventario.models import Almacen
+        qs = Almacen.objects.filter(activo=True, eliminado=False)
+        if self.es_administrador or self.acceso_todos_almacenes:
+            return qs
+
+        ids = set()
+        if self.almacen_asignado_id:
+            ids.add(self.almacen_asignado_id)
+        if self.pk:
+            ids.update(self.almacenes_asignados.filter(activo=True, eliminado=False).values_list("id", flat=True))
+
+        return qs.filter(id__in=ids)
 
 
 class IntentoFallido(models.Model):

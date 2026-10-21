@@ -70,13 +70,42 @@
                 {% endif %}
             </div>
 
-            <div class="form-group">
-                <label for="{{ form.almacen_asignado.id_for_label }}">{{ form.almacen_asignado.label }}</label>
-                {{ form.almacen_asignado }}
-                <div class="help-text">{{ form.almacen_asignado.help_text }}</div>
-                {% if form.almacen_asignado.errors %}
-                    <div class="error-field">{{ form.almacen_asignado.errors.0 }}</div>
+            <div id="bloque-almacenes-usuario" style="background: rgba(255,255,255,0.03); border: 1px solid #334155; border-radius: 8px; padding: 1rem; margin-bottom: 1.25rem;">
+                <label style="font-weight: 600; color: #38bdf8; margin-bottom: 0.5rem; display: block;">
+                    Alcance de Inventario (Almacenes)
+                </label>
+
+                <!-- Opción B: Todos los almacenes -->
+                <div class="checkbox-group" style="margin-bottom: 0.75rem;">
+                    {{ form.acceso_todos_almacenes }}
+                    <label for="{{ form.acceso_todos_almacenes.id_for_label }}" style="margin: 0; font-weight: 600;">
+                        {{ form.acceso_todos_almacenes.label }}
+                    </label>
+                </div>
+                {% if form.acceso_todos_almacenes.errors %}
+                    <div class="error-field">{{ form.acceso_todos_almacenes.errors.0 }}</div>
                 {% endif %}
+
+                <!-- Opción A: Almacenes específicos -->
+                <div id="bloque-almacenes-especificos">
+                    <div class="form-group" style="margin-bottom: 0.75rem;">
+                        <label for="{{ form.almacenes_asignados.id_for_label }}">{{ form.almacenes_asignados.label }}</label>
+                        {{ form.almacenes_asignados }}
+                        <div class="help-text">Mantén presionada la tecla Ctrl para seleccionar uno o varios almacenes.</div>
+                        {% if form.almacenes_asignados.errors %}
+                            <div class="error-field">{{ form.almacenes_asignados.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label for="{{ form.almacen_asignado.id_for_label }}">{{ form.almacen_asignado.label }}</label>
+                        {{ form.almacen_asignado }}
+                        <div class="help-text">{{ form.almacen_asignado.help_text }}</div>
+                        {% if form.almacen_asignado.errors %}
+                            <div class="error-field">{{ form.almacen_asignado.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                </div>
             </div>
 
             <div class="checkbox-group">
@@ -90,5 +119,48 @@
             </div>
         </form>
     </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const selRol = document.getElementById('{{ form.rol.id_for_label }}');
+            const bloqueAlm = document.getElementById('bloque-almacenes-usuario');
+            const chkTodos = document.getElementById('{{ form.acceso_todos_almacenes.id_for_label }}');
+            const bloqueEspecificos = document.getElementById('bloque-almacenes-especificos');
+            const selMulti = document.getElementById('{{ form.almacenes_asignados.id_for_label }}');
+            const selPrin = document.getElementById('{{ form.almacen_asignado.id_for_label }}');
+
+            function actualizarVisibilidadRol() {
+                if (!selRol || !bloqueAlm) return;
+                if (selRol.value === 'USUARIO') {
+                    bloqueAlm.style.display = 'block';
+                } else {
+                    bloqueAlm.style.display = 'none';
+                }
+            }
+
+            function alternarTodosAlmacenes() {
+                if (!chkTodos || !bloqueEspecificos) return;
+                if (chkTodos.checked) {
+                    bloqueEspecificos.style.opacity = '0.4';
+                    bloqueEspecificos.style.pointerEvents = 'none';
+                    if (selMulti) Array.from(selMulti.options).forEach(opt => opt.selected = false);
+                    if (selPrin) selPrin.value = '';
+                } else {
+                    bloqueEspecificos.style.opacity = '1';
+                    bloqueEspecificos.style.pointerEvents = 'auto';
+                }
+            }
+
+            if (selRol) {
+                selRol.addEventListener('change', actualizarVisibilidadRol);
+                actualizarVisibilidadRol();
+            }
+
+            if (chkTodos) {
+                chkTodos.addEventListener('change', alternarTodosAlmacenes);
+                alternarTodosAlmacenes();
+            }
+        });
+    </script>
 </body>
 </html>

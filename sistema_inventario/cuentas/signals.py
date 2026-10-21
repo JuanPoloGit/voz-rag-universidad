@@ -25,17 +25,24 @@ def validar_invariantes_usuario(sender, instance, **kwargs):
         instance.is_superuser = True
         instance.is_staff = True
         instance.almacen_asignado = None
+        instance.acceso_todos_almacenes = False
     elif instance.rol == UsuarioAudacIA.Rol.ADMINISTRADOR:
         instance.is_superuser = False
         instance.is_staff = True
         instance.almacen_asignado = None
+        instance.acceso_todos_almacenes = False
     elif instance.rol == UsuarioAudacIA.Rol.USUARIO:
         instance.is_superuser = False
         instance.is_staff = False
-        if not instance.almacen_asignado_id:
-            raise ValidationError(
-                _("Los usuarios con rol Usuario deben tener obligatoriamente un almacén asignado.")
-            )
+        # Para rol USUARIO: si no tiene acceso_todos_almacenes y no tiene pk (o no tiene almacenes),
+        # debe indicarse al menos almacen_asignado_id.
+        if not instance.almacen_asignado_id and not instance.acceso_todos_almacenes:
+            # Si el usuario ya existe en BD, verificar si tiene almacenes en almacenes_asignados
+            tiene_multi = instance.pk and instance.almacenes_asignados.filter(activo=True, eliminado=False).exists()
+            if not tiene_multi:
+                raise ValidationError(
+                    _("Los usuarios con rol Usuario deben tener al menos un almacén asignado o acceso a todos los almacenes autorizado.")
+                )
 
     # 2. Verificar regla de superusuario único
     if instance.rol == UsuarioAudacIA.Rol.SUPERUSUARIO or instance.is_superuser:

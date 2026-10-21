@@ -366,10 +366,15 @@ def _validar_acceso_almacen(usuario: UsuarioAudacIA, almacen_intencion: Almacen 
         return almacen_intencion, None
 
     if usuario.es_usuario_normal:
-        if usuario.almacen_asignado:
+        if usuario.acceso_todos_almacenes:
+            return None, None
+        if usuario.almacen_asignado and usuario.tiene_acceso_almacen(usuario.almacen_asignado):
             return usuario.almacen_asignado, None
+        primer_multi = usuario.almacenes_asignados.filter(activo=True, eliminado=False).first()
+        if primer_multi:
+            return primer_multi, None
         else:
-            msg = "Tu cuenta de usuario no tiene un almacén asignado para realizar esta consulta."
+            msg = "Tu cuenta de usuario no tiene un almacén asignado activo para realizar esta consulta."
             return None, {
                 "tipo": "consulta",
                 "mensaje_pantalla": msg,
@@ -379,6 +384,76 @@ def _validar_acceso_almacen(usuario: UsuarioAudacIA, almacen_intencion: Almacen 
 
     # Administrador o Superusuario sin almacén explícito: acceso global
     return None, None
+
+
+def _resolver_almacen_para_operacion(
+    usuario: UsuarioAudacIA,
+    almacen_intencion: Almacen | None,
+    producto: Producto,
+    operacion: str = "operación",
+) -> tuple[Almacen | None, dict[str, Any] | None]:
+    """Resuelve determinísticamente el almacén para operaciones de mutación (entrada, salida, préstamo).
+    
+    Reglas:
+    1. Si se indicó un almacén explícito:
+       - Si el usuario tiene acceso y el almacén está activo: se usa.
+       - Si no tiene acceso o está inactivo: se deniega con error de permisos.
+    2. Si no se indicó almacén:
+       - Si el usuario normal tiene un único almacén autorizado (sea por asignado o multi): se usa ese almacén.
+       - Si el usuario tiene acceso a múltiples almacenes (o acceso a todos) y el producto está enlazado a su categoría:
+         se usa el almacén principal de la categoría del producto si el usuario tiene acceso a él.
+       - Si no se puede determinar sin ambigüedad: se solicita aclaración breve preguntando en qué almacén operar.
+    """
+    if almacen_intencion:
+        if not usuario.tiene_acceso_almacen(almacen_intencion):
+            msg = f"No tienes autorización para realizar la {operacion} en el almacén '{almacen_intencion.nombre}'."
+            return None, {
+                "tipo": "error",
+                "mensaje_pantalla": msg,
+                "mensaje_verbal": normalizar_para_tts(msg),
+                "datos": {"error_permisos": True, "almacen_denegado": almacen_intencion.nombre},
+            }
+        return almacen_intencion, None
+
+    # Caso sin almacén explícito:
+    alms_accesibles = list(usuario.obtener_almacenes_accesibles())
+    if not alms_accesibles:
+        msg = f"Tu cuenta de usuario no tiene almacenes activos autorizados para registrar {operacion}."
+        return None, {
+            "tipo": "error",
+            "mensaje_pantalla": msg,
+            "mensaje_verbal": normalizar_para_tts(msg),
+            "datos": {"sin_almacen": True},
+        }
+
+    # Si solo tiene 1 almacén accesible
+    if len(alms_accesibles) == 1:
+        return alms_accesibles[0], None
+
+    # Si tiene múltiples almacenes accesibles o acceso global:
+    # Comprobar si el almacén principal de la categoría del producto está entre sus almacenes autorizados
+    alm_cat = getattr(getattr(producto, "categoria", None), "almacen_principal", None)
+    if alm_cat and usuario.tiene_acceso_almacen(alm_cat):
+        return alm_cat, None
+
+    # Si el producto tiene stock en un único almacén accesible para el usuario (relevante para salidas/préstamos)
+    exs_con_stock = Existencia.objects.filter(
+        producto=producto,
+        almacen__in=alms_accesibles,
+        stock_disponible__gt=0,
+    )
+    if exs_con_stock.count() == 1:
+        return exs_con_stock.first().almacen, None
+
+    # Ante ambigüedad con múltiples almacenes autorizados, solicitar aclaración breve
+    nombres_alms = ", ".join(f"**{a.nombre}**" for a in alms_accesibles[:3])
+    msg = f"Tienes acceso a varios almacenes ({nombres_alms}). ¿En cuál almacén deseas registrar la {operacion} de **{producto.nombre}**?"
+    return None, {
+        "tipo": "aclaracion",
+        "mensaje_pantalla": msg,
+        "mensaje_verbal": normalizar_para_tts(f"Tienes acceso a varios almacenes. ¿En cuál deseas registrar la {operacion} de {producto.nombre}?"),
+        "datos": {"requiere_almacen": True},
+    }
 
 
 def procesar_comando_inventario(
@@ -402,6 +477,7 @@ def procesar_comando_inventario(
     """
     from .cache import HakuCacheManager
     from .contexto import HakuOperationalContext
+    from .diagnostico import HakuDiagnostico
     from .lenguaje.normalizador import IntencionResultado, IntencionTipo, NormalizadorLenguajeHaku
 
     texto = mensaje.strip()
@@ -420,12 +496,15 @@ def procesar_comando_inventario(
     # ─────────────────────────────────────────────────────────────────────────
     # GENERACIÓN DE INTENCIÓN SEMÁNTICA (CAPA LINGÜÍSTICA SIN EFECTOS SECUNDARIOS)
     # ─────────────────────────────────────────────────────────────────────────
+    _t0_interp = time.time()
     intencion: IntencionResultado = NormalizadorLenguajeHaku.interpretar(
         mensaje=texto,
         usuario=usuario,
         contexto_sesion=sesion,
         estado_operativo=estado_operativo,
     )
+    _latencia_ms = max((time.time() - _t0_interp) * 1000.0, 0.01)
+    HakuDiagnostico.registrar_intencion(intencion.tipo.value, latencia_ms=_latencia_ms)
 
     # Actualizar producto en foco conversacional en RAM
     if intencion.producto and estado_operativo:
@@ -468,6 +547,7 @@ def procesar_comando_inventario(
     if intencion.tipo == IntencionTipo.ACCION_CONFIRMAR:
         if propuesta_activa:
             if time.time() > propuesta_activa.get("expira_en", 0):
+                HakuDiagnostico.registrar_propuesta("expirada")
                 if estado_operativo:
                     estado_operativo.propuesta_activa = None
                     HakuOperationalContext.guardar(estado_operativo)
@@ -493,6 +573,7 @@ def procesar_comando_inventario(
 
     if intencion.tipo == IntencionTipo.ACCION_CANCELAR:
         if propuesta_activa:
+            HakuDiagnostico.registrar_propuesta("cancelada")
             if estado_operativo:
                 estado_operativo.propuesta_activa = None
                 HakuOperationalContext.guardar(estado_operativo)
@@ -526,30 +607,56 @@ def procesar_comando_inventario(
             "datos": {"requiere_aclaracion": True},
         }
 
-    # 2. Métricas generales de movimientos de hoy
+    # 2. Métricas y consultas generales de movimientos por intervalo temporal y multialmacén
     if intencion.tipo == IntencionTipo.CONSULTAR_METRICAS_MOVIMIENTOS:
-        hoy = timezone.now().date()
+        from .servicios_temporales import resolver_intervalo_temporal, obtener_ahora_local
+        intervalo = resolver_intervalo_temporal(texto)
+        if not intervalo:
+            ahora = obtener_ahora_local()
+            hoy_date = ahora.date()
+            import datetime
+            inicio = datetime.datetime.combine(hoy_date, datetime.time.min, tzinfo=ahora.tzinfo)
+            fin = ahora
+            desc_periodo = f"hoy ({hoy_date.strftime('%d/%m/%Y')})"
+        else:
+            inicio = intervalo.inicio
+            fin = intervalo.fin
+            desc_periodo = intervalo.descripcion_legible
+
         qs_mov = Movimiento.objects.filter(
             estado=Movimiento.Estado.CONFIRMADO,
-            fecha_hora__date=hoy,
-        )
-        if usuario.es_usuario_normal:
-            if usuario.almacen_asignado:
-                qs_mov = qs_mov.filter(almacen_origen=usuario.almacen_asignado)
+            fecha_hora__gte=inicio,
+            fecha_hora__lt=fin,
+        ).select_related("producto", "almacen_origen", "almacen_destino", "usuario")
+
+        # Filtrado de almacén: si se especificó almacén en la intención, validar acceso
+        if intencion.almacen:
+            almacen_filtrado, error_resp = _validar_acceso_almacen(usuario, intencion.almacen)
+            if error_resp:
+                return error_resp
+            qs_mov = qs_mov.filter(Q(almacen_origen=almacen_filtrado) | Q(almacen_destino=almacen_filtrado)).distinct()
+            desc_periodo += f" en {almacen_filtrado.nombre}"
+        elif usuario.es_usuario_normal:
+            if usuario.acceso_todos_almacenes:
+                pass
             else:
-                msg = "Tu cuenta de usuario no tiene un almacén asignado. No puedes consultar métricas de inventario."
-                return {
-                    "tipo": "consulta",
-                    "mensaje_pantalla": msg,
-                    "mensaje_verbal": normalizar_para_tts(msg),
-                    "datos": {"fecha": str(hoy), "total": 0, "entradas": 0, "salidas": 0, "prestamos": 0, "devoluciones": 0},
-                }
+                alms = usuario.obtener_almacenes_accesibles()
+                if not alms.exists():
+                    msg = "Tu cuenta de usuario no tiene un almacén asignado activo para consultar movimientos."
+                    return {
+                        "tipo": "consulta",
+                        "mensaje_pantalla": msg,
+                        "mensaje_verbal": normalizar_para_tts(msg),
+                        "datos": {"total": 0, "sin_almacen_asignado": True},
+                    }
+                qs_mov = qs_mov.filter(Q(almacen_origen__in=alms) | Q(almacen_destino__in=alms)).distinct()
 
         total_mov = qs_mov.count()
         entradas = qs_mov.filter(tipo=Movimiento.Tipo.ENTRADA).count()
         salidas = qs_mov.filter(tipo=Movimiento.Tipo.SALIDA).count()
         prestamos = qs_mov.filter(tipo=Movimiento.Tipo.PRESTAMO).count()
         devoluciones = qs_mov.filter(tipo=Movimiento.Tipo.DEVOLUCION).count()
+        traslados = qs_mov.filter(tipo__in=[Movimiento.Tipo.TRASLADO_ENTRE, Movimiento.Tipo.TRASLADO_INTERNO]).count()
 
         if estado_operativo:
             estado_operativo.registrar_accion(
@@ -560,62 +667,74 @@ def procesar_comando_inventario(
 
         es_pregunta_entradas = bool(re.search(r"\bentradas?\b", texto_lower) and not re.search(r"\bsalidas?\b", texto_lower))
         es_pregunta_salidas = bool(re.search(r"\bsalidas?\b", texto_lower) and not re.search(r"\bentradas?\b", texto_lower))
+        es_pregunta_traslados = bool(re.search(r"\btraslados?\b", texto_lower))
+        ultimos_movs = list(qs_mov.select_related("producto", "almacen_origen", "almacen_destino")[:10]) if total_mov > 0 else []
 
         if total_mov == 0:
-            pantalla = (
-                f"Hoy no se registraron movimientos de inventario.\n"
-                f"Durante la jornada se registraron movimientos de inventario correspondientes a las operaciones realizadas hoy (0 movimientos en total):\n"
-                f"- **0** entradas\n"
-                f"- **0** salidas\n"
-                f"- **0** préstamos\n"
-                f"- **0** devoluciones.\n\n"
-                f"¿Quieres revisar algún producto específico?"
-            )
-            verbal = "Hoy no se registraron movimientos de inventario."
+            pantalla = f"Durante la jornada se registraron movimientos de inventario correspondientes a las operaciones realizadas.\nDurante el periodo consultado (**{desc_periodo}**) no se registraron movimientos de inventario.\n\n- **0** entradas\n- **0** salidas\n- **0** préstamos\n- **0** devoluciones\n- **0** traslados\n\n¿Quieres revisar algún producto específico?"
+            verbal = f"Durante el periodo consultado, {desc_periodo}, no se registraron movimientos de inventario. ¿Quieres revisar algún producto específico?"
         elif es_pregunta_entradas:
-            pantalla = (
-                f"Hoy se han registrado **{entradas}** entradas (de un total de {total_mov} movimientos hoy):\n"
-                f"- **{entradas}** entradas\n"
-                f"- **{salidas}** salidas\n"
-                f"- **{prestamos}** préstamos\n"
-                f"- **{devoluciones}** devoluciones."
-            )
-            verbal = f"Hoy se han registrado {entradas} entradas en el almacén, de un total de {total_mov} movimientos realizados."
+            pantalla = f"Se registraron **{entradas}** entradas durante **{desc_periodo}** (de un total de {total_mov} movimientos):\n- **{entradas}** entradas\n- **{salidas}** salidas\n- **{prestamos}** préstamos\n- **{devoluciones}** devoluciones\n- **{traslados}** traslados\n\n¿Quieres revisar algún producto específico?"
+            verbal = f"Se registraron {entradas} entradas durante {desc_periodo}, de un total de {total_mov} movimientos. ¿Quieres revisar algún producto específico?"
         elif es_pregunta_salidas:
-            pantalla = (
-                f"Hoy se han registrado **{salidas}** salidas (de un total de {total_mov} movimientos hoy):\n"
-                f"- **{entradas}** entradas\n"
-                f"- **{salidas}** salidas\n"
-                f"- **{prestamos}** préstamos\n"
-                f"- **{devoluciones}** devoluciones."
-            )
-            verbal = f"Hoy se han registrado {salidas} salidas en el almacén, de un total de {total_mov} movimientos realizados."
+            pantalla = f"Se registraron **{salidas}** salidas durante **{desc_periodo}** (de un total de {total_mov} movimientos):\n- **{entradas}** entradas\n- **{salidas}** salidas\n- **{prestamos}** préstamos\n- **{devoluciones}** devoluciones\n- **{traslados}** traslados\n\n¿Quieres revisar algún producto específico?"
+            verbal = f"Se registraron {salidas} salidas durante {desc_periodo}, de un total de {total_mov} movimientos. ¿Quieres revisar algún producto específico?"
+        elif es_pregunta_traslados:
+            pantalla = f"Se registraron **{traslados}** traslados durante **{desc_periodo}** (de un total de {total_mov} movimientos):\n- **{entradas}** entradas\n- **{salidas}** salidas\n- **{prestamos}** préstamos\n- **{devoluciones}** devoluciones\n- **{traslados}** traslados\n\n¿Quieres revisar algún producto específico?"
+            verbal = f"Se registraron {traslados} traslados durante {desc_periodo}, de un total de {total_mov} movimientos. ¿Quieres revisar algún producto específico?"
         else:
+            # Si se solicita listado o detalle («muéstrame los movimientos de ayer»)
+            detalle_movs = []
+            for m in ultimos_movs:
+                fecha_str = m.fecha_hora.astimezone(obtener_ahora_local().tzinfo).strftime("%d/%m %H:%M")
+                alm_txt = m.almacen_origen.nombre if m.almacen_origen else ""
+                if m.almacen_destino:
+                    alm_txt += f" ➔ {m.almacen_destino.nombre}"
+                detalle_movs.append(f"- `{fecha_str}` | **{m.get_tipo_display()}**: {m.cantidad} uds de {m.producto.nombre} ({alm_txt})")
+
+            bloque_detalle = "\n".join(detalle_movs)
+            extra_paginacion = f"\n\n*(Mostrando primeros 10 de {total_mov} movimientos registrados)*" if total_mov > 10 else ""
+
             pantalla = (
-                f"Durante la jornada se registraron movimientos de inventario correspondientes a las operaciones realizadas hoy.\n"
-                f"Hoy se han realizado **{total_mov}** movimientos:\n"
-                f"- **{entradas}** entradas\n"
-                f"- **{salidas}** salidas\n"
-                f"- **{prestamos}** préstamos\n"
-                f"- **{devoluciones}** devoluciones.\n\n"
+                f"### Movimientos de inventario — {desc_periodo}\n"
+                f"Durante la jornada se registraron movimientos de inventario correspondientes a las operaciones realizadas.\n"
+                f"Se registraron **{total_mov}** movimientos en total:\n"
+                f"- **{entradas}** entradas | **{salidas}** salidas | **{prestamos}** préstamos | **{devoluciones}** devoluciones | **{traslados}** traslados\n\n"
+                f"**Detalle cronológico:**\n{bloque_detalle}{extra_paginacion}\n\n"
                 f"¿Quieres revisar algún producto específico?"
             )
             verbal = (
-                f"Durante la jornada se registraron movimientos de inventario correspondientes a las operaciones realizadas hoy: "
-                f"{entradas} entradas, {salidas} salidas, {prestamos} préstamos y {devoluciones} devoluciones. "
+                f"Durante {desc_periodo} se registraron {total_mov} movimientos en total: "
+                f"{entradas} entradas, {salidas} salidas, {prestamos} préstamos, {devoluciones} devoluciones y {traslados} traslados. "
                 f"¿Quieres revisar algún producto específico?"
             )
+
         return {
             "tipo": "consulta",
             "mensaje_pantalla": pantalla,
             "mensaje_verbal": normalizar_para_tts(verbal),
             "datos": {
-                "fecha": str(hoy),
+                "periodo": desc_periodo,
+                "inicio": inicio.isoformat(),
+                "fin": fin.isoformat(),
                 "total": total_mov,
                 "entradas": entradas,
                 "salidas": salidas,
                 "prestamos": prestamos,
                 "devoluciones": devoluciones,
+                "traslados": traslados,
+                "movimientos": [
+                    {
+                        "id": str(m.id),
+                        "tipo": m.tipo,
+                        "producto": m.producto.nombre,
+                        "cantidad": m.cantidad,
+                        "almacen_origen": m.almacen_origen.nombre if m.almacen_origen else None,
+                        "almacen_destino": m.almacen_destino.nombre if m.almacen_destino else None,
+                        "motivo": m.motivo,
+                    }
+                    for m in ultimos_movs
+                ],
             },
         }
 
@@ -701,21 +820,21 @@ def procesar_comando_inventario(
                 "datos": {"almacenes": []},
             }
 
-        almacen_asignado = usuario.almacen_asignado if (usuario.es_usuario_normal and usuario.almacen_asignado) else None
+        alms_autorizados_ids = set(usuario.obtener_almacenes_accesibles().values_list("id", flat=True)) if usuario.es_usuario_normal and not usuario.acceso_todos_almacenes else set()
 
         lineas_pantalla = ["### Almacenes activos en el sistema:\n"]
         lineas_voz = [f"Hay {total_almacenes} almacenes registrados:"]
         lista_datos = []
 
         for alm in qs_almacenes:
-            es_propio = bool(almacen_asignado and alm.id == almacen_asignado.id)
-            marca_asignado = " *(Tu almacén asignado)*" if es_propio else ""
+            es_propio = bool(alm.id in alms_autorizados_ids)
+            marca_asignado = " *(Tu almacén asignado)*" if (usuario.almacen_asignado and alm.id == usuario.almacen_asignado.id) else (" *(Autorizado)*" if es_propio else "")
             desc = f" — {alm.descripcion}" if alm.descripcion else ""
             lineas_pantalla.append(f"- **{alm.nombre}**{marca_asignado}{desc}")
             lineas_voz.append(f"{alm.nombre}.")
             lista_datos.append({"id": alm.id, "nombre": alm.nombre, "descripcion": alm.descripcion, "es_asignado": es_propio})
 
-        if usuario.es_usuario_normal and not usuario.almacen_asignado:
+        if usuario.es_usuario_normal and not usuario.acceso_todos_almacenes and not alms_autorizados_ids:
             lineas_pantalla.append("\n*Aviso: Tu cuenta de usuario no tiene ningún almacén asignado actualmente.*")
 
         if estado_operativo:
@@ -1068,6 +1187,190 @@ def procesar_comando_inventario(
             "datos": {"bajo_stock": lista_datos, "total": total_bajo_stock},
         }
 
+    # 3-bis F. Consulta de reposición integral («¿Qué hace falta por pedir?»)
+    if intencion.tipo == IntencionTipo.CONSULTAR_FALTANTES_REPOSICION:
+        if intencion.almacen:
+            almacen, error_resp = _validar_acceso_almacen(usuario, intencion.almacen)
+            if error_resp:
+                return error_resp
+            scope_user = f"alm_{almacen.id}"
+        elif usuario.es_administrador or usuario.acceso_todos_almacenes:
+            almacen = None
+            scope_user = f"global_rol_{usuario.rol}"
+        else:
+            almacen = None
+            alms_ids = sorted(list(usuario.obtener_almacenes_accesibles().values_list("id", flat=True)))
+            if not alms_ids:
+                msg = "Tu cuenta de usuario no tiene un almacén asignado activo para realizar esta consulta."
+                return {
+                    "tipo": "consulta",
+                    "mensaje_pantalla": msg,
+                    "mensaje_verbal": normalizar_para_tts(msg),
+                    "datos": {"error_permisos": True, "sin_almacen_asignado": True},
+                }
+            alms_firma = "-".join(map(str, alms_ids))
+            scope_user = f"user_{usuario.id}_alms_{alms_firma}"
+
+        # Revisar caché en RAM
+        cached_data = HakuCacheManager.obtener_faltantes(almacen_id=almacen.id if almacen else None, scope_id=scope_user)
+        if cached_data is not None:
+            return {
+                "tipo": "consulta",
+                "mensaje_pantalla": cached_data["pantalla"],
+                "mensaje_verbal": cached_data["verbal"],
+                "datos": cached_data["datos"],
+            }
+
+        # Query de existencias activas
+        qs_exist = Existencia.objects.filter(
+            producto__activo=True,
+            producto__archivado=False,
+        ).select_related("producto", "producto__categoria", "almacen")
+
+        if almacen:
+            qs_exist = qs_exist.filter(almacen=almacen)
+        elif usuario.es_usuario_normal and not usuario.acceso_todos_almacenes:
+            alms_acc = usuario.obtener_almacenes_accesibles()
+            qs_exist = qs_exist.filter(almacen__in=alms_acc)
+
+        filtro_nombre = intencion.datos_extra.get("filtro_nombre") if intencion.datos_extra else None
+        if filtro_nombre:
+            qs_exist = qs_exist.filter(
+                Q(producto__nombre__icontains=filtro_nombre) | Q(producto__categoria__nombre__icontains=filtro_nombre)
+            )
+
+        agotados_items = []
+        bajo_stock_items = []
+        items_datos = []
+
+        for e in qs_exist:
+            prod = e.producto
+            disponible = e.stock_disponible
+            prestado = e.stock_en_prestamo
+            minimo = prod.stock_minimo
+            fisico = disponible + prestado
+
+            if disponible == 0:
+                motivo = "Sin existencias disponibles"
+                if prestado > 0:
+                    motivo += f" ({prestado} unidad(es) prestadas)"
+                sug_compra = max(0, minimo - disponible)
+                agotados_items.append({
+                    "existencia": e,
+                    "motivo": motivo,
+                    "sugerido": sug_compra if sug_compra > 0 else (1 if minimo == 0 else minimo),
+                })
+                items_datos.append({
+                    "id": prod.id,
+                    "codigo": prod.codigo_interno,
+                    "nombre": prod.nombre,
+                    "categoria": prod.categoria.nombre,
+                    "almacen": e.almacen.nombre,
+                    "stock_fisico": fisico,
+                    "stock_prestado": prestado,
+                    "stock_disponible": disponible,
+                    "stock_minimo": minimo,
+                    "estado_alerta": "AGOTADO",
+                    "motivo_alerta": motivo,
+                    "cantidad_sugerida_reposicion": sug_compra if sug_compra > 0 else (1 if minimo == 0 else minimo),
+                    "consumo_estimado": "Sin historial suficiente para predicción de consumo",
+                })
+            elif e.stock_bajo:
+                motivo = f"Por debajo del mínimo ({disponible} de {minimo})"
+                sug_compra = max(0, minimo - disponible)
+                bajo_stock_items.append({
+                    "existencia": e,
+                    "motivo": motivo,
+                    "sugerido": sug_compra,
+                })
+                items_datos.append({
+                    "id": prod.id,
+                    "codigo": prod.codigo_interno,
+                    "nombre": prod.nombre,
+                    "categoria": prod.categoria.nombre,
+                    "almacen": e.almacen.nombre,
+                    "stock_fisico": fisico,
+                    "stock_prestado": prestado,
+                    "stock_disponible": disponible,
+                    "stock_minimo": minimo,
+                    "estado_alerta": "BAJO_STOCK",
+                    "motivo_alerta": motivo,
+                    "cantidad_sugerida_reposicion": sug_compra,
+                    "consumo_estimado": "Sin historial suficiente para predicción de consumo",
+                })
+
+        total_faltantes = len(items_datos)
+
+        if total_faltantes == 0:
+            msg = (
+                f"No hay productos que requieran reposición en {almacen.nombre}."
+                if almacen else "No hay productos que requieran reposición en los almacenes accesibles."
+            )
+            return {
+                "tipo": "consulta",
+                "mensaje_pantalla": msg,
+                "mensaje_verbal": normalizar_para_tts(msg),
+                "datos": {"faltantes": [], "total": 0},
+            }
+
+        lineas_pantalla = ["### Reporte de Reposición y Necesidades de Compra\n"]
+        lineas_voz = []
+
+        if agotados_items:
+            lineas_pantalla.append(f"**Agotados sin stock disponible ({len(agotados_items)}):**")
+            lineas_voz.append(f"Hay {len(agotados_items)} productos agotados.")
+            for it in agotados_items[:6]:
+                ex = it["existencia"]
+                lineas_pantalla.append(
+                    f"- 🔴 **{ex.producto.nombre}** (`{ex.producto.codigo_interno}`) en {ex.almacen.nombre}: "
+                    f"0 disponibles (físico: {ex.stock_total}, prestados: {ex.stock_en_prestamo}, mínimo: {ex.producto.stock_minimo}). "
+                    f"*Sugerido reponer:* {it['sugerido']} ud(s)."
+                )
+
+        if bajo_stock_items:
+            lineas_pantalla.append(f"\n**Stock bajo por debajo del mínimo ({len(bajo_stock_items)}):**")
+            lineas_voz.append(f"{len(bajo_stock_items)} productos están por debajo de su stock mínimo.")
+            for it in bajo_stock_items[:6]:
+                ex = it["existencia"]
+                lineas_pantalla.append(
+                    f"- 🟡 **{ex.producto.nombre}** (`{ex.producto.codigo_interno}`) en {ex.almacen.nombre}: "
+                    f"**{ex.stock_disponible}** disponibles de **{ex.producto.stock_minimo}** requeridos. "
+                    f"*Sugerido reponer:* {it['sugerido']} ud(s)."
+                )
+
+        lineas_pantalla.append(
+            "\n*Nota: Las sugerencias de compra se basan estrictamente en alcanzar el stock mínimo configurado. "
+            "No se calculan plazos de agotamiento ficticios al no disponer de tasas de consumo histórico.*"
+        )
+
+        nombres_destacados = [it["existencia"].producto.nombre for it in (agotados_items + bajo_stock_items)[:3]]
+        lineas_voz.append(f"Entre ellos: {', '.join(nombres_destacados)}.")
+
+        txt_pantalla = "\n".join(lineas_pantalla)
+        txt_verbal = normalizar_para_tts(" ".join(lineas_voz))
+
+        if estado_operativo:
+            estado_operativo.asignar_coleccion(items_datos, total_original=total_faltantes)
+            estado_operativo.registrar_accion("CONSULTAR_FALTANTES_REPOSICION", cantidad=total_faltantes)
+            estado_operativo.producto_id = None
+            estado_operativo.producto_codigo = None
+            estado_operativo.producto_nombre = None
+            HakuOperationalContext.guardar(estado_operativo)
+
+        # Guardar en caché
+        HakuCacheManager.guardar_faltantes(
+            {"pantalla": txt_pantalla, "verbal": txt_verbal, "datos": {"faltantes": items_datos, "total": total_faltantes}},
+            almacen_id=almacen.id if almacen else None,
+            scope_id=scope_user,
+        )
+
+        return {
+            "tipo": "consulta",
+            "mensaje_pantalla": txt_pantalla,
+            "mensaje_verbal": txt_verbal,
+            "datos": {"faltantes": items_datos, "total": total_faltantes},
+        }
+
     # 4. Movimientos por producto específico
     if intencion.tipo == IntencionTipo.CONSULTAR_PRODUCTO_MOVIMIENTOS:
         producto = intencion.producto
@@ -1079,22 +1382,48 @@ def procesar_comando_inventario(
             sesion["haku_ultimo_producto_id"] = str(producto.id)
             sesion["haku_ultimo_acceso"] = time.time()
 
+        from .servicios_temporales import resolver_intervalo_temporal, obtener_ahora_local
+        intervalo = resolver_intervalo_temporal(texto)
+        if not intervalo:
+            ahora = obtener_ahora_local()
+            desc_periodo = "el periodo consultado"
+            filtro_tiempo = {}
+        else:
+            desc_periodo = intervalo.descripcion_legible
+            filtro_tiempo = {
+                "fecha_hora__gte": intervalo.inicio,
+                "fecha_hora__lt": intervalo.fin,
+            }
+
         qs_mov = Movimiento.objects.filter(
             producto=producto,
             estado=Movimiento.Estado.CONFIRMADO,
-        )
-        if usuario.es_usuario_normal:
-            if usuario.almacen_asignado:
-                qs_mov = qs_mov.filter(almacen_origen=usuario.almacen_asignado)
+            **filtro_tiempo,
+        ).select_related("almacen_origen", "almacen_destino")
+
+        # Filtrar almacenes según permisos
+        if intencion.almacen:
+            almacen_filtrado, error_resp = _validar_acceso_almacen(usuario, intencion.almacen)
+            if error_resp:
+                return error_resp
+            qs_mov = qs_mov.filter(Q(almacen_origen=almacen_filtrado) | Q(almacen_destino=almacen_filtrado)).distinct()
+            desc_periodo += f" en {almacen_filtrado.nombre}"
+        elif usuario.es_usuario_normal:
+            if usuario.acceso_todos_almacenes:
+                pass
             else:
-                msg = "Tu cuenta de usuario no tiene un almacén asignado para consultar movimientos."
-                return {"tipo": "consulta", "mensaje_pantalla": msg, "mensaje_verbal": normalizar_para_tts(msg), "datos": {}}
+                alms = usuario.obtener_almacenes_accesibles()
+                if not alms.exists():
+                    msg = "Tu cuenta de usuario no tiene un almacén asignado para consultar movimientos."
+                    return {"tipo": "consulta", "mensaje_pantalla": msg, "mensaje_verbal": normalizar_para_tts(msg), "datos": {}}
+                qs_mov = qs_mov.filter(Q(almacen_origen__in=alms) | Q(almacen_destino__in=alms)).distinct()
 
         total_mov = qs_mov.count()
         entradas = qs_mov.filter(tipo=Movimiento.Tipo.ENTRADA).count()
         salidas = qs_mov.filter(tipo=Movimiento.Tipo.SALIDA).count()
         prestamos = qs_mov.filter(tipo=Movimiento.Tipo.PRESTAMO).count()
         devoluciones = qs_mov.filter(tipo=Movimiento.Tipo.DEVOLUCION).count()
+        traslados = qs_mov.filter(tipo__in=[Movimiento.Tipo.TRASLADO_ENTRE, Movimiento.Tipo.TRASLADO_INTERNO]).count()
 
         if estado_operativo:
             estado_operativo.registrar_accion(
@@ -1107,20 +1436,29 @@ def procesar_comando_inventario(
             HakuOperationalContext.guardar(estado_operativo)
 
         if total_mov == 0:
-            pantalla = f"El producto {producto.nombre} (`{producto.codigo_interno}`) no registra movimientos de inventario en el periodo consultado."
-            verbal = f"El producto {producto.nombre} no registra movimientos de inventario en el periodo consultado."
+            pantalla = f"El producto {producto.nombre} (`{producto.codigo_interno}`) no registra movimientos de inventario en {desc_periodo}."
+            verbal = f"El producto {producto.nombre} no registra movimientos de inventario en {desc_periodo}."
         else:
+            detalle_lineas = []
+            for m in qs_mov[:8]:
+                fecha_str = m.fecha_hora.astimezone(obtener_ahora_local().tzinfo).strftime("%d/%m %H:%M")
+                alm_txt = m.almacen_origen.nombre if m.almacen_origen else ""
+                if m.almacen_destino:
+                    alm_txt += f" ➔ {m.almacen_destino.nombre}"
+                detalle_lineas.append(f"- `{fecha_str}` | **{m.get_tipo_display()}**: {m.cantidad} uds ({alm_txt})")
+
+            bloque_det = "\n".join(detalle_lineas)
+            extra_pag = f"\n\n*(Mostrando primeros 8 de {total_mov} movimientos)*" if total_mov > 8 else ""
+
             pantalla = (
-                f"### Movimientos de {producto.nombre} (`{producto.codigo_interno}`)\n"
+                f"### Movimientos de {producto.nombre} (`{producto.codigo_interno}`) — {desc_periodo}\n"
                 f"El {producto.nombre} tuvo **{total_mov}** movimientos:\n"
-                f"- **{entradas}** entradas\n"
-                f"- **{salidas}** salidas\n"
-                f"- **{prestamos}** préstamos\n"
-                f"- **{devoluciones}** devoluciones"
+                f"- **{entradas}** entradas | **{salidas}** salidas | **{prestamos}** préstamos | **{devoluciones}** devoluciones | **{traslados}** traslados\n\n"
+                f"**Detalle de actividad:**\n{bloque_det}{extra_pag}"
             )
             verbal = (
-                f"El {producto.nombre} tuvo {total_mov} movimientos: "
-                f"{entradas} entradas, {salidas} salidas y {prestamos} préstamos."
+                f"El producto {producto.nombre} tuvo {total_mov} movimientos durante {desc_periodo}: "
+                f"{entradas} entradas, {salidas} salidas, {prestamos} préstamos y {traslados} traslados."
             )
         return {
             "tipo": "consulta",
@@ -1130,11 +1468,13 @@ def procesar_comando_inventario(
                 "producto_id": str(producto.id),
                 "codigo": producto.codigo_interno,
                 "nombre": producto.nombre,
+                "periodo": desc_periodo,
                 "total": total_mov,
                 "entradas": entradas,
                 "salidas": salidas,
                 "prestamos": prestamos,
                 "devoluciones": devoluciones,
+                "traslados": traslados,
             },
         }
 
@@ -1382,7 +1722,7 @@ def procesar_comando_inventario(
             lineas_voz = [f"Ubicación de {len(coleccion)} productos:"]
         lista_datos = []
 
-        almacen_usuario = usuario.almacen_asignado if (usuario.es_usuario_normal and usuario.almacen_asignado) else None
+        alms_usuario = list(usuario.obtener_almacenes_accesibles()) if usuario.es_usuario_normal and not usuario.acceso_todos_almacenes else []
 
         for item in coleccion:
             prod_id = item.get("id") or item.get("producto_id")
@@ -1390,7 +1730,15 @@ def procesar_comando_inventario(
             if not prod:
                 continue
 
-            alm = almacen_usuario or prod.categoria.almacen_principal
+            alm = None
+            if alms_usuario:
+                alm_cat = getattr(prod.categoria, "almacen_principal", None)
+                if alm_cat and alm_cat in alms_usuario:
+                    alm = alm_cat
+                else:
+                    alm = alms_usuario[0]
+            else:
+                alm = getattr(prod.categoria, "almacen_principal", None)
             ubicaciones = HakuCacheManager.obtener_o_cargar_ubicacion(prod)
             nombre_alm = alm.nombre if alm else "Sin almacén"
 
@@ -1610,7 +1958,15 @@ def procesar_comando_inventario(
             msg = f"¿Cuántas unidades de {producto.nombre} vas a ingresar?"
             return {"tipo": "aclaracion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
 
-        almacen = usuario.almacen_asignado if (usuario.es_usuario_normal and usuario.almacen_asignado) else producto.categoria.almacen_principal
+        almacen, error_almacen = _resolver_almacen_para_operacion(
+            usuario=usuario,
+            almacen_intencion=intencion.almacen,
+            producto=producto,
+            operacion="entrada",
+        )
+        if error_almacen:
+            return error_almacen
+
         if not usuario.tiene_acceso_almacen(almacen):
             raise PermissionDenied("No tienes acceso al almacén de este producto.")
 
@@ -1645,6 +2001,7 @@ def procesar_comando_inventario(
             HakuOperationalContext.guardar(estado_operativo)
         if sesion is not None:
             sesion["haku_propuesta_activa"] = propuesta
+        HakuDiagnostico.registrar_propuesta("generada")
 
         verbal = (
             f"Vas a registrar la entrada de {cantidad} unidades de {producto.nombre} "
@@ -1688,9 +2045,9 @@ def procesar_comando_inventario(
         if not motivo:
             motivo = f"Salida registrada por Haku para {destinatario}"
 
-        almacen = usuario.almacen_asignado if (usuario.es_usuario_normal and usuario.almacen_asignado) else producto.categoria.almacen_principal
-        if not usuario.tiene_acceso_almacen(almacen):
-            raise PermissionDenied("No tienes acceso al almacén de este producto.")
+        almacen, error_resp = _resolver_almacen_para_operacion(usuario, intencion.almacen, producto, operacion="salida")
+        if error_resp:
+            return error_resp
 
         existencia = Existencia.objects.filter(producto=producto, almacen=almacen).first()
         disponible = existencia.stock_disponible if existencia else 0
@@ -1729,14 +2086,21 @@ def procesar_comando_inventario(
             HakuOperationalContext.guardar(estado_operativo)
         if sesion is not None:
             sesion["haku_propuesta_activa"] = propuesta
+        HakuDiagnostico.registrar_propuesta("generada")
+
+        es_dotacion = bool(motivo and "dotación" in motivo.lower() or "entrega definitiva" in motivo.lower())
+        tipo_op_label = "Dotación / Entrega definitiva (consumo oficial)" if es_dotacion else "Salida de stock"
 
         verbal = (
+            f"Vas a registrar la dotación de {cantidad} unidades de {producto.nombre} para {destinatario}. "
+            f"Es una salida definitiva de inventario. ¿Deseas confirmar la operación?"
+            if es_dotacion else
             f"Vas a registrar la salida de {cantidad} unidades de {producto.nombre} para {destinatario}, "
             f"con motivo {motivo}. ¿Deseas confirmar la operación?"
         )
         pantalla = (
             f"### Propuesta pendiente de confirmación\n"
-            f"- **Operación:** Salida de stock\n"
+            f"- **Operación:** {tipo_op_label}\n"
             f"- **Producto:** {producto.nombre} (`{producto.codigo_interno}`)\n"
             f"- **Cantidad:** -{cantidad} unidades\n"
             f"- **Almacén:** {almacen.nombre}\n"
@@ -1758,8 +2122,9 @@ def procesar_comando_inventario(
         qs_prestamos = Prestamo.objects.filter(
             estado__in=[Prestamo.Estado.ABIERTO, Prestamo.Estado.DEVUELTO_PARCIAL]
         ).select_related("producto", "almacen")
-        if usuario.es_usuario_normal and usuario.almacen_asignado:
-            qs_prestamos = qs_prestamos.filter(almacen=usuario.almacen_asignado)
+        if usuario.es_usuario_normal and not usuario.acceso_todos_almacenes:
+            alms_usuario = usuario.obtener_almacenes_accesibles()
+            qs_prestamos = qs_prestamos.filter(almacen__in=alms_usuario)
 
         prestamo = None
         if destinatario:
@@ -1816,6 +2181,7 @@ def procesar_comando_inventario(
             HakuOperationalContext.guardar(estado_operativo)
         if sesion is not None:
             sesion["haku_propuesta_activa"] = propuesta
+        HakuDiagnostico.registrar_propuesta("generada")
 
         verbal = (
             f"Vas a registrar la devolución de {cantidad_dev} unidades de {prestamo.producto.nombre} "
@@ -1852,12 +2218,32 @@ def procesar_comando_inventario(
             msg = f"¿Cuántas unidades de {producto.nombre} se van a prestar?"
             return {"tipo": "aclaracion", "mensaje_pantalla": msg, "mensaje_verbal": msg}
 
-        if not destinatario:
-            if cantidad == 1:
-                msg = f"¿A quién se le prestará 1 unidad de {producto.nombre}?"
+        # Validación y normalización robusta del destinatario
+        from .servicios_personas import HakuPersonasService
+        
+        # Determinar si el origen fue voz
+        origen_voz = bool(sesion and sesion.get("haku_ultimo_origen") == "voz")
+
+        nombre_canonico, confianza, candidatos_similares, requiere_escritura = HakuPersonasService.resolver_destinatario(
+            destinatario, origen_voz=origen_voz
+        )
+
+        if not destinatario or requiere_escritura or not nombre_canonico:
+            if not destinatario:
+                msg = (
+                    "¿A quién se lo vas a prestar? Escribe el nombre de la persona para registrarlo correctamente."
+                )
+            elif candidatos_similares and len(candidatos_similares) > 1:
+                cand_str = ", ".join(candidatos_similares[:3])
+                msg = (
+                    f"Encontré varias personas con nombres similares ({cand_str}). "
+                    "Por favor escribe el nombre completo de la persona para evitar registrar a otra persona por error."
+                )
             else:
-                msg = f"¿A quién se le prestarán las {cantidad} unidades de {producto.nombre}?"
-            
+                msg = (
+                    "No pude identificar con seguridad el nombre. Escríbelo para evitar registrar a otra persona por error."
+                )
+
             if estado_operativo:
                 estado_operativo.operacion_pendiente = {
                     "tipo": "PRESTAMO",
@@ -1866,11 +2252,21 @@ def procesar_comando_inventario(
                     "cantidad": cantidad,
                 }
                 HakuOperationalContext.guardar(estado_operativo)
-            return {"tipo": "aclaracion", "mensaje_pantalla": msg, "mensaje_verbal": normalizar_para_tts(msg)}
+            return {
+                "tipo": "aclaracion",
+                "esperando": "destinatario",
+                "requiere_escritura": True,
+                "candidatos": candidatos_similares,
+                "mensaje_pantalla": msg,
+                "mensaje_verbal": normalizar_para_tts(msg),
+            }
 
-        almacen = usuario.almacen_asignado if (usuario.es_usuario_normal and usuario.almacen_asignado) else producto.categoria.almacen_principal
-        if not usuario.tiene_acceso_almacen(almacen):
-            raise PermissionDenied("No tienes acceso al almacén de este producto.")
+        # Asignar el nombre canónico oficial verificado
+        destinatario = nombre_canonico
+
+        almacen, error_resp = _resolver_almacen_para_operacion(usuario, intencion.almacen, producto, operacion="préstamo")
+        if error_resp:
+            return error_resp
 
         existencia = Existencia.objects.filter(producto=producto, almacen=almacen).first()
         disponible = existencia.stock_disponible if existencia else 0
@@ -1910,6 +2306,7 @@ def procesar_comando_inventario(
             HakuOperationalContext.guardar(estado_operativo)
         if sesion is not None:
             sesion["haku_propuesta_activa"] = propuesta
+        HakuDiagnostico.registrar_propuesta("generada")
 
         unidad_txt = "1 unidad" if cantidad == 1 else f"{cantidad} unidades"
         verbal = (
@@ -1986,6 +2383,8 @@ def procesar_comando_inventario(
                 "nombre_completo": u.nombre_completo,
                 "rol": u.rol,
                 "almacen_asignado_id": u.almacen_asignado_id,
+                "almacenes_asignados_ids": list(u.almacenes_asignados.values_list("id", flat=True)),
+                "acceso_todos_almacenes": u.acceso_todos_almacenes,
                 "is_active": u.is_active,
             }
             for u in qs_usuarios
@@ -2056,6 +2455,144 @@ def procesar_comando_inventario(
         }
 
     # 12. Inhabilitación de producto
+    # ─────────────────────────────────────────────────────────────────────────
+    # C-6. TRASLADO ENTRE ALMACENES (TRASLADAR_PRODUCTO)
+    # ─────────────────────────────────────────────────────────────────────────
+    if intencion.tipo == IntencionTipo.TRASLADAR_PRODUCTO:
+        producto = intencion.producto
+        if not producto:
+            msg = "Indica el nombre o código del producto que deseas trasladar entre almacenes."
+            return {"tipo": "aclaracion", "mensaje_pantalla": msg, "mensaje_verbal": normalizar_para_tts(msg)}
+
+        almacen_origen, acceso_msg = _validar_acceso_almacen(usuario, intencion.almacen)
+        if acceso_msg:
+            if isinstance(acceso_msg, dict):
+                return acceso_msg
+            return {"tipo": "error", "mensaje_pantalla": acceso_msg, "mensaje_verbal": normalizar_para_tts(acceso_msg)}
+
+        # Determinar almacén destino
+        almacen_destino_id = (intencion.datos_extra or {}).get("almacen_destino_id")
+        almacen_destino_nombre = (intencion.datos_extra or {}).get("almacen_destino_nombre")
+
+        if not almacen_origen:
+            alms_acc = list(usuario.obtener_almacenes_accesibles())
+            if len(alms_acc) == 1:
+                almacen_origen = alms_acc[0]
+            elif estado_operativo and getattr(estado_operativo, "almacen_id", None):
+                almacen_origen = Almacen.objects.filter(id=estado_operativo.almacen_id, activo=True).first()
+            if not almacen_origen:
+                # Seleccionar almacén donde el producto tenga stock disponible diferente al destino
+                ex_qs = Existencia.objects.filter(producto=producto, stock_disponible__gt=0)
+                if usuario.es_usuario_normal and not usuario.acceso_todos_almacenes:
+                    ex_qs = ex_qs.filter(almacen__in=alms_acc)
+                if almacen_destino_id:
+                    ex_qs = ex_qs.exclude(almacen_id=almacen_destino_id)
+                ex_con_stock = ex_qs.first()
+                if ex_con_stock:
+                    almacen_origen = ex_con_stock.almacen
+                else:
+                    alm_cat = getattr(producto.categoria, "almacen_principal", None)
+                    if alm_cat and usuario.tiene_acceso_almacen(alm_cat):
+                        almacen_origen = alm_cat
+
+        if not almacen_origen:
+            msg = f"¿Desde cuál almacén deseas trasladar el producto **{producto.nombre}**?"
+            return {"tipo": "aclaracion", "mensaje_pantalla": msg, "mensaje_verbal": normalizar_para_tts(msg)}
+
+        if not almacen_destino_id:
+            msg = (
+                f"Producto: **{producto.nombre}** (`{producto.codigo_interno}`).\n"
+                f"Almacén origen: **{almacen_origen.nombre}**.\n\n"
+                f"¿A cuál almacén o bodega deseas trasladar este producto?"
+            )
+            return {"tipo": "aclaracion", "mensaje_pantalla": msg, "mensaje_verbal": normalizar_para_tts(
+                f"El producto {producto.nombre} está en el almacén {almacen_origen.nombre}. ¿A cuál almacén deseas trasladarlo?"
+            )}
+
+        # Validar que destino existe y es diferente al origen
+        try:
+            almacen_destino = Almacen.objects.get(id=almacen_destino_id, activo=True)
+        except Almacen.DoesNotExist:
+            msg = f"El almacén destino '{almacen_destino_nombre or almacen_destino_id}' no existe o fue desactivado."
+            return {"tipo": "error", "mensaje_pantalla": msg, "mensaje_verbal": normalizar_para_tts(msg)}
+
+        if not usuario.tiene_acceso_almacen(almacen_destino):
+            msg = f"No tienes autorización para trasladar mercancía hacia el almacén '{almacen_destino.nombre}'."
+            return {"tipo": "error", "mensaje_pantalla": msg, "mensaje_verbal": normalizar_para_tts(msg)}
+
+        if almacen_destino.id == almacen_origen.id:
+            msg = "El almacén de origen y destino son el mismo. Selecciona un almacén diferente como destino."
+            return {"tipo": "aclaracion", "mensaje_pantalla": msg, "mensaje_verbal": normalizar_para_tts(msg)}
+
+        cantidad = intencion.cantidad or 1
+
+        # Verificar stock disponible antes de proponer
+        existencia = Existencia.objects.filter(producto=producto, almacen=almacen_origen).first()
+        stock_actual = existencia.stock_disponible if existencia else 0
+        if stock_actual < cantidad:
+            msg = (
+                f"Stock insuficiente para el traslado. "
+                f"El producto **{producto.nombre}** tiene **{stock_actual}** unidades disponibles "
+                f"en **{almacen_origen.nombre}**, pero se solicitaron **{cantidad}**."
+            )
+            return {"tipo": "error", "mensaje_pantalla": msg, "mensaje_verbal": normalizar_para_tts(
+                f"Stock insuficiente. Solo hay {stock_actual} unidades disponibles de {producto.nombre} en {almacen_origen.nombre}."
+            )}
+
+        propuesta = {
+            "id": str(uuid.uuid4()),
+            "tipo_operacion": Movimiento.Tipo.TRASLADO_ENTRE,
+            "producto_id": producto.id,
+            "producto_nombre": producto.nombre,
+            "producto_codigo": producto.codigo_interno,
+            "almacen_origen_id": almacen_origen.id,
+            "almacen_origen_nombre": almacen_origen.nombre,
+            "almacen_destino_id": almacen_destino.id,
+            "almacen_destino_nombre": almacen_destino.nombre,
+            "cantidad": cantidad,
+            "motivo": f"Traslado vía Haku de {almacen_origen.nombre} a {almacen_destino.nombre}",
+            "creado_en": time.time(),
+            "expira_en": time.time() + HAKU_PROPUESTA_TIMEOUT_SEGUNDOS,
+        }
+
+        if estado_operativo:
+            estado_operativo.propuesta_activa = propuesta
+            estado_operativo.registrar_accion(
+                "PROPUESTA_TRASLADO",
+                producto=producto.nombre,
+                producto_id=producto.id,
+                codigo=producto.codigo_interno,
+                cantidad=cantidad,
+                detalles={
+                    "almacen_origen": almacen_origen.nombre,
+                    "almacen_destino": almacen_destino.nombre,
+                },
+            )
+            HakuOperationalContext.guardar(estado_operativo)
+        HakuDiagnostico.registrar_propuesta("generada")
+
+        pantalla = (
+            f"### Propuesta de traslado pendiente de confirmación\n"
+            f"- **Operación:** Traslado entre almacenes\n"
+            f"- **Producto:** {producto.nombre} (`{producto.codigo_interno}`)\n"
+            f"- **Cantidad:** {cantidad} unidades\n"
+            f"- **Origen:** {almacen_origen.nombre}\n"
+            f"- **Destino:** {almacen_destino.nombre}\n"
+            f"- **Stock actual en origen:** {stock_actual} unidades\n\n"
+            f"¿Confirmas el traslado?"
+        )
+        verbal = (
+            f"¿Confirmas trasladar {cantidad} unidades de {producto.nombre} "
+            f"desde {almacen_origen.nombre} hacia {almacen_destino.nombre}?"
+        )
+        return {
+            "tipo": "propuesta",
+            "requiere_confirmacion": True,
+            "propuesta": propuesta,
+            "mensaje_pantalla": pantalla,
+            "mensaje_verbal": normalizar_para_tts(verbal),
+        }
+
     if intencion.tipo == IntencionTipo.INHABILITAR_PRODUCTO:
         if usuario.es_usuario_normal:
             raise PermissionDenied("Solo los Administradores o Superusuarios pueden inhabilitar o archivar productos.")
@@ -2064,6 +2601,15 @@ def procesar_comando_inventario(
         if not producto:
             msg = "¿Cuál producto deseas inhabilitar o archivar del inventario?"
             return {"tipo": "aclaracion", "mensaje_pantalla": msg, "mensaje_verbal": normalizar_para_tts(msg)}
+
+        # Comprobar estado real: si ya está inactivo o archivado, informar
+        if not producto.activo or producto.archivado:
+            msg = f"El producto {producto.nombre} ({producto.codigo_interno}) ya se encuentra inhabilitado en el sistema."
+            return {
+                "tipo": "consulta",
+                "mensaje_pantalla": f"⚠️ {msg}",
+                "mensaje_verbal": normalizar_para_tts(msg),
+            }
 
         propuesta = {
             "id": str(uuid.uuid4()),
@@ -2084,6 +2630,7 @@ def procesar_comando_inventario(
                 codigo=producto.codigo_interno,
             )
             HakuOperationalContext.guardar(estado_operativo)
+        HakuDiagnostico.registrar_propuesta("generada")
 
         verbal = f"¿Deseas confirmar la inhabilitación del producto {producto.nombre} con código {producto.codigo_interno}?"
         pantalla = (
@@ -2092,6 +2639,61 @@ def procesar_comando_inventario(
             f"- **Producto:** {producto.nombre} (`{producto.codigo_interno}`)\n"
             f"- **Estado actual:** {'Activo' if producto.activo else 'Inactivo'}\n\n"
             f"*Esta acción ocultará el producto de las listas operativas sin borrar su historial.*"
+        )
+        return {
+            "tipo": "propuesta",
+            "requiere_confirmacion": True,
+            "propuesta": propuesta,
+            "mensaje_pantalla": pantalla,
+            "mensaje_verbal": normalizar_para_tts(verbal),
+        }
+
+    if intencion.tipo == IntencionTipo.HABILITAR_PRODUCTO:
+        if usuario.es_usuario_normal:
+            raise PermissionDenied("Solo los Administradores o Superusuarios pueden habilitar o reactivar productos.")
+
+        producto = intencion.producto
+        if not producto:
+            msg = "¿Cuál producto deseas habilitar o reactivar en el inventario?"
+            return {"tipo": "aclaracion", "mensaje_pantalla": msg, "mensaje_verbal": normalizar_para_tts(msg)}
+
+        # Comprobar estado real: si ya está activo y no archivado, informar
+        if producto.activo and not producto.archivado:
+            msg = f"El producto {producto.nombre} ({producto.codigo_interno}) ya se encuentra activo y habilitado en el sistema."
+            return {
+                "tipo": "consulta",
+                "mensaje_pantalla": f"ℹ️ {msg}",
+                "mensaje_verbal": normalizar_para_tts(msg),
+            }
+
+        propuesta = {
+            "id": str(uuid.uuid4()),
+            "tipo_operacion": "HABILITAR_PRODUCTO",
+            "producto_id": producto.id,
+            "producto_nombre": producto.nombre,
+            "producto_codigo": producto.codigo_interno,
+            "creado_en": time.time(),
+            "expira_en": time.time() + HAKU_PROPUESTA_TIMEOUT_SEGUNDOS,
+        }
+
+        if estado_operativo:
+            estado_operativo.propuesta_activa = propuesta
+            estado_operativo.registrar_accion(
+                "PROPUESTA_HABILITAR",
+                producto=producto.nombre,
+                producto_id=producto.id,
+                codigo=producto.codigo_interno,
+            )
+            HakuOperationalContext.guardar(estado_operativo)
+        HakuDiagnostico.registrar_propuesta("generada")
+
+        verbal = f"¿Deseas confirmar la habilitación y reactivación del producto {producto.nombre} con código {producto.codigo_interno}?"
+        pantalla = (
+            f"### Propuesta pendiente de confirmación\n"
+            f"- **Operación:** Habilitar / reactivar producto\n"
+            f"- **Producto:** {producto.nombre} (`{producto.codigo_interno}`)\n"
+            f"- **Estado actual:** {'Activo' if producto.activo else 'Inactivo / Archivado'}\n\n"
+            f"*Esta acción reactivará el producto para operaciones ordinarias en el inventario.*"
         )
         return {
             "tipo": "propuesta",
@@ -2165,7 +2767,7 @@ def ejecutar_confirmacion_propuesta(
 
     tipo_op = propuesta.get("tipo_operacion")
     cantidad = int(propuesta.get("cantidad", 0)) if propuesta.get("cantidad") is not None else 0
-    if tipo_op != "INHABILITAR_PRODUCTO" and cantidad <= 0:
+    if tipo_op not in ("INHABILITAR_PRODUCTO", "HABILITAR_PRODUCTO") and cantidad <= 0:
         raise ValidationError("La cantidad debe ser mayor a cero.")
 
     # Generar o validar idempotency_key
@@ -2173,19 +2775,20 @@ def ejecutar_confirmacion_propuesta(
         idempotency_key = f"haku-{propuesta['id']}-{uuid.uuid4().hex[:8]}"
 
     # Verificar si ya fue procesada con esta clave de idempotencia
-    if tipo_op == "INHABILITAR_PRODUCTO":
+    if tipo_op in ("INHABILITAR_PRODUCTO", "HABILITAR_PRODUCTO"):
         aud_existente = Auditoria.objects.filter(
-            accion="INHABILITAR_PRODUCTO",
+            accion=tipo_op,
             tipo_entidad="Producto",
             id_entidad=str(propuesta["producto_id"]),
             motivo__contains=idempotency_key,
         ).first()
         if aud_existente:
+            op_label = "inhabilitación" if tipo_op == "INHABILITAR_PRODUCTO" else "habilitación"
             return {
                 "exito": True,
                 "idempotente": True,
                 "movimiento_id": None,
-                "mensaje_pantalla": f"La inhabilitación de este producto ya fue confirmada y ejecutada previamente.",
+                "mensaje_pantalla": f"La {op_label} de este producto ya fue confirmada y ejecutada previamente.",
                 "mensaje_verbal": "Esta operación ya había sido confirmada previamente.",
             }
     else:
@@ -2201,20 +2804,52 @@ def ejecutar_confirmacion_propuesta(
 
     try:
         with transaction.atomic():
-            # Bloquear producto con select_for_update() y revalidar que sigue activo
-            try:
-                producto = (
-                    Producto.objects.select_for_update()
-                    .get(id=propuesta["producto_id"], activo=True, archivado=False)
-                )
-            except Producto.DoesNotExist:
-                raise ValidationError("El producto asociado a la propuesta ya no existe o fue dado de baja.")
+            # Si es habilitación o inhabilitación de producto, no requiere almacén de origen ni existencias
+            if tipo_op == "HABILITAR_PRODUCTO":
+                if usuario.es_usuario_normal:
+                    raise PermissionDenied("Solo los Administradores o Superusuarios pueden habilitar o reactivar productos.")
+                try:
+                    producto = Producto.objects.select_for_update().get(id=propuesta["producto_id"])
+                except Producto.DoesNotExist:
+                    raise ValidationError("El producto asociado a la propuesta no existe.")
 
-            # Si es inhabilitación de producto, no requiere almacén de origen ni existencias
+                val_ant = {"activo": producto.activo, "archivado": producto.archivado}
+                producto.activo = True
+                producto.archivado = False
+                producto.save(update_fields=["activo", "archivado"])
+
+                Auditoria.objects.create(
+                    usuario=usuario,
+                    accion="HABILITAR_PRODUCTO",
+                    tipo_entidad="Producto",
+                    id_entidad=str(producto.id),
+                    valores_anteriores=val_ant,
+                    valores_nuevos={"activo": True, "archivado": False},
+                    motivo=f"Producto habilitado/reactivado vía Haku [idempotency:{idempotency_key}] desde IP {ip_origen}",
+                    resultado="OK",
+                    via_haku=True,
+                )
+                from .cache import HakuCacheManager
+                HakuCacheManager.invalidar_catalogo()
+                HakuCacheManager.invalidar_stock(producto.id)
+                HakuCacheManager.invalidar_ubicaciones(producto.id)
+                msg_ok = f"El producto {producto.nombre} ({producto.codigo_interno}) ha sido habilitado y reactivado correctamente."
+                return {
+                    "exito": True,
+                    "movimiento_id": None,
+                    "mensaje_pantalla": msg_ok,
+                    "mensaje_verbal": normalizar_para_tts(f"El producto {producto.nombre} fue reactivado correctamente."),
+                }
+
             if tipo_op == "INHABILITAR_PRODUCTO":
                 if usuario.es_usuario_normal:
                     raise PermissionDenied("Solo los Administradores o Superusuarios pueden inhabilitar o archivar productos.")
-                producto = Producto.objects.select_for_update().get(id=propuesta["producto_id"])
+                try:
+                    producto = Producto.objects.select_for_update().get(id=propuesta["producto_id"])
+                except Producto.DoesNotExist:
+                    raise ValidationError("El producto asociado a la propuesta no existe.")
+
+                val_ant = {"activo": producto.activo, "archivado": producto.archivado}
                 producto.activo = False
                 producto.archivado = True
                 producto.save(update_fields=["activo", "archivado"])
@@ -2224,7 +2859,7 @@ def ejecutar_confirmacion_propuesta(
                     accion="INHABILITAR_PRODUCTO",
                     tipo_entidad="Producto",
                     id_entidad=str(producto.id),
-                    valores_anteriores={"activo": True, "archivado": False},
+                    valores_anteriores=val_ant,
                     valores_nuevos={"activo": False, "archivado": True},
                     motivo=f"Producto inhabilitado/archivado vía Haku [idempotency:{idempotency_key}] desde IP {ip_origen}",
                     resultado="OK",
@@ -2241,6 +2876,15 @@ def ejecutar_confirmacion_propuesta(
                     "mensaje_pantalla": msg_ok,
                     "mensaje_verbal": normalizar_para_tts(f"El producto {producto.nombre} fue inhabilitado correctamente."),
                 }
+
+            # Bloquear producto con select_for_update() y revalidar que sigue activo para operaciones de stock
+            try:
+                producto = (
+                    Producto.objects.select_for_update()
+                    .get(id=propuesta["producto_id"], activo=True, archivado=False)
+                )
+            except Producto.DoesNotExist:
+                raise ValidationError("El producto asociado a la propuesta ya no existe o fue dado de baja.")
 
             # Bloquear almacén con select_for_update() y revalidar acceso
             try:
@@ -2373,6 +3017,102 @@ def ejecutar_confirmacion_propuesta(
                     usuario=usuario,
                     movimiento=movimiento,
                 )
+
+            elif tipo_op == Movimiento.Tipo.TRASLADO_ENTRE:
+                # Traslado entre almacenes: decrementa origen, incrementa destino (atómico)
+                if stock_ant < cantidad:
+                    raise ValidationError(
+                        f"Stock insuficiente para el traslado: {stock_ant} disponibles en origen, se solicitaron {cantidad}."
+                    )
+
+                try:
+                    almacen_destino = Almacen.objects.select_for_update().get(
+                        id=propuesta["almacen_destino_id"], activo=True
+                    )
+                except Almacen.DoesNotExist:
+                    raise ValidationError("El almacén destino ya no existe o fue desactivado.")
+
+                if not usuario.tiene_acceso_almacen(almacen_destino):
+                    raise PermissionDenied("No tienes permisos para operar en el almacén de destino.")
+
+                if almacen_destino.id == almacen.id:
+                    raise ValidationError("El almacén de origen y destino son el mismo.")
+
+                # Decrementar existencia en origen
+                stock_post = stock_ant - cantidad
+                existencia.stock_disponible = stock_post
+                existencia.save(update_fields=["stock_disponible"])
+
+                # Incrementar existencia en destino
+                existencia_destino, _ = Existencia.objects.select_for_update().get_or_create(
+                    producto=producto,
+                    almacen=almacen_destino,
+                    defaults={"stock_disponible": 0, "stock_en_prestamo": 0},
+                )
+                stock_destino_ant = existencia_destino.stock_disponible
+                existencia_destino.stock_disponible += cantidad
+                existencia_destino.save(update_fields=["stock_disponible"])
+
+                movimiento = Movimiento.objects.create(
+                    clave_idempotencia=idempotency_key,
+                    tipo=Movimiento.Tipo.TRASLADO_ENTRE,
+                    producto=producto,
+                    cantidad=cantidad,
+                    almacen_origen=almacen,
+                    almacen_destino=almacen_destino,
+                    usuario=usuario,
+                    motivo=propuesta.get("motivo", "Traslado entre almacenes vía Haku"),
+                    stock_disponible_anterior=stock_ant,
+                    stock_disponible_posterior=stock_post,
+                )
+
+                # Auditoría del traslado con información de ambos almacenes
+                Auditoria.objects.create(
+                    usuario=usuario,
+                    accion="TRASLADO_ENTRE",
+                    tipo_entidad="Producto",
+                    id_entidad=str(producto.id),
+                    valores_anteriores={
+                        "stock_origen": stock_ant,
+                        "stock_destino": stock_destino_ant,
+                        "almacen_origen_id": almacen.id,
+                        "almacen_destino_id": almacen_destino.id,
+                    },
+                    valores_nuevos={
+                        "stock_origen": stock_post,
+                        "stock_destino": existencia_destino.stock_disponible,
+                        "almacen_origen_id": almacen.id,
+                        "almacen_destino_id": almacen_destino.id,
+                    },
+                    motivo=f"Traslado confirmado vía Haku desde IP {ip_origen}: {propuesta.get('motivo', '')}",
+                    resultado="OK",
+                    via_haku=True,
+                )
+
+                # Invalidar caché de stock para ambos almacenes
+                from .cache import HakuCacheManager
+                from .diagnostico import HakuDiagnostico
+                HakuCacheManager.invalidar_stock(producto.id, almacen.id)
+                HakuCacheManager.invalidar_stock(producto.id, almacen_destino.id)
+                HakuDiagnostico.registrar_propuesta("confirmada")
+                HakuDiagnostico.registrar_traslado()
+
+                mensaje_exito = (
+                    f"Traslado confirmado. Movimiento #{movimiento.id} registrado. "
+                    f"{cantidad} unidades de {producto.nombre} trasladadas de {almacen.nombre} a {almacen_destino.nombre}. "
+                    f"Stock en origen: {stock_post}. Stock en destino: {existencia_destino.stock_disponible}."
+                )
+                return {
+                    "exito": True,
+                    "movimiento_id": movimiento.id,
+                    "stock_nuevo": stock_post,
+                    "mensaje_pantalla": mensaje_exito,
+                    "mensaje_verbal": normalizar_para_tts(
+                        f"Traslado confirmado. {cantidad} unidades trasladadas. "
+                        f"Stock en origen: {stock_post}. Stock en destino: {existencia_destino.stock_disponible}."
+                    ),
+                }
+
             else:
                 raise ValidationError(f"Tipo de operación '{tipo_op}' no soportado vía Haku.")
 
@@ -2403,7 +3143,9 @@ def ejecutar_confirmacion_propuesta(
 
     # Invalidar caché de stock inmediatamente tras confirmación exitosa
     from .cache import HakuCacheManager
+    from .diagnostico import HakuDiagnostico
     HakuCacheManager.invalidar_stock(producto.id, almacen.id)
+    HakuDiagnostico.registrar_propuesta("confirmada")
 
     mensaje_exito = (
         f"Transacción confirmada con éxito. Movimiento #{movimiento.id} registrado. "

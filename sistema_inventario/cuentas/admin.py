@@ -8,15 +8,15 @@ from .models import IntentoFallido, UsuarioAudacIA
 class UsuarioAudacIAAdmin(UserAdmin):
     """Admin personalizado: muestra los campos del modelo propio."""
 
-    list_display = ("username", "nombre_completo", "rol", "almacen_asignado", "is_active")
-    list_filter = ("rol", "is_active", "eliminado_logicamente")
+    list_display = ("username", "nombre_completo", "rol", "almacen_asignado", "acceso_todos_almacenes", "is_active")
+    list_filter = ("rol", "acceso_todos_almacenes", "is_active", "eliminado_logicamente")
     search_fields = ("username", "nombre_completo")
     ordering = ("username",)
 
     fieldsets = (
         (None, {"fields": ("username", "password")}),
         ("Información personal", {"fields": ("nombre_completo", "email")}),
-        ("Rol y almacén", {"fields": ("rol", "almacen_asignado")}),
+        ("Rol y almacenes", {"fields": ("rol", "almacen_asignado", "almacenes_asignados", "acceso_todos_almacenes")}),
         ("Permisos", {"fields": ("is_active", "is_staff", "is_superuser",
                                   "eliminado_logicamente", "groups", "user_permissions")}),
         ("Fechas", {"fields": ("last_login",)}),
@@ -26,7 +26,7 @@ class UsuarioAudacIAAdmin(UserAdmin):
         (None, {
             "classes": ("wide",),
             "fields": ("username", "nombre_completo", "rol",
-                       "almacen_asignado", "password1", "password2"),
+                       "almacen_asignado", "almacenes_asignados", "acceso_todos_almacenes", "password1", "password2"),
         }),
     )
 

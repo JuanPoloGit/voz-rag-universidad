@@ -320,6 +320,39 @@ class AlertasStockView(HakuApiBaseView):
         })
 
 
+class FaltantesReposicionView(HakuApiBaseView):
+    """Consulta estructurada de reposición de inventario («¿Qué hace falta por pedir?»).
+    
+    Distingue:
+    - Productos agotados sin existencias disponibles (con stock prestado documentado).
+    - Productos con bajo stock (por debajo del mínimo).
+    - Recomendación prudente de compra hacia el stock mínimo (sin inventar algoritmos ficticios).
+    """
+
+    def get(self, request, *args, **kwargs):
+        from .services import procesar_comando_inventario
+
+        almacen_id = request.GET.get("almacen_id")
+        almacen_obj = None
+        if almacen_id:
+            try:
+                almacen_obj = Almacen.objects.get(id=almacen_id, activo=True)
+            except (Almacen.DoesNotExist, ValueError):
+                return JsonResponse({"error": "Almacén no encontrado o inactivo."}, status=404)
+
+        if almacen_obj:
+            mensaje = f"¿Qué hace falta por pedir en el Almacén {almacen_obj.nombre}?"
+        else:
+            mensaje = "¿Qué hace falta por pedir?"
+
+        res = procesar_comando_inventario(
+            usuario=request.user,
+            mensaje=mensaje,
+            sesion=getattr(request, "session", None),
+        )
+        return JsonResponse(res)
+
+
 class PrestamosActivosView(HakuApiBaseView):
     """Consulta de préstamos activos.
 
@@ -735,6 +768,8 @@ class UsuarioCrearHakuView(HakuApiBaseView):
         password = payload.get("password") or ""
         rol = (payload.get("rol") or "").strip().upper()
         almacen_id = payload.get("almacen_asignado_id")
+        almacenes_ids = payload.get("almacenes_asignados_ids") or []
+        acceso_todos = bool(payload.get("acceso_todos_almacenes", False))
 
         errores = {}
         if not username:
@@ -757,22 +792,32 @@ class UsuarioCrearHakuView(HakuApiBaseView):
                 "mensaje_verbal": "No tienes autorización para crear una cuenta con rol superusuario."
             }, status=403)
 
-        # Regla 3: Almacén asignado obligatorio para rol USUARIO
+        # Regla 3: Almacén asignado obligatorio para rol USUARIO (Opción A vs Opción B)
         almacen = None
+        almacenes_multi_objs = []
         if rol == UsuarioAudacIA.Rol.USUARIO:
-            if not almacen_id:
-                errores["almacen_asignado_id"] = "El almacén es obligatorio para usuarios normales."
+            tiene_especificos = bool(almacen_id or (almacenes_ids and len(almacenes_ids) > 0))
+            if acceso_todos and tiene_especificos:
+                errores["acceso_todos_almacenes"] = "No puedes seleccionar simultáneamente 'Todos los almacenes' y almacenes específicos."
+            elif not acceso_todos and not tiene_especificos:
+                errores["almacen_asignado_id"] = "Debes asignar al menos un almacén o marcar acceso a todos los almacenes."
+            elif acceso_todos:
+                almacen = None
+                almacenes_multi_objs = []
             else:
-                try:
-                    almacen = Almacen.objects.get(id=almacen_id, activo=True)
-                except Almacen.DoesNotExist:
-                    errores["almacen_asignado_id"] = "El almacén seleccionado no existe o no está activo."
+                if almacen_id:
+                    try:
+                        almacen = Almacen.objects.get(id=almacen_id, activo=True, eliminado=False)
+                    except Almacen.DoesNotExist:
+                        errores["almacen_asignado_id"] = "El almacén seleccionado no existe o no está activo."
+                if almacenes_ids:
+                    almacenes_multi_objs = list(Almacen.objects.filter(id__in=almacenes_ids, activo=True, eliminado=False))
+                    if not almacen and almacenes_multi_objs:
+                        almacen = almacenes_multi_objs[0]
         else:
-            if almacen_id:
-                try:
-                    almacen = Almacen.objects.get(id=almacen_id, activo=True)
-                except Almacen.DoesNotExist:
-                    pass
+            acceso_todos = False
+            almacen = None
+            almacenes_multi_objs = []
 
         # Regla 4: Validar contraseña según Django
         if not password:
@@ -793,11 +838,17 @@ class UsuarioCrearHakuView(HakuApiBaseView):
                 nombre_completo=nombre_completo,
                 rol=rol,
                 almacen_asignado=almacen,
+                acceso_todos_almacenes=acceso_todos,
                 is_active=True,
                 eliminado_logicamente=False,
             )
             nuevo_usuario.set_password(password)
             nuevo_usuario.save()
+
+            if almacenes_multi_objs:
+                nuevo_usuario.almacenes_asignados.set(almacenes_multi_objs)
+            elif almacen:
+                nuevo_usuario.almacenes_asignados.add(almacen)
 
             # Auditoría segura sin contraseñas
             Auditoria.objects.create(
@@ -810,6 +861,7 @@ class UsuarioCrearHakuView(HakuApiBaseView):
                     "nombre_completo": nuevo_usuario.nombre_completo,
                     "rol": nuevo_usuario.rol,
                     "almacen": nuevo_usuario.almacen_asignado.nombre if nuevo_usuario.almacen_asignado else None,
+                    "acceso_todos_almacenes": nuevo_usuario.acceso_todos_almacenes,
                     "is_active": nuevo_usuario.is_active,
                 },
                 motivo="Creación de usuario mediante HAKU Inventario",
@@ -826,6 +878,7 @@ class UsuarioCrearHakuView(HakuApiBaseView):
                 "nombre_completo": nuevo_usuario.nombre_completo,
                 "rol": nuevo_usuario.rol,
                 "almacen": nuevo_usuario.almacen_asignado.nombre if nuevo_usuario.almacen_asignado else None,
+                "acceso_todos_almacenes": nuevo_usuario.acceso_todos_almacenes,
             },
             "mensaje_pantalla": msg_exito,
             "mensaje_verbal": normalizar_para_tts(f"Usuario {nuevo_usuario.username} creado correctamente."),
@@ -880,6 +933,13 @@ class UsuarioEditarHakuView(HakuApiBaseView):
 
         nombre_completo = (payload.get("nombre_completo") or target_user.nombre_completo).strip()
         almacen_id = payload.get("almacen_asignado_id")
+        almacenes_ids = payload.get("almacenes_asignados_ids")
+        acceso_todos = payload.get("acceso_todos_almacenes")
+        if acceso_todos is None:
+            acceso_todos = target_user.acceso_todos_almacenes
+        else:
+            acceso_todos = bool(acceso_todos)
+
         is_active = payload.get("is_active") if "is_active" in payload else target_user.is_active
         eliminado_logicamente = payload.get("eliminado_logicamente") if "eliminado_logicamente" in payload else target_user.eliminado_logicamente
 
@@ -908,23 +968,58 @@ class UsuarioEditarHakuView(HakuApiBaseView):
             errores["rol"] = "Rol inválido."
 
         almacen = target_user.almacen_asignado
-        if "almacen_asignado_id" in payload:
-            if nuevo_rol == UsuarioAudacIA.Rol.USUARIO:
-                if not almacen_id:
-                    errores["almacen_asignado_id"] = "El almacén es obligatorio para usuarios normales."
-                else:
-                    try:
-                        almacen = Almacen.objects.get(id=almacen_id, activo=True)
-                    except Almacen.DoesNotExist:
-                        errores["almacen_asignado_id"] = "El almacén seleccionado no existe o no está activo."
+        almacenes_multi_objs = None
+        if almacenes_ids is not None:
+            almacenes_multi_objs = list(Almacen.objects.filter(id__in=almacenes_ids, activo=True, eliminado=False))
+
+        # Cambio de rol o edición de rol USUARIO
+        if nuevo_rol == UsuarioAudacIA.Rol.USUARIO:
+            estaba_como_admin = target_user.es_administrador
+            if "acceso_todos_almacenes" in payload:
+                acceso_todos_solicitado = bool(acceso_todos)
             else:
+                acceso_todos_solicitado = target_user.acceso_todos_almacenes if not estaba_como_admin else False
+
+            # Resolver almacenes específicos
+            if "almacenes_asignados_ids" in payload:
+                alms_list = almacenes_multi_objs or []
+            else:
+                alms_list = list(target_user.almacenes_asignados.filter(activo=True, eliminado=False)) if not estaba_como_admin else []
+
+            if "almacen_asignado_id" in payload:
                 if almacen_id:
                     try:
-                        almacen = Almacen.objects.get(id=almacen_id, activo=True)
+                        almacen = Almacen.objects.get(id=almacen_id, activo=True, eliminado=False)
                     except Almacen.DoesNotExist:
-                        pass
+                        errores["almacen_asignado_id"] = "El almacén seleccionado no existe o no está activo."
                 else:
                     almacen = None
+            elif estaba_como_admin:
+                almacen = None
+
+            if not almacen and alms_list:
+                almacen = alms_list[0]
+
+            tiene_especificos = bool(almacen or len(alms_list) > 0)
+
+            # Si era administrador y ahora pasa a usuario normal, exigir decisión explícita
+            if estaba_como_admin and not acceso_todos_solicitado and not tiene_especificos:
+                errores["almacen_asignado_id"] = "Al cambiar de Administrador a Usuario normal debes definir explícitamente el alcance de almacenes."
+            elif acceso_todos_solicitado and tiene_especificos:
+                errores["acceso_todos_almacenes"] = "No puedes seleccionar simultáneamente 'Todos los almacenes' y almacenes específicos."
+            elif not acceso_todos_solicitado and not tiene_especificos:
+                errores["almacen_asignado_id"] = "Debes asignar al menos un almacén o marcar acceso a todos los almacenes."
+            elif acceso_todos_solicitado:
+                acceso_todos = True
+                almacen = None
+                almacenes_multi_objs = []
+            else:
+                acceso_todos = False
+                almacenes_multi_objs = alms_list
+        else:
+            almacen = None
+            almacenes_multi_objs = []
+            acceso_todos = False
 
         # Contraseña opcional en edición
         nueva_password = payload.get("password")
@@ -941,6 +1036,7 @@ class UsuarioEditarHakuView(HakuApiBaseView):
             "nombre_completo": target_user.nombre_completo,
             "rol": target_user.rol,
             "almacen": target_user.almacen_asignado.nombre if target_user.almacen_asignado else None,
+            "acceso_todos_almacenes": target_user.acceso_todos_almacenes,
             "is_active": target_user.is_active,
             "eliminado_logicamente": target_user.eliminado_logicamente,
         }
@@ -949,16 +1045,21 @@ class UsuarioEditarHakuView(HakuApiBaseView):
             target_user.nombre_completo = nombre_completo
             target_user.rol = nuevo_rol
             target_user.almacen_asignado = almacen
+            target_user.acceso_todos_almacenes = acceso_todos
             target_user.is_active = is_active
             target_user.eliminado_logicamente = eliminado_logicamente
             if nueva_password:
                 target_user.set_password(nueva_password)
             target_user.save()
 
+            if almacenes_multi_objs is not None:
+                target_user.almacenes_asignados.set(almacenes_multi_objs)
+
             valores_nuevos = {
                 "nombre_completo": target_user.nombre_completo,
                 "rol": target_user.rol,
                 "almacen": target_user.almacen_asignado.nombre if target_user.almacen_asignado else None,
+                "acceso_todos_almacenes": target_user.acceso_todos_almacenes,
                 "is_active": target_user.is_active,
                 "eliminado_logicamente": target_user.eliminado_logicamente,
             }
@@ -984,11 +1085,28 @@ class UsuarioEditarHakuView(HakuApiBaseView):
                 "nombre_completo": target_user.nombre_completo,
                 "rol": target_user.rol,
                 "almacen": target_user.almacen_asignado.nombre if target_user.almacen_asignado else None,
+                "acceso_todos_almacenes": target_user.acceso_todos_almacenes,
                 "is_active": target_user.is_active,
             },
             "mensaje_pantalla": msg_exito,
             "mensaje_verbal": normalizar_para_tts(f"Usuario {target_user.username} actualizado correctamente."),
         })
+
+
+class ConsultarCodigoBarrasView(HakuApiBaseView):
+    """Valida un código de barras y consulta duplicados en BD o sugerencias en catálogo.
+
+    GET /api/haku/producto/consultar-codigo-barras/?codigo=...
+    """
+
+    def get(self, request):
+        codigo = request.GET.get("codigo", "")
+        if not codigo:
+            return JsonResponse({"error": "Parámetro 'codigo' requerido."}, status=400)
+
+        from .servicios_catalogo import inspeccionar_codigo_barras
+        resultado = inspeccionar_codigo_barras(codigo)
+        return JsonResponse(resultado)
 
 
 class EstadoHakuView(HakuApiBaseView):

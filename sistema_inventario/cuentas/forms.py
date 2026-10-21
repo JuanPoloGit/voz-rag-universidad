@@ -81,12 +81,22 @@ class UsuarioForm(forms.ModelForm):
     class Meta:
         from .models import UsuarioAudacIA
         model = UsuarioAudacIA
-        fields = ["username", "nombre_completo", "rol", "almacen_asignado", "is_active"]
+        fields = [
+            "username",
+            "nombre_completo",
+            "rol",
+            "almacen_asignado",
+            "almacenes_asignados",
+            "acceso_todos_almacenes",
+            "is_active",
+        ]
         widgets = {
             "username": forms.TextInput(attrs={"class": "form-control"}),
             "nombre_completo": forms.TextInput(attrs={"class": "form-control"}),
             "rol": forms.Select(attrs={"class": "form-select"}),
             "almacen_asignado": forms.Select(attrs={"class": "form-select"}),
+            "almacenes_asignados": forms.SelectMultiple(attrs={"class": "form-select", "size": "4"}),
+            "acceso_todos_almacenes": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "is_active": forms.CheckboxInput(attrs={"class": "form-check-input"}),
         }
 
@@ -97,6 +107,9 @@ class UsuarioForm(forms.ModelForm):
 
         if not self.instance.pk:
             self.fields["password"].required = True
+
+        self.fields["almacenes_asignados"].required = False
+        self.fields["almacen_asignado"].required = False
 
         # Restricción §6.2: Administradores solo pueden crear o gestionar usuarios normales (Rol.USUARIO)
         if self.request_user and not self.request_user.es_superusuario_inventario:
@@ -117,14 +130,41 @@ class UsuarioForm(forms.ModelForm):
         from .models import UsuarioAudacIA
         cleaned_data = super().clean()
         rol = cleaned_data.get("rol")
-        almacen = cleaned_data.get("almacen_asignado")
+        almacen_principal = cleaned_data.get("almacen_asignado")
+        almacenes_multi = cleaned_data.get("almacenes_asignados")
+        acceso_todos = cleaned_data.get("acceso_todos_almacenes")
         password = cleaned_data.get("password")
 
-        if rol == UsuarioAudacIA.Rol.USUARIO and not almacen:
-            self.add_error("almacen_asignado", _("El almacén asignado es obligatorio para usuarios normales."))
+        if rol == UsuarioAudacIA.Rol.USUARIO:
+            # Opción A vs Opción B: Exclusión mutua
+            tiene_especificos = bool(almacen_principal or (almacenes_multi and len(almacenes_multi) > 0))
+            if acceso_todos and tiene_especificos:
+                self.add_error(
+                    "acceso_todos_almacenes",
+                    _("No puedes seleccionar simultáneamente 'Todos los almacenes' y almacenes específicos. Elige una sola opción."),
+                )
+
+            # Debe tener Opción A (uno o varios almacenes) u Opción B (acceso_todos_almacenes)
+            if not acceso_todos and not tiene_especificos:
+                self.add_error(
+                    "almacen_asignado",
+                    _("Debes elegir entre asignar almacenes específicos o marcar 'Todos los almacenes'."),
+                )
+
+            # Si seleccionó 'Todos los almacenes', limpiar asignaciones individuales
+            if acceso_todos:
+                cleaned_data["almacen_asignado"] = None
+                cleaned_data["almacenes_asignados"] = []
+            else:
+                cleaned_data["acceso_todos_almacenes"] = False
+                # Si se seleccionó multialmacén pero no principal, asignar el primero como principal para compatibilidad
+                if not almacen_principal and almacenes_multi and len(almacenes_multi) > 0:
+                    cleaned_data["almacen_asignado"] = almacenes_multi[0]
 
         if rol in (UsuarioAudacIA.Rol.ADMINISTRADOR, UsuarioAudacIA.Rol.SUPERUSUARIO):
             cleaned_data["almacen_asignado"] = None
+            cleaned_data["almacenes_asignados"] = []
+            cleaned_data["acceso_todos_almacenes"] = False
 
         if password:
             password_validation.validate_password(password)
@@ -138,5 +178,6 @@ class UsuarioForm(forms.ModelForm):
             user.set_password(password)
         if commit:
             user.save()
+            self.save_m2m()
         return user
 

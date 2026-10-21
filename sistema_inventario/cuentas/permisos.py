@@ -13,6 +13,7 @@ from functools import wraps
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext_lazy as _
 
+from django.db.models import Q
 from inventario.models import Almacen
 
 
@@ -22,8 +23,9 @@ def puede_acceder_almacen(usuario, almacen) -> bool:
     Retorna False si:
     - El usuario es anónimo, inactivo o eliminado lógicamente.
     - El almacén no existe o es None.
-    - El usuario es de rol USUARIO y el almacén no coincide con su almacen_asignado,
-      o el almacén está inactivo o eliminado lógicamente.
+    - El almacén está inactivo o eliminado lógicamente.
+    - El usuario es de rol USUARIO y no tiene asignado este almacén (ni como principal ni en almacenes_asignados),
+      ni cuenta con autorización de acceso_todos_almacenes.
     """
     if not usuario or not getattr(usuario, "is_authenticated", False):
         return False
@@ -34,24 +36,35 @@ def puede_acceder_almacen(usuario, almacen) -> bool:
     if not almacen:
         return False
 
-    # Superusuario y Administrador tienen acceso a todos los almacenes
+    # Almacén inactivo o eliminado no permite operaciones ordinarias
+    if not getattr(almacen, "activo", True) or getattr(almacen, "eliminado", False):
+        return False
+
+    # Superusuario y Administrador tienen acceso a todos los almacenes activos
     if getattr(usuario, "es_administrador", False):
         return True
 
-    # Para rol USUARIO: almacén debe estar activo y no eliminado
-    if not almacen.activo or getattr(almacen, "eliminado", False):
-        return False
+    # Rol USUARIO con flag de acceso a todos los almacenes autorizado explícitamente
+    if getattr(usuario, "acceso_todos_almacenes", False):
+        return True
 
-    # El almacén debe ser exactamente su almacén asignado
-    return getattr(usuario, "almacen_asignado_id", None) == almacen.id
+    # Almacén principal directo
+    if getattr(usuario, "almacen_asignado_id", None) == almacen.id:
+        return True
+
+    # Almacenes asignados múltiples
+    if getattr(usuario, "pk", None) and hasattr(usuario, "almacenes_asignados"):
+        return usuario.almacenes_asignados.filter(id=almacen.id, activo=True, eliminado=False).exists()
+
+    return False
 
 
 def filtrar_por_almacen(queryset, usuario, campo="almacen"):
     """Filtra un QuerySet según los permisos de almacén del usuario.
 
-    - Administradores y Superusuarios: ven todos los registros.
-    - Usuarios normales: ven únicamente los registros de su almacén asignado.
-    - Usuarios no autorizados: QuerySet vacío (none()).
+    - Administradores, Superusuarios y usuarios con acceso_todos_almacenes: ven todos los registros.
+    - Usuarios normales: ven únicamente los registros de sus almacenes asignados (principal + multialmacén activos).
+    - Usuarios no autorizados / inactivos: QuerySet vacío (none()).
     """
     if not usuario or not getattr(usuario, "is_authenticated", False):
         return queryset.none()
@@ -59,14 +72,25 @@ def filtrar_por_almacen(queryset, usuario, campo="almacen"):
     if not usuario.is_active or getattr(usuario, "eliminado_logicamente", False):
         return queryset.none()
 
-    if getattr(usuario, "es_administrador", False):
+    if getattr(usuario, "es_administrador", False) or getattr(usuario, "acceso_todos_almacenes", False):
         return queryset
 
-    almacen_id = getattr(usuario, "almacen_asignado_id", None)
-    if not almacen_id:
+    # Recoger IDs de almacenes válidos asignados al usuario
+    almacenes_ids = set()
+    if getattr(usuario, "almacen_asignado_id", None):
+        if usuario.almacen_asignado and usuario.almacen_asignado.activo and not usuario.almacen_asignado.eliminado:
+            almacenes_ids.add(usuario.almacen_asignado_id)
+
+    if getattr(usuario, "pk", None) and hasattr(usuario, "almacenes_asignados"):
+        almacenes_ids.update(
+            usuario.almacenes_asignados.filter(activo=True, eliminado=False).values_list("id", flat=True)
+        )
+
+    if not almacenes_ids:
         return queryset.none()
 
-    return queryset.filter(**{campo: usuario.almacen_asignado})
+    lookup = f"{campo}_id__in" if not campo.endswith("_id") else f"{campo}__in"
+    return queryset.filter(**{lookup: almacenes_ids})
 
 
 def obtener_almacen_o_denegar(usuario, almacen_id) -> Almacen:
