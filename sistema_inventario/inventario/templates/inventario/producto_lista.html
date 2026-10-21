@@ -103,36 +103,86 @@
         </div>
     </div>
 
-    <!-- Filtros automáticos (sin clic adicional) -->
-    <form method="get" action="{% url 'inventario:producto-lista' %}" data-auto-filter="true"
-          style="margin-bottom: 1.25rem; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-        <div style="flex: 2; min-width: 220px;">
+    <!-- Filtros automáticos en cascada relacional en una sola línea responsiva -->
+    <form method="get" action="{% url 'inventario:producto-lista' %}" data-auto-filter="true" id="formFiltrosCatalogo"
+          style="margin-bottom: 1.25rem; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+        
+        <!-- 1. Buscador de texto libre -->
+        <div style="flex: 2 1 200px; min-width: 170px; position: relative;">
             <input type="text" name="q" value="{{ q }}" class="form-control"
-                   placeholder="Buscar automáticamente por nombre, código, tipo o código de barras..."
-                   autocomplete="off">
+                   placeholder="Buscar automáticamente..."
+                   autocomplete="off" style="padding-left: 34px; height: 38px; font-size: 13px;">
+            <span style="position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text-faint); pointer-events: none; display: flex;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </span>
         </div>
 
-        <div style="flex: 1; min-width: 170px;">
-            <select name="categoria_id" class="form-control" aria-label="Filtrar por categoría">
+        <!-- 2. Almacén -->
+        {% if not request.user.es_usuario_normal %}
+        <div style="flex: 1 1 150px; min-width: 135px;">
+            <select name="almacen_id" id="filtro_almacen_id" class="form-control" style="height: 38px; font-size: 13px; padding: 6px 10px;" aria-label="Filtrar por almacén">
+                <option value="">Todos los almacenes</option>
+                {% for alm in almacenes %}
+                    <option value="{{ alm.id }}" {% if almacen_seleccionado == alm.id|stringformat:'s' %}selected{% endif %}>
+                        {{ alm.nombre }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+
+        <!-- 3. Categoría (filtrada por almacén) -->
+        <div style="flex: 1 1 150px; min-width: 135px;">
+            <select name="categoria_id" id="filtro_categoria_id" class="form-control" style="height: 38px; font-size: 13px; padding: 6px 10px;" aria-label="Filtrar por categoría">
                 <option value="">Todas las categorías</option>
                 {% for cat in categorias %}
                     <option value="{{ cat.id }}" {% if categoria_seleccionada == cat.id|stringformat:'s' %}selected{% endif %}>
-                        {{ cat.nombre }} ({{ cat.almacen_principal.nombre }})
+                        {{ cat.nombre }}{% if not almacen_seleccionado %} ({{ cat.almacen_principal.nombre }}){% endif %}
                     </option>
                 {% endfor %}
             </select>
         </div>
 
-        <div style="min-width: 155px;">
-            <select name="estado_activo" class="form-control" aria-label="Filtrar por estado">
+        <!-- 4. Tipo (filtrado por categoría / almacén) -->
+        <div style="flex: 1 1 135px; min-width: 125px;">
+            <select name="tipo_id" id="filtro_tipo_id" class="form-control" style="height: 38px; font-size: 13px; padding: 6px 10px;" aria-label="Filtrar por tipo">
+                <option value="">Todos los tipos</option>
+                {% for tp in tipos_filtro %}
+                    <option value="{{ tp.id }}" {% if tipo_seleccionado == tp.id|stringformat:'s' %}selected{% endif %}>
+                        {{ tp.nombre }}{% if not categoria_seleccionada %} ({{ tp.categoria.nombre }}){% endif %}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <!-- 5. Ubicación (filtrada por almacén) -->
+        <div style="flex: 1 1 135px; min-width: 125px;">
+            <select name="ubicacion_id" id="filtro_ubicacion_id" class="form-control" style="height: 38px; font-size: 13px; padding: 6px 10px;" aria-label="Filtrar por ubicación">
+                <option value="">Todas las ubicaciones</option>
+                {% for ub in ubicaciones %}
+                    <option value="{{ ub.id }}" {% if ubicacion_seleccionada == ub.id|stringformat:'s' %}selected{% endif %}>
+                        {{ ub.nombre }}{% if not almacen_seleccionado %} ({{ ub.almacen.nombre }}){% endif %}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <!-- 6. Estado -->
+        <div style="flex: 1 1 130px; min-width: 120px;">
+            <select name="estado_activo" id="filtro_estado_activo" class="form-control" style="height: 38px; font-size: 13px; padding: 6px 10px;" aria-label="Filtrar por estado">
                 <option value="" {% if not estado_activo %}selected{% endif %}>Todos los estados</option>
                 <option value="activos" {% if estado_activo == 'activos' %}selected{% endif %}>Solo habilitados</option>
                 <option value="inhabilitados" {% if estado_activo == 'inhabilitados' %}selected{% endif %}>Inhabilitados</option>
             </select>
         </div>
 
-        {% if q or categoria_seleccionada or estado_activo %}
-            <a href="{% url 'inventario:producto-lista' %}" class="btn btn-sm btn-secondary">Limpiar</a>
+        <!-- 7. Botón Limpiar filtros -->
+        {% if q or almacen_seleccionado or categoria_seleccionada or tipo_seleccionado or ubicacion_seleccionada or estado_activo %}
+        <div style="flex: 0 0 auto;">
+            <a href="{% url 'inventario:producto-lista' %}" class="btn btn-sm btn-secondary" style="height: 38px; display: inline-flex; align-items: center; padding: 0 12px; font-size: 12.5px; white-space: nowrap;">
+                Limpiar
+            </a>
+        </div>
         {% endif %}
     </form>
 
@@ -142,7 +192,7 @@
                 <tr>
                     <th style="width: 9%;">Código</th>
                     <th style="width: 26%;">Producto</th>
-                    <th style="width: 16%;">Categoría / Tipo</th>
+                    <th style="width: 18%;">Categoría / Tipo / Ubicación</th>
                     <th style="width: 13%;">Código Barras</th>
                     <th style="width: 9%; text-align: center;">Disponible</th>
                     <th style="width: 9%; text-align: center;">En Préstamo</th>
@@ -171,6 +221,20 @@
                             {% if prod.tipo %}
                                 <div class="cat-type-text">{{ prod.tipo.nombre }}</div>
                             {% endif %}
+                            {% with ub=prod.ubicaciones.first %}
+                                {% if ub %}
+                                    <div style="font-size: 11.5px; color: var(--text-faint); margin-top: 3px; display: inline-flex; align-items: center; gap: 4px;">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent-bright);"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="12" r="3"/></svg>
+                                        <span>{{ ub.nombre }}</span>
+                                        <span style="opacity: 0.65;">· {{ prod.categoria.almacen_principal.nombre }}</span>
+                                    </div>
+                                {% else %}
+                                    <div style="font-size: 11px; color: var(--text-faint); margin-top: 3px; display: inline-flex; align-items: center; gap: 4px;">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="12" r="3"/></svg>
+                                        <span>{{ prod.categoria.almacen_principal.nombre }}</span>
+                                    </div>
+                                {% endif %}
+                            {% endwith %}
                         </td>
                         <td>
                             {% if prod.codigo_barras %}
@@ -269,11 +333,11 @@
     {% if is_paginated %}
         <div class="pagination">
             {% if page_obj.has_previous %}
-                <a href="?page={{ page_obj.previous_page_number }}{% if q %}&q={{ q }}{% endif %}{% if categoria_seleccionada %}&categoria_id={{ categoria_seleccionada }}{% endif %}{% if estado_activo %}&estado_activo={{ estado_activo }}{% endif %}" class="btn btn-sm btn-secondary">&laquo; Anterior</a>
+                <a href="?page={{ page_obj.previous_page_number }}{% if q %}&q={{ q }}{% endif %}{% if almacen_seleccionado %}&almacen_id={{ almacen_seleccionado }}{% endif %}{% if categoria_seleccionada %}&categoria_id={{ categoria_seleccionada }}{% endif %}{% if tipo_seleccionado %}&tipo_id={{ tipo_seleccionado }}{% endif %}{% if ubicacion_seleccionada %}&ubicacion_id={{ ubicacion_seleccionada }}{% endif %}{% if estado_activo %}&estado_activo={{ estado_activo }}{% endif %}" class="btn btn-sm btn-secondary">&laquo; Anterior</a>
             {% endif %}
             <span class="page-info">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
             {% if page_obj.has_next %}
-                <a href="?page={{ page_obj.next_page_number }}{% if q %}&q={{ q }}{% endif %}{% if categoria_seleccionada %}&categoria_id={{ categoria_seleccionada }}{% endif %}{% if estado_activo %}&estado_activo={{ estado_activo }}{% endif %}" class="btn btn-sm btn-secondary">Siguiente &raquo;</a>
+                <a href="?page={{ page_obj.next_page_number }}{% if q %}&q={{ q }}{% endif %}{% if almacen_seleccionado %}&almacen_id={{ almacen_seleccionado }}{% endif %}{% if categoria_seleccionada %}&categoria_id={{ categoria_seleccionada }}{% endif %}{% if tipo_seleccionado %}&tipo_id={{ tipo_seleccionado }}{% endif %}{% if ubicacion_seleccionada %}&ubicacion_id={{ ubicacion_seleccionada }}{% endif %}{% if estado_activo %}&estado_activo={{ estado_activo }}{% endif %}" class="btn btn-sm btn-secondary">Siguiente &raquo;</a>
             {% endif %}
         </div>
     {% endif %}
@@ -403,6 +467,26 @@ document.addEventListener("DOMContentLoaded", function() {
         selectCategoria.addEventListener("change", function() {
             filtrarTiposPorCategoria(selectCategoria.value, "");
         });
+    }
+
+    // Relación en cascada de los filtros del catálogo (reset de dependientes antes de auto-submit)
+    var filtroAlm = document.getElementById("filtro_almacen_id");
+    var filtroCat = document.getElementById("filtro_categoria_id");
+    var filtroTipo = document.getElementById("filtro_tipo_id");
+    var filtroUbic = document.getElementById("filtro_ubicacion_id");
+
+    if (filtroAlm) {
+        filtroAlm.addEventListener("change", function() {
+            if (filtroCat) filtroCat.value = "";
+            if (filtroTipo) filtroTipo.value = "";
+            if (filtroUbic) filtroUbic.value = "";
+        }, true);
+    }
+
+    if (filtroCat) {
+        filtroCat.addEventListener("change", function() {
+            if (filtroTipo) filtroTipo.value = "";
+        }, true);
     }
 
     // Abrir modal para Nuevo Producto

@@ -128,6 +128,41 @@
 {% endblock %}
 
 {% block content %}
+<!-- Filtro de Resumen por Almacén -->
+{% if not request.user.es_usuario_normal %}
+<form method="get" action="{% url 'web:dashboard' %}" data-auto-filter="true"
+      style="margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; background: linear-gradient(160deg, var(--bg-panel), var(--bg-panel-2)); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 18px;">
+    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+        <span style="font-size: 13px; font-weight: 600; color: var(--text-dim); display: inline-flex; align-items: center; gap: 7px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent-bright);"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            Filtrar Resumen por Almacén:
+        </span>
+        <select name="almacen_id" class="form-control" style="width: auto; min-width: 250px; height: 38px; padding: 6px 12px; font-size: 13.5px;" aria-label="Filtrar por almacén">
+            <option value="" {% if not almacen_seleccionado %}selected{% endif %}>Todos los almacenes (Consolidado General)</option>
+            {% for alm in almacenes %}
+                <option value="{{ alm.id }}" {% if almacen_seleccionado == alm.id|stringformat:'s' %}selected{% endif %}>
+                    {{ alm.nombre }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+    {% if almacen_seleccionado %}
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 12px; color: var(--accent-bright); font-weight: 500;">
+                Mostrando datos de: <strong>{{ almacen_obj.nombre }}</strong>
+            </span>
+            <a href="{% url 'web:dashboard' %}" class="btn btn-sm btn-secondary" style="font-size: 12px; padding: 6px 14px;">
+                Ver Consolidado General
+            </a>
+        </div>
+    {% else %}
+        <span style="font-size: 12px; color: var(--text-faint);">
+            Consolidado general de todo el inventario
+        </span>
+    {% endif %}
+</form>
+{% endif %}
+
 <!-- KPI Cards -->
 <div class="kpi-grid">
     <div class="kpi-card kpi-green">
@@ -268,8 +303,12 @@
         Chart.defaults.color = '#93a2d6';
         Chart.defaults.borderColor = '#1e2e63';
 
+        var almacenId = "{{ almacen_seleccionado|default:'' }}";
+        var balanceUrl = "{% url 'web:grafico-balance' %}?dias=7" + (almacenId ? "&almacen_id=" + encodeURIComponent(almacenId) : "");
+        var categoriasUrl = "{% url 'web:grafico-categorias' %}" + (almacenId ? "?almacen_id=" + encodeURIComponent(almacenId) : "");
+
         // Balance chart
-        fetch("{% url 'web:grafico-balance' %}?dias=7")
+        fetch(balanceUrl)
             .then(res => res.json())
             .then(data => {
                 const ctx = document.getElementById("canvasBalance");
@@ -287,7 +326,7 @@
                                 borderSkipped: false
                             },
                             {
-                                label: "Salidas",
+                                label: "Dotación",
                                 data: data.salidas,
                                 backgroundColor: "rgba(255,107,122,0.7)",
                                 borderRadius: 6,
@@ -308,7 +347,7 @@
             });
 
         // Category chart
-        fetch("{% url 'web:grafico-categorias' %}")
+        fetch(categoriasUrl)
             .then(res => res.json())
             .then(data => {
                 const ctx = document.getElementById("canvasCategorias");

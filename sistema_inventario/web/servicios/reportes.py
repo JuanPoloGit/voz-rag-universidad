@@ -8,38 +8,41 @@ from django.utils import timezone
 from inventario.models import Almacen, Categoria, Existencia, Movimiento, Prestamo, Producto
 
 
-def obtener_metricas_dashboard(usuario: Any) -> Dict[str, Any]:
-    """Calcula las métricas principales para el Dashboard según el ámbito del usuario."""
+def obtener_metricas_dashboard(usuario: Any, almacen: Optional[Almacen] = None) -> Dict[str, Any]:
+    """Calcula las métricas principales para el Dashboard según el ámbito del usuario y almacén opcional."""
     es_normal = getattr(usuario, "es_usuario_normal", False)
     almacen_usuario = getattr(usuario, "almacen_asignado", None) if es_normal else None
+    almacen_efectivo = almacen_usuario if es_normal else almacen
 
-    if es_normal:
-        if not almacen_usuario:
-            return {
-                "total_productos": 0,
-                "total_stock_disponible": 0,
-                "total_stock_prestamo": 0,
-                "total_criticos": 0,
-                "total_bajo_stock": 0,
-                "total_prestamos_activos": 0,
-                "ultimos_movimientos": [],
-                "prestamos_recientes": [],
-            }
+    if es_normal and not almacen_efectivo:
+        return {
+            "total_productos": 0,
+            "total_stock_disponible": 0,
+            "total_stock_prestamo": 0,
+            "total_criticos": 0,
+            "total_bajo_stock": 0,
+            "total_prestamos_activos": 0,
+            "ultimos_movimientos": [],
+            "prestamos_recientes": [],
+        }
+
+    if almacen_efectivo:
         prod_qs = Producto.objects.filter(
             archivado=False,
             activo=True,
-            categoria__almacen_principal=almacen_usuario,
-        )
+        ).filter(
+            Q(categoria__almacen_principal=almacen_efectivo) | Q(existencias__almacen=almacen_efectivo)
+        ).distinct()
         ex_qs = Existencia.objects.filter(
             producto__archivado=False,
             producto__activo=True,
-            almacen=almacen_usuario,
+            almacen=almacen_efectivo,
         )
         mov_qs = Movimiento.objects.filter(
-            Q(almacen_origen=almacen_usuario) | Q(almacen_destino=almacen_usuario)
+            Q(almacen_origen=almacen_efectivo) | Q(almacen_destino=almacen_efectivo)
         )
         pres_qs = Prestamo.objects.filter(
-            almacen=almacen_usuario,
+            almacen=almacen_efectivo,
             estado__in=[Prestamo.Estado.ABIERTO, Prestamo.Estado.DEVUELTO_PARCIAL],
         )
     else:
@@ -77,28 +80,22 @@ def obtener_metricas_dashboard(usuario: Any) -> Dict[str, Any]:
     }
 
 
-def obtener_datos_grafico_categorias(usuario: Any) -> Dict[str, Any]:
+def obtener_datos_grafico_categorias(usuario: Any, almacen: Optional[Almacen] = None) -> Dict[str, Any]:
     """Genera datos para el gráfico de distribución de productos por categoría."""
     es_normal = getattr(usuario, "es_usuario_normal", False)
     almacen_usuario = getattr(usuario, "almacen_asignado", None) if es_normal else None
+    almacen_efectivo = almacen_usuario if es_normal else almacen
 
-    if es_normal:
-        if not almacen_usuario:
-            return {"labels": [], "data": []}
-        cats = Categoria.objects.filter(
-            activo=True,
-            eliminado=False,
-            almacen_principal=almacen_usuario,
-        ).annotate(
-            num_prods=Count("productos", filter=Q(productos__archivado=False, productos__activo=True))
-        ).order_by("-num_prods")
-    else:
-        cats = Categoria.objects.filter(
-            activo=True,
-            eliminado=False,
-        ).annotate(
-            num_prods=Count("productos", filter=Q(productos__archivado=False, productos__activo=True))
-        ).order_by("-num_prods")
+    if es_normal and not almacen_efectivo:
+        return {"labels": [], "data": []}
+
+    cats_qs = Categoria.objects.filter(activo=True, eliminado=False)
+    if almacen_efectivo:
+        cats_qs = cats_qs.filter(almacen_principal=almacen_efectivo)
+
+    cats = cats_qs.annotate(
+        num_prods=Count("productos", filter=Q(productos__archivado=False, productos__activo=True))
+    ).order_by("-num_prods")
 
     labels = []
     data = []
@@ -110,8 +107,10 @@ def obtener_datos_grafico_categorias(usuario: Any) -> Dict[str, Any]:
     return {"labels": labels, "data": data}
 
 
-def obtener_datos_grafico_balance_movimientos(usuario: Any, dias: int = 7) -> Dict[str, Any]:
-    """Genera serie de tiempo con balance de Entradas vs. Salidas en los últimos N días."""
+def obtener_datos_grafico_balance_movimientos(
+    usuario: Any, dias: int = 7, almacen: Optional[Almacen] = None
+) -> Dict[str, Any]:
+    """Genera serie de tiempo con balance de Entradas vs. Dotación (Salidas) en los últimos N días."""
     hoy = timezone.now().date()
     labels = []
     entradas = []
@@ -119,12 +118,14 @@ def obtener_datos_grafico_balance_movimientos(usuario: Any, dias: int = 7) -> Di
 
     es_normal = getattr(usuario, "es_usuario_normal", False)
     almacen_usuario = getattr(usuario, "almacen_asignado", None) if es_normal else None
+    almacen_efectivo = almacen_usuario if es_normal else almacen
+
+    if es_normal and not almacen_efectivo:
+        return {"labels": [], "entradas": [], "salidas": []}
 
     base_qs = Movimiento.objects.all()
-    if es_normal:
-        if not almacen_usuario:
-            return {"labels": [], "entradas": [], "salidas": []}
-        base_qs = base_qs.filter(Q(almacen_origen=almacen_usuario) | Q(almacen_destino=almacen_usuario))
+    if almacen_efectivo:
+        base_qs = base_qs.filter(Q(almacen_origen=almacen_efectivo) | Q(almacen_destino=almacen_efectivo))
 
     for i in range(dias - 1, -1, -1):
         dia = hoy - timedelta(days=i)

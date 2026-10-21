@@ -853,6 +853,7 @@ def actualizar_producto(
     producto: Producto,
     nombre: str,
     stock_minimo: int,
+    categoria: Optional[Categoria] = None,
     tipo: Optional[TipoCategoria] = None,
     actualizar_tipo: bool = False,
     codigo_barras: str = "",
@@ -875,12 +876,16 @@ def actualizar_producto(
     if getattr(usuario, "es_usuario_normal", False):
         if not usuario.almacen_asignado or producto_db.categoria.almacen_principal_id != usuario.almacen_asignado_id:
             raise PermissionDenied("No tienes permisos para modificar productos de otros almacenes.")
+        if categoria and categoria.almacen_principal_id != usuario.almacen_asignado_id:
+            raise PermissionDenied("Solo puedes asignar categorías pertenecientes a tu almacén asignado.")
+
+    categoria_efectiva = categoria or producto_db.categoria
 
     nombre = (nombre or "").strip()
     if not nombre:
         raise ValidationError({"nombre": "El nombre del producto no puede estar vacío."})
 
-    if actualizar_tipo and tipo is not None and tipo.categoria_id != producto_db.categoria_id:
+    if actualizar_tipo and tipo is not None and tipo.categoria_id != categoria_efectiva.id:
         raise ValidationError({"tipo": "El tipo seleccionado no pertenece a la categoría del producto."})
 
     codigo_barras = (codigo_barras or "").strip() or None
@@ -890,6 +895,7 @@ def actualizar_producto(
 
     valores_anteriores = {
         "nombre": producto_db.nombre,
+        "categoria_id": producto_db.categoria_id,
         "tipo_id": producto_db.tipo_id,
         "stock_minimo": producto_db.stock_minimo,
         "codigo_barras": producto_db.codigo_barras,
@@ -900,6 +906,13 @@ def actualizar_producto(
 
     with transaction.atomic():
         producto_db.nombre = nombre
+        if categoria is not None:
+            producto_db.categoria = categoria
+            Existencia.objects.get_or_create(
+                producto=producto_db,
+                almacen=categoria.almacen_principal,
+                defaults={"stock_disponible": 0, "stock_en_prestamo": 0},
+            )
         if actualizar_tipo:
             producto_db.tipo = tipo
         producto_db.stock_minimo = max(0, int(stock_minimo or 0))
@@ -923,6 +936,7 @@ def actualizar_producto(
             valores_anteriores=valores_anteriores,
             valores_nuevos={
                 "nombre": producto_db.nombre,
+                "categoria_id": producto_db.categoria_id,
                 "tipo_id": producto_db.tipo_id,
                 "stock_minimo": producto_db.stock_minimo,
                 "codigo_barras": producto_db.codigo_barras,

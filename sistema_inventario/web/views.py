@@ -22,7 +22,22 @@ class DashboardView(LoginRequiredMixin, View):
     """Panel de Control y visualización general operativa (§11)."""
 
     def get(self, request):
-        metricas = obtener_metricas_dashboard(request.user)
+        user = request.user
+        almacen_id = request.GET.get("almacen_id", "").strip()
+        almacen_obj = None
+
+        if getattr(user, "es_usuario_normal", False):
+            almacenes = Almacen.objects.filter(id=user.almacen_asignado_id)
+            almacen_obj = user.almacen_asignado
+            almacen_id = str(user.almacen_asignado_id) if user.almacen_asignado_id else ""
+        else:
+            almacenes = Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
+            if almacen_id and almacen_id.isdigit():
+                almacen_obj = Almacen.objects.filter(id=int(almacen_id), activo=True, eliminado=False).first()
+                if not almacen_obj:
+                    almacen_id = ""
+
+        metricas = obtener_metricas_dashboard(user, almacen=almacen_obj)
         return render(
             request,
             "web/dashboard.html",
@@ -30,6 +45,9 @@ class DashboardView(LoginRequiredMixin, View):
                 "metricas": metricas,
                 "ultimos_movimientos": metricas["ultimos_movimientos"],
                 "prestamos_recientes": metricas["prestamos_recientes"],
+                "almacenes": almacenes,
+                "almacen_seleccionado": almacen_id,
+                "almacen_obj": almacen_obj,
             },
         )
 
@@ -38,17 +56,31 @@ class GraficoCategoriasJSONView(LoginRequiredMixin, View):
     """Endpoint AJAX que retorna la distribución de productos por categoría."""
 
     def get(self, request):
-        datos = obtener_datos_grafico_categorias(request.user)
+        user = request.user
+        almacen_id = request.GET.get("almacen_id", "").strip()
+        almacen_obj = None
+        if getattr(user, "es_usuario_normal", False):
+            almacen_obj = user.almacen_asignado
+        elif almacen_id and almacen_id.isdigit():
+            almacen_obj = Almacen.objects.filter(id=int(almacen_id), activo=True, eliminado=False).first()
+        datos = obtener_datos_grafico_categorias(user, almacen=almacen_obj)
         return JsonResponse(datos)
 
 
 class GraficoBalanceJSONView(LoginRequiredMixin, View):
-    """Endpoint AJAX que retorna el balance de entradas vs. salidas en los últimos N días."""
+    """Endpoint AJAX que retorna el balance de entradas vs. dotación (salidas) en los últimos N días."""
 
     def get(self, request):
+        user = request.user
         dias_str = request.GET.get("dias", "7")
         dias = int(dias_str) if dias_str.isdigit() else 7
-        datos = obtener_datos_grafico_balance_movimientos(request.user, dias=dias)
+        almacen_id = request.GET.get("almacen_id", "").strip()
+        almacen_obj = None
+        if getattr(user, "es_usuario_normal", False):
+            almacen_obj = user.almacen_asignado
+        elif almacen_id and almacen_id.isdigit():
+            almacen_obj = Almacen.objects.filter(id=int(almacen_id), activo=True, eliminado=False).first()
+        datos = obtener_datos_grafico_balance_movimientos(user, dias=dias, almacen=almacen_obj)
         return JsonResponse(datos)
 
 

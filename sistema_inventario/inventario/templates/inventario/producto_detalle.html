@@ -274,3 +274,45 @@
     </form>
 </dialog>
 {% endblock %}
+
+{% block extra_js %}
+{{ tipos_por_categoria|json_script:"tipos-por-categoria-data-detalle" }}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    var catSelect = document.querySelector("#modalEditarProductoDetalle select[name='categoria']");
+    var tipoSelect = document.querySelector("#modalEditarProductoDetalle select[name='tipo']");
+    var dataEl = document.getElementById("tipos-por-categoria-data-detalle");
+
+    function sincronizarTiposModalDetalle(tipoSeleccionado) {
+        if (!catSelect || !tipoSelect || !dataEl) return;
+        var catId = catSelect.value;
+        var todosTipos = JSON.parse(dataEl.textContent || "[]");
+        var prevVal = (tipoSeleccionado !== undefined) ? tipoSeleccionado : tipoSelect.value;
+
+        tipoSelect.innerHTML = '<option value="">Sin tipo (opcional)</option>';
+        if (!catId) return;
+
+        todosTipos.forEach(function(t) {
+            if (String(t.categoria_id) === String(catId)) {
+                var opt = document.createElement("option");
+                opt.value = String(t.id);
+                opt.textContent = t.nombre;
+                if (String(t.id) === String(prevVal)) {
+                    opt.selected = true;
+                }
+                tipoSelect.appendChild(opt);
+            }
+        });
+    }
+
+    if (catSelect) {
+        catSelect.addEventListener("change", function() {
+            sincronizarTiposModalDetalle("");
+        });
+    }
+
+    // Inicializar al cargar con el tipo actual del producto
+    sincronizarTiposModalDetalle("{{ producto.tipo_id|default:'' }}");
+});
+</script>
+{% endblock %}

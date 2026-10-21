@@ -240,20 +240,33 @@ class ProductoForm(forms.ModelForm):
             cats_qs = Categoria.objects.filter(
                 activo=True, eliminado=False, almacen_principal=usuario.almacen_asignado
             )
-            self.fields["categoria"].queryset = cats_qs
-            self.fields["tipo"].queryset = TipoCategoria.objects.filter(
-                activo=True, categoria__in=cats_qs
-            ).select_related("categoria").order_by("categoria__nombre", "nombre")
-            self.fields["ubicacion"].queryset = Ubicacion.objects.filter(
+            ub_qs = Ubicacion.objects.filter(
                 activo=True, eliminado=False, almacen=usuario.almacen_asignado
             )
         else:
             cats_qs = Categoria.objects.filter(activo=True, eliminado=False)
-            self.fields["categoria"].queryset = cats_qs
+            ub_qs = Ubicacion.objects.filter(activo=True, eliminado=False)
+
+        self.fields["categoria"].queryset = cats_qs.order_by("nombre")
+        self.fields["ubicacion"].queryset = ub_qs.order_by("nombre")
+
+        # Acotar las opciones de tipo a la categoría correspondiente
+        cat_id_efectiva = None
+        if self.is_bound:
+            cat_id_raw = self.data.get("categoria")
+            if cat_id_raw and str(cat_id_raw).isdigit():
+                cat_id_efectiva = int(cat_id_raw)
+        elif self.instance and self.instance.pk and self.instance.categoria_id:
+            cat_id_efectiva = self.instance.categoria_id
+
+        if cat_id_efectiva:
+            self.fields["tipo"].queryset = TipoCategoria.objects.filter(
+                activo=True, categoria_id=cat_id_efectiva
+            ).select_related("categoria").order_by("nombre")
+        else:
             self.fields["tipo"].queryset = TipoCategoria.objects.filter(
                 activo=True, categoria__in=cats_qs
             ).select_related("categoria").order_by("categoria__nombre", "nombre")
-            self.fields["ubicacion"].queryset = Ubicacion.objects.filter(activo=True, eliminado=False)
 
         self.fields["tipo"].required = False
         self.fields["tipo"].empty_label = "Sin tipo (opcional)"

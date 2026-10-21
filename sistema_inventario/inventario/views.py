@@ -619,34 +619,106 @@ class ProductoListaView(LoginRequiredMixin, ListView):
                     return redirect("inventario:producto-detalle", pk=match.pk)
         return super().get(request, *args, **kwargs)
 
+    def _resolver_filtros_validos(self):
+        user = self.request.user
+        es_normal = getattr(user, "es_usuario_normal", False)
+
+        almacen_id_raw = self.request.GET.get("almacen_id", "").strip()
+        categoria_id_raw = self.request.GET.get("categoria_id", "").strip()
+        tipo_id_raw = self.request.GET.get("tipo_id", "").strip()
+        ubicacion_id_raw = self.request.GET.get("ubicacion_id", "").strip()
+        estado_activo = self.request.GET.get("estado_activo", "").strip()
+        q = self.request.GET.get("q", "").strip()
+
+        # 1. Almacén
+        almacen_id = None
+        if es_normal:
+            almacen_id = user.almacen_asignado_id
+        elif almacen_id_raw and almacen_id_raw.isdigit():
+            alm_candidate = int(almacen_id_raw)
+            if Almacen.objects.filter(id=alm_candidate, activo=True, eliminado=False).exists():
+                almacen_id = alm_candidate
+
+        # 2. Categoría (en cascada: si hay almacén seleccionado, sólo categorías de ese almacén)
+        categoria_id = None
+        if categoria_id_raw and categoria_id_raw.isdigit():
+            cat_qs = Categoria.objects.filter(id=int(categoria_id_raw), activo=True, eliminado=False)
+            if almacen_id:
+                cat_qs = cat_qs.filter(almacen_principal_id=almacen_id)
+            cat_obj = cat_qs.first()
+            if cat_obj:
+                categoria_id = cat_obj.id
+
+        # 3. Tipo (en cascada: si hay categoría, sólo tipos de esa categoría; si hay almacén, sólo tipos de categorías de ese almacén)
+        tipo_id = None
+        if tipo_id_raw and tipo_id_raw.isdigit():
+            tipo_qs = TipoCategoria.objects.filter(id=int(tipo_id_raw), activo=True)
+            if categoria_id:
+                tipo_qs = tipo_qs.filter(categoria_id=categoria_id)
+            elif almacen_id:
+                tipo_qs = tipo_qs.filter(categoria__almacen_principal_id=almacen_id)
+            tipo_obj = tipo_qs.first()
+            if tipo_obj:
+                tipo_id = tipo_obj.id
+
+        # 4. Ubicación (en cascada: si hay almacén, sólo ubicaciones de ese almacén; si hay categoría, del almacén principal de la categoría)
+        ubicacion_id = None
+        if ubicacion_id_raw and ubicacion_id_raw.isdigit():
+            ub_qs = Ubicacion.objects.filter(id=int(ubicacion_id_raw), activo=True, eliminado=False)
+            if almacen_id:
+                ub_qs = ub_qs.filter(almacen_id=almacen_id)
+            elif categoria_id:
+                cat_obj = Categoria.objects.filter(id=categoria_id).first()
+                if cat_obj:
+                    ub_qs = ub_qs.filter(almacen_id=cat_obj.almacen_principal_id)
+            ub_obj = ub_qs.first()
+            if ub_obj:
+                ubicacion_id = ub_obj.id
+
+        return {
+            "almacen_id": almacen_id,
+            "categoria_id": categoria_id,
+            "tipo_id": tipo_id,
+            "ubicacion_id": ubicacion_id,
+            "estado_activo": estado_activo,
+            "q": q,
+            "es_normal": es_normal,
+        }
+
     def get_queryset(self):
         qs = Producto.objects.filter(archivado=False)
-        user = self.request.user
-        if getattr(user, "es_usuario_normal", False):
-            qs = qs.filter(categoria__almacen_principal=user.almacen_asignado)
+        f = self._resolver_filtros_validos()
 
-        q = self.request.GET.get("q", "").strip()
-        if q:
+        if f["es_normal"]:
+            qs = qs.filter(categoria__almacen_principal_id=f["almacen_id"])
+        elif f["almacen_id"]:
             qs = qs.filter(
-                Q(nombre__icontains=q)
-                | Q(codigo_interno__icontains=q)
-                | Q(codigo_barras__icontains=q)
-                | Q(tipo__nombre__icontains=q)
-            )
+                Q(categoria__almacen_principal_id=f["almacen_id"])
+                | Q(existencias__almacen_id=f["almacen_id"])
+                | Q(ubicaciones__almacen_id=f["almacen_id"])
+            ).distinct()
 
-        categoria_id = self.request.GET.get("categoria_id")
-        if categoria_id:
-            qs = qs.filter(categoria_id=categoria_id)
+        if f["categoria_id"]:
+            qs = qs.filter(categoria_id=f["categoria_id"])
 
-        tipo_id = self.request.GET.get("tipo_id")
-        if tipo_id:
-            qs = qs.filter(tipo_id=tipo_id)
+        if f["tipo_id"]:
+            qs = qs.filter(tipo_id=f["tipo_id"])
 
-        estado_activo = self.request.GET.get("estado_activo", "")
-        if estado_activo == "activos":
+        if f["ubicacion_id"]:
+            qs = qs.filter(ubicaciones__id=f["ubicacion_id"]).distinct()
+
+        if f["estado_activo"] == "activos":
             qs = qs.filter(activo=True)
-        elif estado_activo == "inhabilitados":
+        elif f["estado_activo"] == "inhabilitados":
             qs = qs.filter(activo=False)
+
+        if f["q"]:
+            qs = qs.filter(
+                Q(nombre__icontains=f["q"])
+                | Q(codigo_interno__icontains=f["q"])
+                | Q(codigo_barras__icontains=f["q"])
+                | Q(tipo__nombre__icontains=f["q"])
+            )
 
         return (
             qs.select_related("categoria", "categoria__almacen_principal", "tipo")
@@ -657,24 +729,57 @@ class ProductoListaView(LoginRequiredMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         user = self.request.user
-        if getattr(user, "es_usuario_normal", False):
-            cats_qs = Categoria.objects.filter(
-                activo=True, eliminado=False, almacen_principal=user.almacen_asignado
-            ).order_by("nombre")
+        f = self._resolver_filtros_validos()
+
+        # 1. Almacenes para el selector
+        if f["es_normal"]:
+            almacenes_qs = Almacen.objects.filter(id=user.almacen_asignado_id)
         else:
-            cats_qs = Categoria.objects.filter(
-                activo=True, eliminado=False
-            ).order_by("nombre")
+            almacenes_qs = Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
+
+        # 2. Categorías en cascada relacional según almacén
+        cats_qs = Categoria.objects.filter(activo=True, eliminado=False)
+        if f["almacen_id"]:
+            cats_qs = cats_qs.filter(almacen_principal_id=f["almacen_id"])
+        cats_qs = cats_qs.select_related("almacen_principal").order_by("nombre")
+
+        # 3. Tipos en cascada relacional según categoría o almacén
+        tipos_qs = TipoCategoria.objects.filter(activo=True)
+        if f["categoria_id"]:
+            tipos_qs = tipos_qs.filter(categoria_id=f["categoria_id"])
+        elif f["almacen_id"]:
+            tipos_qs = tipos_qs.filter(categoria__almacen_principal_id=f["almacen_id"])
+        tipos_qs = tipos_qs.select_related("categoria").order_by("nombre")
+
+        # 4. Ubicaciones en cascada relacional según almacén o categoría
+        ub_qs = Ubicacion.objects.filter(activo=True, eliminado=False)
+        if f["almacen_id"]:
+            ub_qs = ub_qs.filter(almacen_id=f["almacen_id"])
+        elif f["categoria_id"]:
+            cat_obj = Categoria.objects.filter(id=f["categoria_id"]).first()
+            if cat_obj:
+                ub_qs = ub_qs.filter(almacen_id=cat_obj.almacen_principal_id)
+        ub_qs = ub_qs.select_related("almacen").order_by("almacen__nombre", "nombre")
+
+        context["almacenes"] = almacenes_qs
         context["categorias"] = cats_qs
-        context["q"] = self.request.GET.get("q", "")
-        context["categoria_seleccionada"] = self.request.GET.get("categoria_id", "")
-        context["tipo_seleccionado"] = self.request.GET.get("tipo_id", "")
-        context["estado_activo"] = self.request.GET.get("estado_activo", "")
+        context["tipos_filtro"] = tipos_qs
+        context["ubicaciones"] = ub_qs
+
+        context["q"] = f["q"]
+        context["almacen_seleccionado"] = str(f["almacen_id"]) if f["almacen_id"] else ""
+        context["categoria_seleccionada"] = str(f["categoria_id"]) if f["categoria_id"] else ""
+        context["tipo_seleccionado"] = str(f["tipo_id"]) if f["tipo_id"] else ""
+        context["ubicacion_seleccionada"] = str(f["ubicacion_id"]) if f["ubicacion_id"] else ""
+        context["estado_activo"] = f["estado_activo"]
+
         context["producto_form"] = ProductoForm(usuario=user)
-        tipos = TipoCategoria.objects.filter(activo=True, categoria__in=cats_qs).order_by("nombre")
+
+        # Tipos completos para el modal de Crear/Editar producto
+        todos_los_tipos = TipoCategoria.objects.filter(activo=True).select_related("categoria").order_by("nombre")
         context["tipos_por_categoria"] = [
             {"id": t.id, "nombre": t.nombre, "categoria_id": t.categoria_id}
-            for t in tipos
+            for t in todos_los_tipos
         ]
         return context
 
@@ -768,6 +873,7 @@ class ProductoEditarView(LoginRequiredMixin, UpdateView):
             producto = actualizar_producto(
                 producto=self.object,
                 nombre=form.cleaned_data["nombre"],
+                categoria=form.cleaned_data.get("categoria"),
                 tipo=form.cleaned_data.get("tipo"),
                 actualizar_tipo=True,
                 stock_minimo=form.cleaned_data.get("stock_minimo", 0),
