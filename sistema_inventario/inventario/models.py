@@ -149,6 +149,37 @@ class Categoria(models.Model):
         return limpio[:3].upper().ljust(3, "X")
 
 
+class TipoCategoria(models.Model):
+    """Tipo opcional ligado a una categoría para sub-clasificar artículos.
+
+    Cada categoría puede tener 0, 1 o más tipos asociados opcionalmente
+    (ej. Categoría "Herramientas Manuales" -> Tipos "Destornillador", "Alicate").
+    """
+
+    nombre = models.CharField(
+        _("nombre del tipo"),
+        max_length=100,
+    )
+    categoria = models.ForeignKey(
+        Categoria,
+        on_delete=models.CASCADE,
+        related_name="tipos",
+        verbose_name=_("categoría"),
+    )
+    activo = models.BooleanField(_("activo"), default=True)
+    fecha_creacion = models.DateTimeField(_("fecha de creación"), auto_now_add=True)
+    fecha_modificacion = models.DateTimeField(_("última modificación"), auto_now=True)
+
+    class Meta:
+        verbose_name = _("tipo de categoría")
+        verbose_name_plural = _("tipos de categoría")
+        unique_together = [("categoria", "nombre")]
+        ordering = ["categoria", "nombre"]
+
+    def __str__(self):
+        return f"{self.nombre} ({self.categoria.nombre})"
+
+
 class Producto(models.Model):
     """Producto del inventario.
 
@@ -181,6 +212,15 @@ class Producto(models.Model):
         on_delete=models.PROTECT,
         related_name="productos",
         verbose_name=_("categoría"),
+    )
+    tipo = models.ForeignKey(
+        TipoCategoria,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="productos",
+        verbose_name=_("tipo (opcional)"),
+        help_text=_("Subclasificación opcional ligada a la categoría del producto."),
     )
     stock_inicial = models.PositiveIntegerField(
         _("stock inicial"),

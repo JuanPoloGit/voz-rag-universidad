@@ -21,12 +21,15 @@ urlpatterns = [
     path("ubicaciones/<int:pk>/desactivar/", views.UbicacionDesactivarView.as_view(), name="ubicacion-desactivar"),
     path("ubicaciones/<int:pk>/trasladar/", views.UbicacionDesactivarView.as_view(), name="trasladar-ubicacion"),
 
-    # Categorías
+    # Categorías y Tipos opcionales
     path("categorias/", views.CategoriaListaView.as_view(), name="categoria-lista"),
     path("categorias/crear/", views.CategoriaCrearView.as_view(), name="categoria-crear"),
     path("categorias/<int:pk>/editar/", views.CategoriaEditarView.as_view(), name="categoria-editar"),
     path("categorias/<int:pk>/desactivar/", views.CategoriaDesactivarView.as_view(), name="categoria-desactivar"),
     path("categorias/<int:pk>/trasladar/", views.CategoriaTrasladarView.as_view(), name="categoria-trasladar"),
+    path("categorias/tipos/crear/", views.TipoCategoriaCrearView.as_view(), name="tipo-categoria-crear"),
+    path("categorias/tipos/<int:pk>/editar/", views.TipoCategoriaEditarView.as_view(), name="tipo-categoria-editar"),
+    path("categorias/tipos/<int:pk>/eliminar/", views.TipoCategoriaEliminarView.as_view(), name="tipo-categoria-eliminar"),
 
     # Productos
     path("productos/", views.ProductoListaView.as_view(), name="producto-lista"),

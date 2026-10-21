@@ -13,6 +13,7 @@ from .models import (
     Prestamo,
     Producto,
     ProductoUbicacion,
+    TipoCategoria,
     Ubicacion,
 )
 
@@ -38,18 +39,26 @@ class CategoriaAdmin(admin.ModelAdmin):
     search_fields = ("nombre", "descripcion")
 
 
+@admin.register(TipoCategoria)
+class TipoCategoriaAdmin(admin.ModelAdmin):
+    list_display = ("nombre", "categoria", "activo", "fecha_creacion")
+    list_filter = ("categoria", "activo")
+    search_fields = ("nombre", "categoria__nombre")
+
+
 @admin.register(Producto)
 class ProductoAdmin(admin.ModelAdmin):
     list_display = (
         "codigo_interno",
         "nombre",
         "categoria",
+        "tipo",
         "stock_inicial",
         "stock_minimo",
         "activo",
         "archivado",
     )
-    list_filter = ("categoria", "activo", "archivado")
+    list_filter = ("categoria", "tipo", "activo", "archivado")
     search_fields = ("codigo_interno", "codigo_barras", "nombre")
     readonly_fields = ("codigo_interno", "stock_inicial", "fecha_creacion", "fecha_modificacion")
 

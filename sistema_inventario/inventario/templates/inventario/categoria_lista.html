@@ -1,19 +1,122 @@
 {% extends "base.html" %}
-{% block page_title %}Categorías{% endblock %}
+{% block page_title %}Categorías y Tipos{% endblock %}
 {% block sidebar_categorias %}active{% endblock %}
 
-{% block title %}Categorías — Inventario AudacIA{% endblock %}
+{% block title %}Categorías y Tipos — Inventario AudacIA{% endblock %}
+
+{% block extra_css %}
+<style>
+    .classification-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        margin-bottom: 24px;
+    }
+
+    .cat-cards-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+
+    .cat-card {
+        background: linear-gradient(160deg, var(--bg-panel), var(--bg-panel-2));
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 18px 20px;
+        box-shadow: var(--shadow);
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 14px;
+    }
+
+    .cat-card-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+    }
+
+    .cat-card-title {
+        font-family: var(--font-heading);
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--text);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .cat-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 3px;
+        background: var(--accent-bright);
+        display: inline-block;
+        flex-shrink: 0;
+    }
+
+    .type-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .type-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: rgba(59, 111, 240, 0.14);
+        border: 1px solid rgba(92, 139, 255, 0.3);
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 500;
+    }
+
+    .type-chip-btn {
+        background: none;
+        border: none;
+        color: var(--text-dim);
+        cursor: pointer;
+        padding: 0 2px;
+        font-size: 11px;
+        line-height: 1;
+    }
+
+    .type-chip-btn:hover {
+        color: var(--accent-teal);
+    }
+
+    .type-chip-btn.danger:hover {
+        color: var(--crit);
+    }
+
+    @media (max-width: 980px) {
+        .classification-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
 
 {% block content %}
+<!-- Encabezado y Filtros -->
 <div class="card">
     <div class="card-header">
         <div>
-            <h1 class="card-title">Categorías</h1>
+            <h1 class="card-title">Categorías y Tipos</h1>
             <p style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.25rem;">
-                Clasificación de productos y asignación por defecto a almacenes principales.
+                Clasificación de productos por almacén principal y tipos opcionales ligados a cada categoría.
             </p>
         </div>
-        <div>
+        <div style="display: flex; gap: 0.5rem;">
             <a href="{% url 'inventario:categoria-crear' %}" class="btn btn-primary">
                 + Nueva Categoría
             </a>
@@ -21,8 +124,8 @@
     </div>
 
     {% if not user.es_usuario_normal and almacenes %}
-        <div style="margin-bottom: 1rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
-            <span style="font-size: 0.875rem; font-weight: 600; color: var(--text-muted);">Filtrar por almacén principal:</span>
+        <div style="margin-bottom: 1.25rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">Filtrar por almacén principal:</span>
             <a href="{% url 'inventario:categoria-lista' %}" class="btn btn-sm {% if not almacen_seleccionado %}btn-primary{% else %}btn-secondary{% endif %}">
                 Todos
             </a>
@@ -35,12 +138,55 @@
         </div>
     {% endif %}
 
+    <!-- Panel rápido para Agregar / Editar Tipo Opcional (Estilo AudacIA) -->
+    <div style="background: rgba(5, 11, 36, 0.45); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 16px 18px; margin-bottom: 1.5rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
+            <h3 id="panel-tipo-titulo" style="font-size: 14px; font-weight: 600; color: var(--accent-teal); margin: 0;">
+                + Agregar Tipo Opcional a una Categoría
+            </h3>
+            <span style="font-size: 12px; color: var(--text-faint);">
+                Cada categoría puede tener tipos opcionales para sub-clasificar artículos (ej. Destornillador, Alicate, Cable).
+            </span>
+        </div>
+
+        <form method="post" action="{% url 'inventario:tipo-categoria-crear' %}" id="form-tipo-rapido" style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+
+            <div style="flex: 1; min-width: 220px;">
+                <label for="select-tipo-categoria" style="margin-bottom: 4px;">Categoría *</label>
+                <select name="categoria" id="select-tipo-categoria" class="form-control" required>
+                    <option value="">Selecciona una categoría...</option>
+                    {% for cat in categorias %}
+                        <option value="{{ cat.id }}">{{ cat.nombre }} ({{ cat.almacen_principal.nombre }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div style="flex: 1.2; min-width: 220px;">
+                <label for="input-tipo-nombre" style="margin-bottom: 4px;">Nombre del tipo *</label>
+                <input type="text" name="nombre" id="input-tipo-nombre" class="form-control" maxlength="100" required placeholder="Ej. Destornillador, Alicate, Solvente...">
+            </div>
+
+            <div style="display: flex; gap: 8px;">
+                <button type="submit" class="btn btn-primary" id="btn-guardar-tipo">
+                    Guardar Tipo
+                </button>
+                <button type="button" class="btn btn-secondary" id="btn-cancelar-tipo" style="display: none;">
+                    Cancelar edición
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Tabla de Categorías y sus Tipos Opcionales -->
     <div class="table-responsive">
         <table class="data-table">
             <thead>
                 <tr>
                     <th>Nombre</th>
                     <th>Prefijo Código</th>
+                    <th>Tipos Asociados (Opcional)</th>
                     <th>Almacén Principal</th>
                     <th>Estado</th>
                     <th style="text-align: right;">Acciones</th>
@@ -51,25 +197,64 @@
                     <tr>
                         <td>
                             <strong>{{ cat.nombre }}</strong>
+                            <div style="font-size: 11.5px; color: var(--text-faint);">
+                                {{ cat.productos.count }} artículo(s)
+                            </div>
                         </td>
                         <td>
-                            <code style="background: var(--bg-panel-2); padding: 0.2rem 0.4rem; border-radius: 4px; font-weight: 600;">
-                                {{ cat.prefijo_codigo }}-XXXX
-                            </code>
+                            <code>{{ cat.prefijo_codigo }}-XXXX</code>
+                        </td>
+                        <td>
+                            {% with tipos_activos=cat.tipos.all %}
+                                {% if tipos_activos %}
+                                    <div class="type-list">
+                                        {% for t in tipos_activos %}
+                                            <span class="type-chip">
+                                                <span>{{ t.nombre }}</span>
+                                                <button type="button"
+                                                        class="type-chip-btn btn-editar-tipo-chip"
+                                                        data-id="{{ t.id }}"
+                                                        data-nombre="{{ t.nombre }}"
+                                                        data-cat-id="{{ cat.id }}"
+                                                        data-action-url="{% url 'inventario:tipo-categoria-editar' t.id %}"
+                                                        title="Renombrar tipo '{{ t.nombre }}'">
+                                                    ✎
+                                                </button>
+                                                <form method="post" action="{% url 'inventario:tipo-categoria-eliminar' t.id %}" style="display: inline; margin: 0;">
+                                                    {% csrf_token %}
+                                                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                                    <button type="submit"
+                                                            class="type-chip-btn danger"
+                                                            title="Eliminar tipo '{{ t.nombre }}'"
+                                                            onclick="return confirm('¿Eliminar el tipo «{{ t.nombre }}»? Los productos conservarán su categoría.');">
+                                                        ✕
+                                                    </button>
+                                                </form>
+                                            </span>
+                                        {% endfor %}
+                                    </div>
+                                {% else %}
+                                    <span style="color: var(--text-faint); font-size: 12px; font-style: italic;">
+                                        Sin tipos ligados (opcional)
+                                    </span>
+                                {% endif %}
+                            {% endwith %}
                         </td>
                         <td>{{ cat.almacen_principal.nombre }}</td>
                         <td>
                             {% if cat.activo %}
-                                <span style="display: inline-block; padding: 0.2rem 0.5rem; background: var(--success-bg); color: var(--success); border-radius: 9999px; font-size: 0.75rem; font-weight: 600;">
-                                    Activa
-                                </span>
+                                <span class="badge badge-ok">Activa</span>
                             {% else %}
-                                <span style="display: inline-block; padding: 0.2rem 0.5rem; background: var(--bg-panel-2); color: var(--text-muted); border-radius: 9999px; font-size: 0.75rem; font-weight: 600;">
-                                    Inactiva
-                                </span>
+                                <span class="badge badge-muted">Inactiva</span>
                             {% endif %}
                         </td>
-                        <td style="text-align: right;">
+                        <td style="text-align: right; white-space: nowrap;">
+                            <button type="button"
+                                    class="btn btn-sm btn-secondary btn-preseleccionar-cat"
+                                    data-cat-id="{{ cat.id }}"
+                                    data-cat-nombre="{{ cat.nombre }}">
+                                + Tipo
+                            </button>
                             <a href="{% url 'inventario:categoria-editar' cat.id %}" class="btn btn-sm btn-secondary">
                                 Editar
                             </a>
@@ -77,7 +262,7 @@
                     </tr>
                 {% empty %}
                     <tr>
-                        <td colspan="5" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                        <td colspan="6" style="text-align: center; padding: 2rem; color: var(--text-muted);">
                             No hay categorías registradas en este almacén.
                         </td>
                     </tr>
@@ -86,4 +271,52 @@
         </table>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    var formTipo = document.getElementById("form-tipo-rapido");
+    var selectCat = document.getElementById("select-tipo-categoria");
+    var inputNombre = document.getElementById("input-tipo-nombre");
+    var tituloPanel = document.getElementById("panel-tipo-titulo");
+    var btnGuardar = document.getElementById("btn-guardar-tipo");
+    var btnCancelar = document.getElementById("btn-cancelar-tipo");
+    var urlCrearDefault = "{% url 'inventario:tipo-categoria-crear' %}";
+
+    function resetModoCrear() {
+        formTipo.action = urlCrearDefault;
+        tituloPanel.textContent = "+ Agregar Tipo Opcional a una Categoría";
+        btnGuardar.textContent = "Guardar Tipo";
+        btnCancelar.style.display = "none";
+        inputNombre.value = "";
+    }
+
+    document.querySelectorAll(".btn-preseleccionar-cat").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            resetModoCrear();
+            selectCat.value = btn.getAttribute("data-cat-id");
+            inputNombre.focus();
+        });
+    });
+
+    document.querySelectorAll(".btn-editar-tipo-chip").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            formTipo.action = btn.getAttribute("data-action-url");
+            selectCat.value = btn.getAttribute("data-cat-id");
+            inputNombre.value = btn.getAttribute("data-nombre");
+            tituloPanel.textContent = "✎ Editar Tipo: " + btn.getAttribute("data-nombre");
+            btnGuardar.textContent = "Actualizar Tipo";
+            btnCancelar.style.display = "inline-flex";
+            inputNombre.focus();
+        });
+    });
+
+    if (btnCancelar) {
+        btnCancelar.addEventListener("click", function() {
+            resetModoCrear();
+        });
+    }
+});
+</script>
 {% endblock %}

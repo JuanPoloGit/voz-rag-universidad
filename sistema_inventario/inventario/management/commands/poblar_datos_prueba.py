@@ -21,11 +21,13 @@ from inventario.models import (
     Movimiento,
     Prestamo,
     Producto,
+    TipoCategoria,
     Ubicacion,
 )
 from inventario.servicios.datos_maestros import (
     crear_categoria,
     crear_producto,
+    crear_tipo_categoria,
     crear_ubicacion,
 )
 from inventario.servicios.operaciones import (
@@ -125,16 +127,17 @@ class Command(BaseCommand):
                     )
                 ubicaciones[nombre_ub] = ub
 
-            # 4. Categorías (5 categorías)
+            # 4. Categorías (5 categorías) y Tipos opcionales ligados
             categorias_spec = [
-                ("Herramientas Manuales", alm_norte),
-                ("Material Eléctrico", alm_norte),
-                ("Equipos de Protección", alm_norte),
-                ("Papelería Técnica", alm_sur),
-                ("Químicos y Solventes", alm_sur),
+                ("Herramientas Manuales", alm_norte, ["Destornillador", "Alicate", "Llave", "Martillo"]),
+                ("Material Eléctrico", alm_norte, ["Instrumento", "Cable", "Aislante", "Protección eléctrica"]),
+                ("Equipos de Protección", alm_norte, ["Cabeza", "Manos", "Visual"]),
+                ("Papelería Técnica", alm_sur, ["Papel", "Escritura", "Registro"]),
+                ("Químicos y Solventes", alm_sur, ["Solvente", "Aerosol"]),
             ]
             categorias = {}
-            for nombre_cat, alm in categorias_spec:
+            tipos_map = {}
+            for nombre_cat, alm, lista_tipos in categorias_spec:
                 cat = Categoria.objects.filter(nombre=nombre_cat).first()
                 if not cat:
                     cat = crear_categoria(
@@ -143,35 +146,46 @@ class Command(BaseCommand):
                         usuario=admin_gen,
                     )
                 categorias[nombre_cat] = cat
+                for nombre_tipo in lista_tipos:
+                    tipo_obj = TipoCategoria.objects.filter(categoria=cat, nombre=nombre_tipo).first()
+                    if not tipo_obj:
+                        tipo_obj = crear_tipo_categoria(
+                            nombre=nombre_tipo,
+                            categoria=cat,
+                            usuario=admin_gen,
+                        )
+                    tipos_map[(nombre_cat, nombre_tipo)] = tipo_obj
 
-            # 5. Productos (16 productos con estados variados)
+            # 5. Productos (16 productos con estados variados y tipos opcionales)
             productos_spec = [
-                # (nombre, categoria, stock_ini, stock_min, cod_barras, empaque, unid_emp, ubicacion)
-                ("Destornillador Aislado 1000V Estrella", "Herramientas Manuales", 28, 10, "7701234567001", "Caja", 6, "NOR-E01-N01"),
-                ("Alicate Universal Profesional 8 pulg", "Herramientas Manuales", 18, 8, "7701234567002", "", None, "NOR-E01-N01"),
-                ("Juego de Llaves Allen Milimétricas", "Herramientas Manuales", 4, 10, "7701234567003", "Estuche", 1, "NOR-E01-N01"),  # Stock Bajo
-                ("Martillo de Bola 16 oz Fibra", "Herramientas Manuales", 12, 5, "7701234567004", "", None, "NOR-E01-N01"),
-                ("Multímetro Digital True RMS", "Material Eléctrico", 15, 5, "7701234567005", "Caja", 1, "NOR-E01-N02"),
-                ("Rollo Cable THHN Calibre 12 AWG", "Material Eléctrico", 35, 10, "7701234567006", "Rollo", 1, "NOR-E01-N02"),
-                ("Cinta Aislante Autofundente 3M", "Material Eléctrico", 3, 12, "7701234567007", "Paquete", 10, "NOR-E01-N02"),  # Stock Bajo
-                ("Breaker Termomagnético Bipolar 30A", "Material Eléctrico", 0, 6, "7701234567008", "Caja", 4, "NOR-E01-N02"),   # Sin Stock (Crítico)
-                ("Casco Dielectrico Tipo I Clase E", "Equipos de Protección", 24, 10, "7701234567009", "", None, "NOR-E02-N01"),
-                ("Guantes de Nitrilo Anticorte Par", "Equipos de Protección", 5, 15, "7701234567010", "Paquete", 12, "NOR-E02-N01"),  # Stock Bajo
-                ("Gafas de Seguridad Policarbonato UV", "Equipos de Protección", 0, 8, "7701234567011", "Caja", 12, "NOR-E02-N01"),  # Sin Stock (Crítico)
-                ("Resma Papel Bond Carta 75g", "Papelería Técnica", 45, 15, "7701234567012", "Caja", 10, "SUR-E01-N01"),
-                ("Marcador Permanente Industrial Negro", "Papelería Técnica", 36, 12, "7701234567013", "Caja", 12, "SUR-E01-N01"),
-                ("Bitácora Foliada de Laboratorio", "Papelería Técnica", 14, 6, "7701234567014", "", None, "SUR-E01-N01"),
-                ("Alcohol Isopropílico Grado Electrónico 1L", "Químicos y Solventes", 22, 8, "7701234567015", "Caja", 6, "SUR-E01-N02"),
-                ("Limpiador de Contactos Dielectrico Spray", "Químicos y Solventes", 2, 10, "7701234567016", "Caja", 12, "SUR-E01-N02"),  # Stock Bajo
+                # (nombre, categoria, tipo_nombre, stock_ini, stock_min, cod_barras, empaque, unid_emp, ubicacion)
+                ("Destornillador Aislado 1000V Estrella", "Herramientas Manuales", "Destornillador", 28, 10, "7701234567001", "Caja", 6, "NOR-E01-N01"),
+                ("Alicate Universal Profesional 8 pulg", "Herramientas Manuales", "Alicate", 18, 8, "7701234567002", "", None, "NOR-E01-N01"),
+                ("Juego de Llaves Allen Milimétricas", "Herramientas Manuales", "Llave", 4, 10, "7701234567003", "Estuche", 1, "NOR-E01-N01"),  # Stock Bajo
+                ("Martillo de Bola 16 oz Fibra", "Herramientas Manuales", "Martillo", 12, 5, "7701234567004", "", None, "NOR-E01-N01"),
+                ("Multímetro Digital True RMS", "Material Eléctrico", "Instrumento", 15, 5, "7701234567005", "Caja", 1, "NOR-E01-N02"),
+                ("Rollo Cable THHN Calibre 12 AWG", "Material Eléctrico", "Cable", 35, 10, "7701234567006", "Rollo", 1, "NOR-E01-N02"),
+                ("Cinta Aislante Autofundente 3M", "Material Eléctrico", "Aislante", 3, 12, "7701234567007", "Paquete", 10, "NOR-E01-N02"),  # Stock Bajo
+                ("Breaker Termomagnético Bipolar 30A", "Material Eléctrico", "Protección eléctrica", 0, 6, "7701234567008", "Caja", 4, "NOR-E01-N02"),   # Sin Stock (Crítico)
+                ("Casco Dielectrico Tipo I Clase E", "Equipos de Protección", "Cabeza", 24, 10, "7701234567009", "", None, "NOR-E02-N01"),
+                ("Guantes de Nitrilo Anticorte Par", "Equipos de Protección", "Manos", 5, 15, "7701234567010", "Paquete", 12, "NOR-E02-N01"),  # Stock Bajo
+                ("Gafas de Seguridad Policarbonato UV", "Equipos de Protección", "Visual", 0, 8, "7701234567011", "Caja", 12, "NOR-E02-N01"),  # Sin Stock (Crítico)
+                ("Resma Papel Bond Carta 75g", "Papelería Técnica", "Papel", 45, 15, "7701234567012", "Caja", 10, "SUR-E01-N01"),
+                ("Marcador Permanente Industrial Negro", "Papelería Técnica", "Escritura", 36, 12, "7701234567013", "Caja", 12, "SUR-E01-N01"),
+                ("Bitácora Foliada de Laboratorio", "Papelería Técnica", "Registro", 14, 6, "7701234567014", "", None, "SUR-E01-N01"),
+                ("Alcohol Isopropílico Grado Electrónico 1L", "Químicos y Solventes", "Solvente", 22, 8, "7701234567015", "Caja", 6, "SUR-E01-N02"),
+                ("Limpiador de Contactos Dielectrico Spray", "Químicos y Solventes", "Aerosol", 2, 10, "7701234567016", "Caja", 12, "SUR-E01-N02"),  # Stock Bajo
             ]
 
             productos = {}
-            for (nombre_p, cat_nombre, s_ini, s_min, barras, emp, u_emp, ub_nombre) in productos_spec:
+            for (nombre_p, cat_nombre, tipo_nom, s_ini, s_min, barras, emp, u_emp, ub_nombre) in productos_spec:
+                tipo_obj = tipos_map.get((cat_nombre, tipo_nom))
                 prod = Producto.objects.filter(nombre=nombre_p).first()
                 if not prod:
                     prod = crear_producto(
                         nombre=nombre_p,
                         categoria=categorias[cat_nombre],
+                        tipo=tipo_obj,
                         stock_inicial=s_ini,
                         stock_minimo=s_min,
                         codigo_barras=barras,
@@ -181,6 +195,9 @@ class Command(BaseCommand):
                         ubicaciones=[ubicaciones[ub_nombre].id],
                         usuario=admin_gen,
                     )
+                elif prod.tipo_id is None and tipo_obj is not None:
+                    prod.tipo = tipo_obj
+                    prod.save(update_fields=["tipo"])
                 productos[nombre_p] = prod
 
             # 6. Movimientos operativos, préstamos y conteos (solo si no se han corrido antes)
@@ -328,6 +345,7 @@ class Command(BaseCommand):
                 f"  - Almacenes: {Almacen.objects.count()}\n"
                 f"  - Ubicaciones: {Ubicacion.objects.count()}\n"
                 f"  - Categorías: {Categoria.objects.count()}\n"
+                f"  - Tipos de Categoría: {TipoCategoria.objects.count()}\n"
                 f"  - Productos: {Producto.objects.count()}\n"
                 f"  - Existencias: {Existencia.objects.count()}\n"
                 f"  - Movimientos: {Movimiento.objects.count()}\n"

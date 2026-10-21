@@ -22,6 +22,7 @@ from inventario.forms import (
     ProductoForm,
     ReversionForm,
     SalidaForm,
+    TipoCategoriaForm,
     TrasladoForm,
     UbicacionForm,
 )
@@ -34,6 +35,7 @@ from inventario.models import (
     Movimiento,
     Prestamo,
     Producto,
+    TipoCategoria,
     Ubicacion,
 )
 from inventario.servicios import (
@@ -55,14 +57,18 @@ from inventario.servicios.datos_maestros import (
     actualizar_almacen,
     actualizar_categoria,
     actualizar_producto,
+    actualizar_tipo_categoria,
     actualizar_ubicacion,
     archivar_producto,
     crear_almacen,
     crear_categoria,
     crear_producto,
+    crear_tipo_categoria,
     crear_ubicacion,
+    eliminar_tipo_categoria,
     fusionar_productos,
     reactivar_almacen,
+    sincronizar_tipos_categoria,
 )
 from inventario.servicios.stock import (
     buscar_por_codigo_barras,
@@ -259,11 +265,11 @@ class UbicacionEditarView(LoginRequiredMixin, UpdateView):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. CATEGORÍAS
+# 3. CATEGORÍAS Y TIPOS OPCIONALES
 # ─────────────────────────────────────────────────────────────────────────────
 
 class CategoriaListaView(LoginRequiredMixin, ListView):
-    """Lista de categorías de productos accesibles por el usuario."""
+    """Lista de categorías de productos accesibles por el usuario con sus tipos opcionales."""
 
     model = Categoria
     template_name = "inventario/categoria_lista.html"
@@ -278,18 +284,23 @@ class CategoriaListaView(LoginRequiredMixin, ListView):
             almacen_id = self.request.GET.get("almacen_id")
             if almacen_id:
                 qs = qs.filter(almacen_principal_id=almacen_id)
-        return qs.select_related("almacen_principal").order_by("almacen_principal__nombre", "nombre")
+        return (
+            qs.select_related("almacen_principal")
+            .prefetch_related("tipos", "productos")
+            .order_by("almacen_principal__nombre", "nombre")
+        )
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         if not getattr(self.request.user, "es_usuario_normal", False):
             context["almacenes"] = Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
             context["almacen_seleccionado"] = self.request.GET.get("almacen_id")
+        context["tipo_form"] = TipoCategoriaForm(usuario=self.request.user)
         return context
 
 
 class CategoriaCrearView(LoginRequiredMixin, CreateView):
-    """Creación de una categoría con almacén principal obligatorio."""
+    """Creación de una categoría con almacén principal obligatorio y tipos opcionales."""
 
     model = Categoria
     form_class = CategoriaForm
@@ -315,6 +326,14 @@ class CategoriaCrearView(LoginRequiredMixin, CreateView):
                 usuario=user,
                 ip_origen=_obtener_ip(self.request),
             )
+            tipos_opcionales = form.cleaned_data.get("tipos_opcionales") or []
+            if tipos_opcionales:
+                sincronizar_tipos_categoria(
+                    categoria=categoria,
+                    nombres_tipos=tipos_opcionales,
+                    usuario=user,
+                    ip_origen=_obtener_ip(self.request),
+                )
             messages.success(self.request, f"Categoría '{categoria.nombre}' creada exitosamente.")
             return redirect(self.success_url)
         except Exception as exc:
@@ -323,7 +342,7 @@ class CategoriaCrearView(LoginRequiredMixin, CreateView):
 
 
 class CategoriaEditarView(LoginRequiredMixin, UpdateView):
-    """Edición de categoría. Detecta si requiere traslado estructural al cambiar almacén."""
+    """Edición de categoría y sus tipos opcionales."""
 
     model = Categoria
     form_class = CategoriaForm
@@ -342,6 +361,11 @@ class CategoriaEditarView(LoginRequiredMixin, UpdateView):
         kwargs["usuario"] = self.request.user
         return kwargs
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["tipos_categoria"] = self.object.tipos.filter(activo=True).order_by("nombre")
+        return context
+
     def form_valid(self, form):
         user = self.request.user
         if getattr(user, "es_usuario_normal", False):
@@ -357,6 +381,14 @@ class CategoriaEditarView(LoginRequiredMixin, UpdateView):
                 usuario=user,
                 ip_origen=_obtener_ip(self.request),
             )
+            tipos_opcionales = form.cleaned_data.get("tipos_opcionales") or []
+            if tipos_opcionales:
+                sincronizar_tipos_categoria(
+                    categoria=categoria,
+                    nombres_tipos=tipos_opcionales,
+                    usuario=user,
+                    ip_origen=_obtener_ip(self.request),
+                )
             messages.success(self.request, f"Categoría '{categoria.nombre}' actualizada exitosamente.")
             return redirect(self.success_url)
         except NecesitaTraslado as exc:
@@ -365,6 +397,77 @@ class CategoriaEditarView(LoginRequiredMixin, UpdateView):
         except Exception as exc:
             form.add_error(None, str(exc))
             return self.form_invalid(form)
+
+
+class TipoCategoriaCrearView(LoginRequiredMixin, View):
+    """Agrega un tipo opcional ligado a una categoría existente."""
+
+    def post(self, request):
+        categoria_id = request.POST.get("categoria")
+        nombre = (request.POST.get("nombre") or "").strip()
+        next_url = request.POST.get("next") or reverse("inventario:categoria-lista")
+
+        if not categoria_id or not str(categoria_id).isdigit():
+            messages.error(request, "Debe seleccionar una categoría válida.")
+            return redirect(next_url)
+
+        categoria = get_object_or_404(Categoria, pk=int(categoria_id), eliminado=False)
+        try:
+            tipo = crear_tipo_categoria(
+                nombre=nombre,
+                categoria=categoria,
+                usuario=request.user,
+                ip_origen=_obtener_ip(request),
+            )
+            messages.success(request, f"Tipo '{tipo.nombre}' agregado a la categoría '{categoria.nombre}'.")
+        except Exception as exc:
+            msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
+            messages.error(request, msg)
+        return redirect(next_url)
+
+
+class TipoCategoriaEditarView(LoginRequiredMixin, View):
+    """Renombra un tipo de categoría conservando los productos e historial."""
+
+    def post(self, request, pk):
+        tipo = get_object_or_404(TipoCategoria, pk=pk)
+        nombre = (request.POST.get("nombre") or "").strip()
+        next_url = request.POST.get("next") or reverse("inventario:categoria-lista")
+
+        try:
+            actualizado = actualizar_tipo_categoria(
+                tipo=tipo,
+                nombre=nombre,
+                usuario=request.user,
+                ip_origen=_obtener_ip(request),
+            )
+            messages.success(request, f"Tipo actualizado a '{actualizado.nombre}'.")
+        except Exception as exc:
+            msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
+            messages.error(request, msg)
+        return redirect(next_url)
+
+
+class TipoCategoriaEliminarView(LoginRequiredMixin, View):
+    """Elimina un tipo de categoría opcional (los productos quedan sin tipo)."""
+
+    def post(self, request, pk):
+        tipo = get_object_or_404(TipoCategoria, pk=pk)
+        nombre_tipo = tipo.nombre
+        nombre_cat = tipo.categoria.nombre
+        next_url = request.POST.get("next") or reverse("inventario:categoria-lista")
+
+        try:
+            eliminar_tipo_categoria(
+                tipo=tipo,
+                usuario=request.user,
+                ip_origen=_obtener_ip(request),
+            )
+            messages.success(request, f"Tipo '{nombre_tipo}' eliminado de '{nombre_cat}'.")
+        except Exception as exc:
+            msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
+            messages.error(request, msg)
+        return redirect(next_url)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -404,13 +507,22 @@ class ProductoListaView(LoginRequiredMixin, ListView):
                 Q(nombre__icontains=q)
                 | Q(codigo_interno__icontains=q)
                 | Q(codigo_barras__icontains=q)
+                | Q(tipo__nombre__icontains=q)
             )
 
         categoria_id = self.request.GET.get("categoria_id")
         if categoria_id:
             qs = qs.filter(categoria_id=categoria_id)
 
-        return qs.select_related("categoria", "categoria__almacen_principal").prefetch_related("existencias", "ubicaciones").order_by("codigo_interno")
+        tipo_id = self.request.GET.get("tipo_id")
+        if tipo_id:
+            qs = qs.filter(tipo_id=tipo_id)
+
+        return (
+            qs.select_related("categoria", "categoria__almacen_principal", "tipo")
+            .prefetch_related("existencias", "ubicaciones")
+            .order_by("codigo_interno")
+        )
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -425,11 +537,12 @@ class ProductoListaView(LoginRequiredMixin, ListView):
             ).order_by("nombre")
         context["q"] = self.request.GET.get("q", "")
         context["categoria_seleccionada"] = self.request.GET.get("categoria_id")
+        context["tipo_seleccionado"] = self.request.GET.get("tipo_id")
         return context
 
 
 class ProductoCrearView(LoginRequiredMixin, CreateView):
-    """Creación de un nuevo producto en catálogo con opción de stock inicial."""
+    """Creación de un nuevo producto en catálogo con opción de stock inicial y tipo opcional."""
 
     model = Producto
     form_class = ProductoForm
@@ -441,12 +554,26 @@ class ProductoCrearView(LoginRequiredMixin, CreateView):
         kwargs["usuario"] = self.request.user
         return kwargs
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        cats_qs = Categoria.objects.filter(activo=True, eliminado=False)
+        if getattr(user, "es_usuario_normal", False):
+            cats_qs = cats_qs.filter(almacen_principal=user.almacen_asignado)
+        tipos = TipoCategoria.objects.filter(activo=True, categoria__in=cats_qs).order_by("nombre")
+        context["tipos_por_categoria"] = [
+            {"id": t.id, "nombre": t.nombre, "categoria_id": t.categoria_id}
+            for t in tipos
+        ]
+        return context
+
     def form_valid(self, form):
         ubicaciones = [u.id for u in form.cleaned_data.get("ubicaciones_seleccionadas", [])]
         try:
             producto = crear_producto(
                 nombre=form.cleaned_data["nombre"],
                 categoria=form.cleaned_data["categoria"],
+                tipo=form.cleaned_data.get("tipo"),
                 stock_inicial=form.cleaned_data.get("stock_inicial", 0),
                 stock_minimo=form.cleaned_data.get("stock_minimo", 0),
                 codigo_barras=form.cleaned_data.get("codigo_barras", ""),
@@ -484,12 +611,27 @@ class ProductoEditarView(LoginRequiredMixin, UpdateView):
         kwargs["usuario"] = self.request.user
         return kwargs
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        cats_qs = Categoria.objects.filter(activo=True, eliminado=False)
+        if getattr(user, "es_usuario_normal", False):
+            cats_qs = cats_qs.filter(almacen_principal=user.almacen_asignado)
+        tipos = TipoCategoria.objects.filter(activo=True, categoria__in=cats_qs).order_by("nombre")
+        context["tipos_por_categoria"] = [
+            {"id": t.id, "nombre": t.nombre, "categoria_id": t.categoria_id}
+            for t in tipos
+        ]
+        return context
+
     def form_valid(self, form):
         ubicaciones = [u.id for u in form.cleaned_data.get("ubicaciones_seleccionadas", [])]
         try:
             producto = actualizar_producto(
                 producto=self.object,
                 nombre=form.cleaned_data["nombre"],
+                tipo=form.cleaned_data.get("tipo"),
+                actualizar_tipo=True,
                 stock_minimo=form.cleaned_data.get("stock_minimo", 0),
                 codigo_barras=form.cleaned_data.get("codigo_barras", ""),
                 nombre_empaque=form.cleaned_data.get("nombre_empaque", ""),

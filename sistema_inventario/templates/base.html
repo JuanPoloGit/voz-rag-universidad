@@ -648,10 +648,155 @@
         .font-heading { font-family: var(--font-heading); }
         .font-mono { font-family: var(--font-mono); }
 
+        /* ─── Dashboard KPI & Layout Grids ────────────────────────── */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .kpi-card {
+            background: linear-gradient(160deg, var(--bg-panel), var(--bg-panel-2));
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px 20px 18px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: var(--shadow);
+            transition: transform 0.15s ease, border-color 0.15s ease;
+        }
+
+        .kpi-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--border-strong);
+        }
+
+        .kpi-card::after {
+            content: '';
+            position: absolute;
+            top: -20px;
+            right: -20px;
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            opacity: 0.08;
+        }
+
+        .kpi-card.kpi-blue::after { background: var(--accent); }
+        .kpi-card.kpi-green::after { background: var(--ok); }
+        .kpi-card.kpi-red::after { background: var(--crit); }
+        .kpi-card.kpi-amber::after { background: var(--warn); }
+        .kpi-card.kpi-purple::after { background: #8b5cf6; }
+
+        .kpi-label {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-faint);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        }
+
+        .kpi-value {
+            font-family: var(--font-heading);
+            font-size: 32px;
+            font-weight: 700;
+            line-height: 1.1;
+            margin-bottom: 4px;
+        }
+
+        .kpi-footnote {
+            font-size: 11.5px;
+            color: var(--text-faint);
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: 1.35fr 1fr;
+            gap: 20px;
+            margin-bottom: 28px;
+        }
+
+        .chart-container {
+            height: 260px;
+            position: relative;
+        }
+
+        .tables-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        /* ─── Module Tabs (Sub-navigation inside each module) ────── */
+        .module-tabs {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+            padding: 8px 10px;
+            background: rgba(13, 25, 64, 0.72);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+        }
+
+        .module-tab {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-dim);
+            text-decoration: none;
+            border: 1px solid transparent;
+            transition: all 0.15s ease;
+        }
+
+        .module-tab:hover {
+            color: var(--text);
+            background: rgba(255, 255, 255, 0.05);
+            text-decoration: none;
+        }
+
+        .module-tab.active {
+            color: #fff;
+            font-weight: 600;
+            background: linear-gradient(90deg, rgba(59, 111, 240, 0.28), rgba(59, 111, 240, 0.12));
+            border-color: rgba(92, 139, 255, 0.38);
+            box-shadow: 0 2px 10px rgba(59, 111, 240, 0.18);
+        }
+
+        .module-tab svg {
+            width: 15px;
+            height: 15px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 1.9;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            flex-shrink: 0;
+        }
+
+        .module-tab.active svg {
+            stroke: var(--accent-teal);
+        }
+
+        @media (max-width: 1280px) {
+            .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+
         /* ═══════════════════════════════════════════════════════════════
            RESPONSIVE — ≤ 980px
            ═══════════════════════════════════════════════════════════════ */
         @media (max-width: 980px) {
+            .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+            .charts-grid { grid-template-columns: 1fr; }
+            .tables-grid { grid-template-columns: 1fr; }
+
             .sidebar {
                 position: fixed;
                 left: -260px;
@@ -687,6 +832,8 @@
         }
 
         @media (max-width: 640px) {
+            .kpi-grid { grid-template-columns: 1fr; }
+            .kpi-value { font-size: 26px; }
             .topbar-title {
                 font-size: 16px;
             }
@@ -695,13 +842,12 @@
                 border-radius: 10px;
             }
         }
-
-        {% block extra_css %}{% endblock %}
     </style>
+    {% block extra_css %}{% endblock %}
 </head>
 <body>
     <div class="app-layout">
-        <!-- ═══ SIDEBAR ═══ -->
+        <!-- ═══ SIDEBAR (Propuesta A: 7 ítems limpios + pestañas internas por módulo) ═══ -->
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-brand">
                 <a href="{% url 'web:dashboard' %}">
@@ -711,87 +857,51 @@
             </div>
 
             <nav class="sidebar-nav">
-                <!-- Principal -->
-                <div class="nav-section-label">Principal</div>
+                <!-- 1. Resumen General -->
+                <div class="nav-section-label">1. Panorama</div>
                 <a href="{% url 'web:dashboard' %}" class="nav-item {% block sidebar_dashboard %}{% endblock %}">
                     <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-                    Resumen
+                    Resumen General
                 </a>
 
-                <!-- Catálogo -->
-                <div class="nav-section-label">Catálogo</div>
-                <a href="{% url 'inventario:almacen-lista' %}" class="nav-item {% block sidebar_almacenes %}{% endblock %}">
-                    <svg viewBox="0 0 24 24"><path d="M3 21V8l9-5 9 5v13"/><path d="M9 21V12h6v9"/></svg>
-                    Almacenes
-                </a>
-                <a href="{% url 'inventario:ubicacion-lista' %}" class="nav-item {% block sidebar_ubicaciones %}{% endblock %}">
-                    <svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>
-                    Ubicaciones
-                </a>
-                <a href="{% url 'inventario:categoria-lista' %}" class="nav-item {% block sidebar_categorias %}{% endblock %}">
-                    <svg viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z"/><circle cx="17" cy="17" r="3"/></svg>
-                    Categorías
-                </a>
-                <a href="{% url 'inventario:producto-lista' %}" class="nav-item {% block sidebar_productos %}{% endblock %}">
+                <!-- 2. Inventario y Catálogo -->
+                <div class="nav-section-label">2. Inventario</div>
+                <a href="{% url 'inventario:producto-lista' %}" class="nav-item {% block sidebar_productos %}{% endblock %}{% block sidebar_alertas %}{% endblock %}">
                     <svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
-                    Productos
-                </a>
-
-                <!-- Operaciones -->
-                <div class="nav-section-label">Operaciones</div>
-                <a href="{% url 'inventario:movimiento-entrada' %}" class="nav-item {% block sidebar_entrada %}{% endblock %}">
-                    <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
-                    Entrada de Stock
-                </a>
-                <a href="{% url 'inventario:movimiento-salida' %}" class="nav-item {% block sidebar_salida %}{% endblock %}">
-                    <svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
-                    Salida de Stock
-                </a>
-                <a href="{% url 'inventario:movimiento-lista' %}" class="nav-item {% block sidebar_movimientos %}{% endblock %}">
-                    <svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
-                    Historial
-                </a>
-                <a href="{% url 'inventario:prestamo-lista' %}" class="nav-item {% block sidebar_prestamos %}{% endblock %}">
-                    <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
-                    Préstamos
-                </a>
-                <a href="{% url 'inventario:conteo-lista' %}" class="nav-item {% block sidebar_conteos %}{% endblock %}">
-                    <svg viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/><path d="M9 14l2 2 4-4"/></svg>
-                    Conteos Físicos
-                </a>
-
-                <!-- Reportes -->
-                <div class="nav-section-label">Reportes</div>
-                <a href="{% url 'web:reporte-existencias' %}" class="nav-item {% block sidebar_rep_existencias %}{% endblock %}">
-                    <svg viewBox="0 0 24 24"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
-                    Existencias
-                </a>
-                <a href="{% url 'web:reporte-movimientos' %}" class="nav-item {% block sidebar_rep_movimientos %}{% endblock %}">
-                    <svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-                    Movimientos
-                </a>
-                <a href="{% url 'web:reporte-prestamos' %}" class="nav-item {% block sidebar_rep_prestamos %}{% endblock %}">
-                    <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
-                    Préstamos
-                </a>
-                <a href="{% url 'web:reporte-estancados' %}" class="nav-item {% block sidebar_rep_estancados %}{% endblock %}">
-                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-                    Estancados
-                </a>
-
-                <!-- Sistema -->
-                <div class="nav-section-label">Sistema</div>
-                <a href="{% url 'inventario:alertas-lista' %}" class="nav-item {% block sidebar_alertas %}{% endblock %}">
-                    <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
-                    Alertas de Stock
+                    Catálogo y Stock
                     {% if alertas_resumen.total_alertas > 0 %}
-                        <span class="badge badge-crit" style="margin-left: auto; font-size: 10px; padding: 2px 7px;">{{ alertas_resumen.total_alertas }}</span>
+                        <span class="badge badge-crit" style="margin-left: auto; font-size: 10px; padding: 2px 7px;" title="{{ alertas_resumen.total_alertas }} alertas de stock">{{ alertas_resumen.total_alertas }}</span>
                     {% endif %}
                 </a>
+
+                <!-- 3. Operaciones Diarias -->
+                <div class="nav-section-label">3. Operaciones</div>
+                <a href="{% url 'inventario:movimiento-lista' %}" class="nav-item {% block sidebar_movimientos %}{% endblock %}{% block sidebar_entrada %}{% endblock %}{% block sidebar_salida %}{% endblock %}">
+                    <svg viewBox="0 0 24 24"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
+                    Entradas y Salidas
+                </a>
+                <a href="{% url 'inventario:prestamo-lista' %}" class="nav-item {% block sidebar_prestamos %}{% endblock %}{% block sidebar_conteos %}{% endblock %}">
+                    <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+                    Préstamos y Conteos
+                </a>
+
+                <!-- 4. Estructura y Analítica -->
+                <div class="nav-section-label">4. Estructura y Análisis</div>
+                <a href="{% url 'inventario:categoria-lista' %}" class="nav-item {% block sidebar_categorias %}{% endblock %}{% block sidebar_ubicaciones %}{% endblock %}{% block sidebar_almacenes %}{% endblock %}">
+                    <svg viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z"/><circle cx="17" cy="17" r="3"/></svg>
+                    Categorías y Bodegas
+                </a>
+                <a href="{% url 'web:reporte-existencias' %}" class="nav-item {% block sidebar_rep_existencias %}{% endblock %}{% block sidebar_rep_movimientos %}{% endblock %}{% block sidebar_rep_prestamos %}{% endblock %}{% block sidebar_rep_estancados %}{% endblock %}">
+                    <svg viewBox="0 0 24 24"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+                    Centro de Reportes
+                </a>
+
                 {% if user.es_administrador %}
+                <!-- 5. Administración -->
+                <div class="nav-section-label">5. Administración</div>
                 <a href="{% url 'cuentas:usuario_lista' %}" class="nav-item {% block sidebar_usuarios %}{% endblock %}">
                     <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
-                    Usuarios
+                    Usuarios y Roles
                 </a>
                 {% endif %}
             </nav>
@@ -851,6 +961,96 @@
                         {% endfor %}
                     </div>
                 {% endif %}
+
+                {% with url_name=request.resolver_match.url_name %}
+                    {% if url_name in 'producto-lista,producto-crear,producto-detalle,producto-editar,producto-fusionar,alertas-lista' %}
+                        <nav class="module-tabs" aria-label="Submenú de Inventario">
+                            <a href="{% url 'inventario:producto-lista' %}" class="module-tab {% if url_name in 'producto-lista,producto-detalle,producto-editar,producto-fusionar' %}active{% endif %}">
+                                <svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+                                Catálogo de Productos
+                            </a>
+                            <a href="{% url 'inventario:producto-crear' %}" class="module-tab {% if url_name == 'producto-crear' %}active{% endif %}">
+                                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+                                + Agregar Producto
+                            </a>
+                            <a href="{% url 'inventario:alertas-lista' %}" class="module-tab {% if url_name == 'alertas-lista' %}active{% endif %}">
+                                <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+                                Alertas de Stock
+                                {% if alertas_resumen.total_alertas > 0 %}
+                                    <span class="badge badge-crit" style="font-size: 10px; padding: 1px 6px;">{{ alertas_resumen.total_alertas }}</span>
+                                {% endif %}
+                            </a>
+                        </nav>
+                    {% elif url_name in 'movimiento-lista,movimiento-entrada,movimiento-salida,movimiento-traslado,movimiento-revertir' %}
+                        <nav class="module-tabs" aria-label="Submenú de Entradas y Salidas">
+                            <a href="{% url 'inventario:movimiento-lista' %}" class="module-tab {% if url_name in 'movimiento-lista,movimiento-revertir' %}active{% endif %}">
+                                <svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+                                Historial de Movimientos
+                            </a>
+                            <a href="{% url 'inventario:movimiento-entrada' %}" class="module-tab {% if url_name == 'movimiento-entrada' %}active{% endif %}">
+                                <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+                                + Registrar Entrada
+                            </a>
+                            <a href="{% url 'inventario:movimiento-salida' %}" class="module-tab {% if url_name == 'movimiento-salida' %}active{% endif %}">
+                                <svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                                − Registrar Salida
+                            </a>
+                            <a href="{% url 'inventario:movimiento-traslado' %}" class="module-tab {% if url_name == 'movimiento-traslado' %}active{% endif %}">
+                                <svg viewBox="0 0 24 24"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
+                                ⇄ Traslado
+                            </a>
+                        </nav>
+                    {% elif url_name in 'prestamo-lista,prestamo-crear,prestamo-devolver,prestamo-baja,conteo-lista,conteo-crear' %}
+                        <nav class="module-tabs" aria-label="Submenú de Préstamos y Conteos">
+                            <a href="{% url 'inventario:prestamo-lista' %}" class="module-tab {% if url_name in 'prestamo-lista,prestamo-devolver,prestamo-baja' %}active{% endif %}">
+                                <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+                                Préstamos Activos
+                            </a>
+                            <a href="{% url 'inventario:prestamo-crear' %}" class="module-tab {% if url_name == 'prestamo-crear' %}active{% endif %}">
+                                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+                                + Entregar Préstamo
+                            </a>
+                            <a href="{% url 'inventario:conteo-lista' %}" class="module-tab {% if url_name in 'conteo-lista,conteo-crear' %}active{% endif %}">
+                                <svg viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><path d="M9 14l2 2 4-4"/></svg>
+                                Conteos Físicos
+                            </a>
+                        </nav>
+                    {% elif url_name in 'categoria-lista,categoria-crear,categoria-editar,categoria-desactivar,categoria-trasladar,ubicacion-lista,ubicacion-crear,ubicacion-editar,ubicacion-desactivar,trasladar-ubicacion,almacen-lista,almacen-crear,almacen-editar,almacen-desactivar,trasladar-almacen' %}
+                        <nav class="module-tabs" aria-label="Submenú de Categorías y Bodegas">
+                            <a href="{% url 'inventario:categoria-lista' %}" class="module-tab {% if 'categoria' in url_name %}active{% endif %}">
+                                <svg viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z"/><circle cx="17" cy="17" r="3"/></svg>
+                                Categorías y Tipos
+                            </a>
+                            <a href="{% url 'inventario:ubicacion-lista' %}" class="module-tab {% if 'ubicacion' in url_name %}active{% endif %}">
+                                <svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>
+                                Ubicaciones Físicas
+                            </a>
+                            <a href="{% url 'inventario:almacen-lista' %}" class="module-tab {% if 'almacen' in url_name %}active{% endif %}">
+                                <svg viewBox="0 0 24 24"><path d="M3 21V8l9-5 9 5v13"/><path d="M9 21V12h6v9"/></svg>
+                                Almacenes
+                            </a>
+                        </nav>
+                    {% elif url_name in 'reporte-existencias,reporte-movimientos,reporte-prestamos,reporte-estancados' %}
+                        <nav class="module-tabs" aria-label="Submenú de Centro de Reportes">
+                            <a href="{% url 'web:reporte-existencias' %}" class="module-tab {% if url_name == 'reporte-existencias' %}active{% endif %}">
+                                <svg viewBox="0 0 24 24"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+                                Existencias
+                            </a>
+                            <a href="{% url 'web:reporte-movimientos' %}" class="module-tab {% if url_name == 'reporte-movimientos' %}active{% endif %}">
+                                <svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                                Historial de Movimientos
+                            </a>
+                            <a href="{% url 'web:reporte-prestamos' %}" class="module-tab {% if url_name == 'reporte-prestamos' %}active{% endif %}">
+                                <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+                                Antigüedad de Préstamos
+                            </a>
+                            <a href="{% url 'web:reporte-estancados' %}" class="module-tab {% if url_name == 'reporte-estancados' %}active{% endif %}">
+                                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                                Artículos Sin Rotación
+                            </a>
+                        </nav>
+                    {% endif %}
+                {% endwith %}
 
                 {% block content %}{% endblock %}
             </main>

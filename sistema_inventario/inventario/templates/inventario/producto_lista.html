@@ -10,7 +10,7 @@
         <div>
             <h1 class="card-title">Catálogo de Productos</h1>
             <p style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.25rem;">
-                Control de inventario, existencias en almacén y búsqueda por código de barras.
+                Control de inventario, categorías, tipos opcionales y búsqueda por código de barras.
             </p>
         </div>
         <div>
@@ -24,7 +24,7 @@
     <div style="margin-bottom: 1.5rem; display: flex; gap: 1rem; flex-wrap: wrap;">
         <form method="get" action="{% url 'inventario:producto-lista' %}" style="display: flex; gap: 0.5rem; flex: 1; max-width: 500px;">
             <input type="text" name="q" value="{{ q }}" class="form-control"
-                   placeholder="Buscar por nombre, código interno (CAB-0001) o código de barras..."
+                   placeholder="Buscar por nombre, código interno, tipo o código de barras..."
                    autofocus>
             <button type="submit" class="btn btn-primary">Buscar</button>
             {% if q %}
@@ -56,6 +56,7 @@
                     <th>Código</th>
                     <th>Nombre</th>
                     <th>Categoría</th>
+                    <th>Tipo</th>
                     <th>Código Barras</th>
                     <th style="text-align: center;">Disponible</th>
                     <th style="text-align: center;">En Préstamo</th>
@@ -79,7 +80,16 @@
                                 </div>
                             {% endif %}
                         </td>
-                        <td>{{ prod.categoria.nombre }}</td>
+                        <td>
+                            <span class="badge badge-accent">{{ prod.categoria.nombre }}</span>
+                        </td>
+                        <td>
+                            {% if prod.tipo %}
+                                <span style="font-size: 0.8rem; color: var(--accent-teal); font-weight: 500;">{{ prod.tipo.nombre }}</span>
+                            {% else %}
+                                <span style="color: var(--text-faint); font-size: 0.8rem;">—</span>
+                            {% endif %}
+                        </td>
                         <td>
                             {% if prod.codigo_barras %}
                                 <code style="font-size: 0.8rem; background: var(--bg-panel-2); padding: 0.2rem 0.4rem; border-radius: 4px;">{{ prod.codigo_barras }}</code>
@@ -100,17 +110,11 @@
                         <td>
                             {% with stock_disp=prod.existencias.first.stock_disponible|default:0 %}
                                 {% if stock_disp == 0 %}
-                                    <span style="display: inline-block; padding: 0.2rem 0.5rem; background: var(--crit-bg); color: var(--crit); border-radius: 9999px; font-size: 0.75rem; font-weight: 600;">
-                                        Sin Stock
-                                    </span>
+                                    <span class="badge badge-crit">Sin Stock</span>
                                 {% elif stock_disp < prod.stock_minimo %}
-                                    <span style="display: inline-block; padding: 0.2rem 0.5rem; background: var(--warn-bg); color: var(--warn); border-radius: 9999px; font-size: 0.75rem; font-weight: 600;">
-                                        Stock Bajo (< {{ prod.stock_minimo }})
-                                    </span>
+                                    <span class="badge badge-warn">Stock Bajo (&lt; {{ prod.stock_minimo }})</span>
                                 {% else %}
-                                    <span style="display: inline-block; padding: 0.2rem 0.5rem; background: var(--success-bg); color: var(--success); border-radius: 9999px; font-size: 0.75rem; font-weight: 600;">
-                                        Óptimo
-                                    </span>
+                                    <span class="badge badge-ok">Óptimo</span>
                                 {% endif %}
                             {% endwith %}
                         </td>
@@ -125,7 +129,7 @@
                     </tr>
                 {% empty %}
                     <tr>
-                        <td colspan="8" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                        <td colspan="9" style="text-align: center; padding: 2rem; color: var(--text-muted);">
                             No se encontraron productos registrados en este almacén.
                         </td>
                     </tr>

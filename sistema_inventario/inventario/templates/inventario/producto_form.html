@@ -69,14 +69,25 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="{{ form.codigo_barras.id_for_label }}">Código de barras (EAN/UPC)</label>
-                        {{ form.codigo_barras }}
-                        {% if form.codigo_barras.errors %}
+                        <label for="{{ form.tipo.id_for_label }}">Tipo (Opcional)</label>
+                        {{ form.tipo }}
+                        {% if form.tipo.errors %}
                             <div class="form-error">
-                                {% for error in form.codigo_barras.errors %}{{ error }}{% endfor %}
+                                {% for error in form.tipo.errors %}{{ error }}{% endfor %}
                             </div>
                         {% endif %}
+                        <div class="form-help">Subclasificación opcional ligada a la categoría seleccionada.</div>
                     </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="{{ form.codigo_barras.id_for_label }}">Código de barras (EAN/UPC)</label>
+                    {{ form.codigo_barras }}
+                    {% if form.codigo_barras.errors %}
+                        <div class="form-error">
+                            {% for error in form.codigo_barras.errors %}{{ error }}{% endfor %}
+                        </div>
+                    {% endif %}
                 </div>
             </div>
 
@@ -190,6 +201,7 @@
 {% endblock %}
 
 {% block extra_js %}
+{{ tipos_por_categoria|json_script:"tipos-por-categoria-data" }}
 <script>
 document.addEventListener("DOMContentLoaded", function() {
     var nombreInput = document.getElementById("{{ form.nombre.id_for_label }}");
@@ -232,6 +244,47 @@ document.addEventListener("DOMContentLoaded", function() {
                     });
             }, 300);
         });
+    }
+
+    // Filtrado dinámico de tipos opcionales según la categoría seleccionada
+    var catSelect = document.getElementById("{{ form.categoria.id_for_label }}");
+    var tipoSelect = document.getElementById("{{ form.tipo.id_for_label }}");
+    var dataEl = document.getElementById("tipos-por-categoria-data");
+
+    if (catSelect && tipoSelect && dataEl) {
+        var todosTipos = JSON.parse(dataEl.textContent || "[]");
+        var valorInicialTipo = tipoSelect.value;
+
+        function filtrarTipos(mantenerValor) {
+            var catId = parseInt(catSelect.value, 10);
+            var prevVal = mantenerValor ? valorInicialTipo : tipoSelect.value;
+            tipoSelect.innerHTML = "";
+
+            var optEmpty = document.createElement("option");
+            optEmpty.value = "";
+            optEmpty.textContent = "Sin tipo (opcional)";
+            tipoSelect.appendChild(optEmpty);
+
+            var filtrados = todosTipos.filter(function(t) {
+                return !catId || t.categoria_id === catId;
+            });
+
+            filtrados.forEach(function(t) {
+                var opt = document.createElement("option");
+                opt.value = String(t.id);
+                opt.textContent = t.nombre;
+                if (String(t.id) === String(prevVal)) {
+                    opt.selected = true;
+                }
+                tipoSelect.appendChild(opt);
+            });
+        }
+
+        catSelect.addEventListener("change", function() {
+            filtrarTipos(false);
+        });
+
+        filtrarTipos(true);
     }
 });
 </script>

@@ -27,7 +27,9 @@
                 </div>
                 <h1 class="card-title" style="font-size: 1.75rem;">{{ producto.nombre }}</h1>
                 <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 0.25rem;">
-                    Categoría: <strong>{{ producto.categoria.nombre }}</strong> (Almacén principal: {{ producto.categoria.almacen_principal.nombre }})
+                    Categoría: <strong>{{ producto.categoria.nombre }}</strong>
+                    {% if producto.tipo %} · Tipo: <strong style="color: var(--accent-teal);">{{ producto.tipo.nombre }}</strong>{% endif %}
+                    (Almacén principal: {{ producto.categoria.almacen_principal.nombre }})
                 </p>
             </div>
             <div style="display: flex; gap: 0.5rem;">

@@ -19,6 +19,7 @@ from inventario.models import (
     Prestamo,
     Producto,
     ProductoUbicacion,
+    TipoCategoria,
     Ubicacion,
 )
 from inventario.servicios import NecesitaTraslado
@@ -386,6 +387,182 @@ def actualizar_categoria(
     return categoria_db
 
 
+def crear_tipo_categoria(
+    *,
+    nombre: str,
+    categoria: Categoria,
+    usuario: Any,
+    ip_origen: Optional[str] = None,
+) -> TipoCategoria:
+    """Crea un tipo opcional ligado a una categoría respetando permisos de almacén."""
+    if not getattr(usuario, "is_authenticated", False):
+        raise PermissionDenied("Se requiere autenticación para crear tipos de categoría.")
+
+    if getattr(usuario, "es_usuario_normal", False):
+        if not usuario.almacen_asignado or categoria.almacen_principal_id != usuario.almacen_asignado_id:
+            raise PermissionDenied("Solo puedes registrar tipos en categorías de tu almacén asignado.")
+
+    nombre = (nombre or "").strip()
+    if not nombre:
+        raise ValidationError({"nombre": "El nombre del tipo es obligatorio."})
+
+    if TipoCategoria.objects.filter(categoria=categoria, nombre__iexact=nombre).exists():
+        raise ValidationError({"nombre": f"Ya existe el tipo '{nombre}' en la categoría '{categoria.nombre}'."})
+
+    with transaction.atomic():
+        tipo = TipoCategoria(
+            nombre=nombre,
+            categoria=categoria,
+            activo=True,
+        )
+        tipo.full_clean()
+        tipo.save()
+
+        registrar_auditoria(
+            usuario=usuario,
+            accion="CREAR_TIPO_CATEGORIA",
+            tipo_entidad="TipoCategoria",
+            id_entidad=str(tipo.id),
+            valores_anteriores=None,
+            valores_nuevos={
+                "nombre": tipo.nombre,
+                "categoria_id": categoria.id,
+                "categoria_nombre": categoria.nombre,
+            },
+            motivo=f"Creación de tipo '{tipo.nombre}' en categoría '{categoria.nombre}'",
+            resultado="OK",
+            via_haku=False,
+            ip_origen=ip_origen,
+        )
+
+    return tipo
+
+
+def actualizar_tipo_categoria(
+    *,
+    tipo: TipoCategoria,
+    nombre: str,
+    usuario: Any,
+    ip_origen: Optional[str] = None,
+) -> TipoCategoria:
+    """Actualiza el nombre de un tipo de categoría conservando los productos ligados."""
+    if not getattr(usuario, "is_authenticated", False):
+        raise PermissionDenied("Se requiere autenticación para editar tipos de categoría.")
+
+    tipo_db = TipoCategoria.objects.select_related("categoria", "categoria__almacen_principal").get(pk=tipo.pk)
+
+    if getattr(usuario, "es_usuario_normal", False):
+        if not usuario.almacen_asignado or tipo_db.categoria.almacen_principal_id != usuario.almacen_asignado_id:
+            raise PermissionDenied("No tienes permisos para modificar tipos de otros almacenes.")
+
+    nombre = (nombre or "").strip()
+    if not nombre:
+        raise ValidationError({"nombre": "El nombre del tipo no puede estar vacío."})
+
+    if TipoCategoria.objects.filter(categoria=tipo_db.categoria, nombre__iexact=nombre).exclude(pk=tipo_db.pk).exists():
+        raise ValidationError({"nombre": f"Ya existe otro tipo con el nombre '{nombre}' en esta categoría."})
+
+    valores_anteriores = {
+        "nombre": tipo_db.nombre,
+        "categoria_id": tipo_db.categoria_id,
+    }
+
+    with transaction.atomic():
+        tipo_db.nombre = nombre
+        tipo_db.full_clean()
+        tipo_db.save()
+
+        registrar_auditoria(
+            usuario=usuario,
+            accion="EDITAR_TIPO_CATEGORIA",
+            tipo_entidad="TipoCategoria",
+            id_entidad=str(tipo_db.id),
+            valores_anteriores=valores_anteriores,
+            valores_nuevos={
+                "nombre": tipo_db.nombre,
+                "categoria_id": tipo_db.categoria_id,
+            },
+            motivo=f"Actualización de tipo '{tipo_db.nombre}' (categoría '{tipo_db.categoria.nombre}')",
+            resultado="OK",
+            via_haku=False,
+            ip_origen=ip_origen,
+        )
+
+    return tipo_db
+
+
+def eliminar_tipo_categoria(
+    *,
+    tipo: TipoCategoria,
+    usuario: Any,
+    ip_origen: Optional[str] = None,
+) -> None:
+    """Elimina un tipo de categoría (los productos ligados quedan con tipo=None)."""
+    if not getattr(usuario, "is_authenticated", False):
+        raise PermissionDenied("Se requiere autenticación para eliminar tipos de categoría.")
+
+    tipo_db = TipoCategoria.objects.select_related("categoria").get(pk=tipo.pk)
+
+    if getattr(usuario, "es_usuario_normal", False):
+        if not usuario.almacen_asignado or tipo_db.categoria.almacen_principal_id != usuario.almacen_asignado_id:
+            raise PermissionDenied("No tienes permisos para eliminar tipos de otros almacenes.")
+
+    valores_anteriores = {
+        "nombre": tipo_db.nombre,
+        "categoria_id": tipo_db.categoria_id,
+        "categoria_nombre": tipo_db.categoria.nombre,
+    }
+    tipo_id = str(tipo_db.id)
+    motivo = f"Eliminación de tipo '{tipo_db.nombre}' en categoría '{tipo_db.categoria.nombre}'"
+
+    with transaction.atomic():
+        tipo_db.delete()
+
+        registrar_auditoria(
+            usuario=usuario,
+            accion="ELIMINAR_TIPO_CATEGORIA",
+            tipo_entidad="TipoCategoria",
+            id_entidad=tipo_id,
+            valores_anteriores=valores_anteriores,
+            valores_nuevos=None,
+            motivo=motivo,
+            resultado="OK",
+            via_haku=False,
+            ip_origen=ip_origen,
+        )
+
+
+def sincronizar_tipos_categoria(
+    *,
+    categoria: Categoria,
+    nombres_tipos: List[str],
+    usuario: Any,
+    ip_origen: Optional[str] = None,
+) -> List[TipoCategoria]:
+    """Crea o mantiene los tipos indicados para una categoría (sin borrar existentes si no se pide)."""
+    creados = []
+    for raw in nombres_tipos:
+        limpio = (raw or "").strip()
+        if not limpio:
+            continue
+        existente = TipoCategoria.objects.filter(categoria=categoria, nombre__iexact=limpio).first()
+        if existente:
+            if not existente.activo:
+                existente.activo = True
+                existente.save(update_fields=["activo"])
+            creados.append(existente)
+        else:
+            creados.append(
+                crear_tipo_categoria(
+                    nombre=limpio,
+                    categoria=categoria,
+                    usuario=usuario,
+                    ip_origen=ip_origen,
+                )
+            )
+    return creados
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 4. PRODUCTOS
 # ─────────────────────────────────────────────────────────────────────────────
@@ -394,6 +571,7 @@ def crear_producto(
     *,
     nombre: str,
     categoria: Categoria,
+    tipo: Optional[TipoCategoria] = None,
     stock_inicial: int = 0,
     stock_minimo: int = 0,
     codigo_barras: str = "",
@@ -420,6 +598,9 @@ def crear_producto(
     if not nombre:
         raise ValidationError({"nombre": "El nombre del producto es obligatorio."})
 
+    if tipo is not None and tipo.categoria_id != categoria.id:
+        raise ValidationError({"tipo": "El tipo seleccionado no pertenece a la categoría del producto."})
+
     codigo_barras = (codigo_barras or "").strip() or None
     if codigo_barras:
         if Producto.objects.filter(codigo_barras=codigo_barras).exists():
@@ -429,6 +610,7 @@ def crear_producto(
         producto = Producto(
             nombre=nombre,
             categoria=categoria,
+            tipo=tipo,
             stock_inicial=max(0, int(stock_inicial or 0)),
             stock_minimo=max(0, int(stock_minimo or 0)),
             codigo_barras=codigo_barras,
@@ -472,6 +654,8 @@ def crear_producto(
                 "codigo_interno": producto.codigo_interno,
                 "nombre": producto.nombre,
                 "categoria_id": categoria.id,
+                "tipo_id": tipo.id if tipo else None,
+                "tipo_nombre": tipo.nombre if tipo else None,
                 "stock_inicial": producto.stock_inicial,
                 "stock_minimo": producto.stock_minimo,
                 "codigo_barras": producto.codigo_barras,
@@ -490,6 +674,8 @@ def actualizar_producto(
     producto: Producto,
     nombre: str,
     stock_minimo: int,
+    tipo: Optional[TipoCategoria] = None,
+    actualizar_tipo: bool = False,
     codigo_barras: str = "",
     nombre_empaque: str = "",
     unidades_por_empaque: Optional[int] = None,
@@ -505,7 +691,7 @@ def actualizar_producto(
     if not getattr(usuario, "is_authenticated", False):
         raise PermissionDenied("Se requiere autenticación para modificar productos.")
 
-    producto_db = Producto.objects.select_related("categoria").get(pk=producto.pk)
+    producto_db = Producto.objects.select_related("categoria", "tipo").get(pk=producto.pk)
 
     if getattr(usuario, "es_usuario_normal", False):
         if not usuario.almacen_asignado or producto_db.categoria.almacen_principal_id != usuario.almacen_asignado_id:
@@ -515,6 +701,9 @@ def actualizar_producto(
     if not nombre:
         raise ValidationError({"nombre": "El nombre del producto no puede estar vacío."})
 
+    if actualizar_tipo and tipo is not None and tipo.categoria_id != producto_db.categoria_id:
+        raise ValidationError({"tipo": "El tipo seleccionado no pertenece a la categoría del producto."})
+
     codigo_barras = (codigo_barras or "").strip() or None
     if codigo_barras:
         if Producto.objects.filter(codigo_barras=codigo_barras).exclude(id=producto_db.id).exists():
@@ -522,6 +711,7 @@ def actualizar_producto(
 
     valores_anteriores = {
         "nombre": producto_db.nombre,
+        "tipo_id": producto_db.tipo_id,
         "stock_minimo": producto_db.stock_minimo,
         "codigo_barras": producto_db.codigo_barras,
         "nombre_empaque": producto_db.nombre_empaque,
@@ -531,6 +721,8 @@ def actualizar_producto(
 
     with transaction.atomic():
         producto_db.nombre = nombre
+        if actualizar_tipo:
+            producto_db.tipo = tipo
         producto_db.stock_minimo = max(0, int(stock_minimo or 0))
         producto_db.codigo_barras = codigo_barras
         producto_db.nombre_empaque = (nombre_empaque or "").strip()
@@ -552,6 +744,7 @@ def actualizar_producto(
             valores_anteriores=valores_anteriores,
             valores_nuevos={
                 "nombre": producto_db.nombre,
+                "tipo_id": producto_db.tipo_id,
                 "stock_minimo": producto_db.stock_minimo,
                 "codigo_barras": producto_db.codigo_barras,
                 "nombre_empaque": producto_db.nombre_empaque,

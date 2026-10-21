@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block page_title %}Categorías{% endblock %}
+{% block page_title %}Categorías y Tipos{% endblock %}
 {% block sidebar_categorias %}active{% endblock %}
 
 {% block title %}
@@ -7,11 +7,11 @@
 {% endblock %}
 
 {% block content %}
-<div style="max-width: 600px; margin: 0 auto;">
+<div style="max-width: 640px; margin: 0 auto;">
     <div class="card">
         <div class="card-header">
             <h1 class="card-title">
-                {% if object %}Editar Categoría{% else %}Nueva Categoría{% endif %}
+                {% if object %}Editar Categoría: {{ object.nombre }}{% else %}Nueva Categoría{% endif %}
             </h1>
         </div>
 
@@ -57,6 +57,20 @@
                 </div>
             {% endif %}
 
+            <div class="form-group">
+                <label for="{{ form.tipos_opcionales.id_for_label }}">Tipos asociados (Opcional)</label>
+                {{ form.tipos_opcionales }}
+                {% if form.tipos_opcionales.errors %}
+                    <div class="form-error">
+                        {% for error in form.tipos_opcionales.errors %}{{ error }}{% endfor %}
+                    </div>
+                {% endif %}
+                <div class="form-help">
+                    Opcional. Puedes escribir uno o varios tipos separados por coma (ej: <em>Destornillador, Alicate, Llave</em>).
+                    También puedes gestionarlos individualmente desde el listado de categorías.
+                </div>
+            </div>
+
             <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border);">
                 <a href="{% url 'inventario:categoria-lista' %}" class="btn btn-secondary">
                     Cancelar
@@ -67,5 +81,30 @@
             </div>
         </form>
     </div>
+
+    {% if object and tipos_categoria %}
+        <div class="card">
+            <div class="card-header" style="margin-bottom: 0.75rem;">
+                <h2 class="card-title" style="font-size: 1rem;">Tipos Registrados en «{{ object.nombre }}»</h2>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                {% for t in tipos_categoria %}
+                    <div style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--bg-panel-2); border: 1px solid var(--border); border-radius: 999px; font-size: 12.5px;">
+                        <span><strong>{{ t.nombre }}</strong></span>
+                        <form method="post" action="{% url 'inventario:tipo-categoria-eliminar' t.id %}" style="display: inline; margin: 0;">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{{ request.path }}">
+                            <button type="submit"
+                                    style="background: none; border: none; color: var(--crit); cursor: pointer; font-size: 12px; padding: 0 2px;"
+                                    title="Eliminar tipo"
+                                    onclick="return confirm('¿Eliminar el tipo «{{ t.nombre }}»?');">
+                                ✕
+                            </button>
+                        </form>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    {% endif %}
 </div>
 {% endblock %}

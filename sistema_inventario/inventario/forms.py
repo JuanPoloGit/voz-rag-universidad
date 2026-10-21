@@ -2,7 +2,7 @@
 
 from django import forms
 
-from inventario.models import Almacen, Categoria, Producto, Ubicacion
+from inventario.models import Almacen, Categoria, Producto, TipoCategoria, Ubicacion
 
 
 class AlmacenForm(forms.ModelForm):
@@ -71,6 +71,16 @@ class UbicacionForm(forms.ModelForm):
 class CategoriaForm(forms.ModelForm):
     """Formulario para creación y edición de categorías."""
 
+    tipos_opcionales = forms.CharField(
+        required=False,
+        label="Tipos asociados (opcional)",
+        help_text="Separa múltiples tipos por comas. Ej: Destornillador, Alicate, Martillo.",
+        widget=forms.TextInput(attrs={
+            "class": "form-control",
+            "placeholder": "Ej. Destornillador, Alicate, Llave (opcional)",
+        }),
+    )
+
     class Meta:
         model = Categoria
         fields = ["nombre", "almacen_principal"]
@@ -100,6 +110,25 @@ class CategoriaForm(forms.ModelForm):
                 activo=True, eliminado=False
             )
 
+        if self.instance and self.instance.pk:
+            tipos_actuales = list(
+                self.instance.tipos.filter(activo=True).order_by("nombre").values_list("nombre", flat=True)
+            )
+            if tipos_actuales:
+                self.fields["tipos_opcionales"].initial = ", ".join(tipos_actuales)
+
+    def clean_tipos_opcionales(self):
+        raw = self.cleaned_data.get("tipos_opcionales", "") or ""
+        partes = [p.strip() for p in raw.split(",") if p.strip()]
+        unicos = []
+        vistos = set()
+        for p in partes:
+            clave = p.lower()
+            if clave not in vistos:
+                vistos.add(clave)
+                unicos.append(p)
+        return unicos
+
     def clean(self):
         cleaned_data = super().clean()
         if self.usuario and getattr(self.usuario, "es_usuario_normal", False):
@@ -107,6 +136,35 @@ class CategoriaForm(forms.ModelForm):
             if "almacen_principal" in self._errors:
                 del self._errors["almacen_principal"]
         return cleaned_data
+
+
+class TipoCategoriaForm(forms.ModelForm):
+    """Formulario para crear o editar un tipo ligado a una categoría."""
+
+    class Meta:
+        model = TipoCategoria
+        fields = ["categoria", "nombre"]
+        widgets = {
+            "categoria": forms.Select(attrs={
+                "class": "form-control",
+            }),
+            "nombre": forms.TextInput(attrs={
+                "class": "form-control",
+                "placeholder": "Ej. Destornillador, Cable, Solvente",
+            }),
+        }
+
+    def __init__(self, *args, usuario=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.usuario = usuario
+        if usuario and getattr(usuario, "es_usuario_normal", False):
+            self.fields["categoria"].queryset = Categoria.objects.filter(
+                activo=True, eliminado=False, almacen_principal=usuario.almacen_asignado
+            ).order_by("nombre")
+        else:
+            self.fields["categoria"].queryset = Categoria.objects.filter(
+                activo=True, eliminado=False
+            ).order_by("nombre")
 
 
 class ProductoForm(forms.ModelForm):
@@ -125,6 +183,7 @@ class ProductoForm(forms.ModelForm):
         fields = [
             "nombre",
             "categoria",
+            "tipo",
             "stock_inicial",
             "stock_minimo",
             "codigo_barras",
@@ -139,6 +198,9 @@ class ProductoForm(forms.ModelForm):
                 "autofocus": True,
             }),
             "categoria": forms.Select(attrs={
+                "class": "form-control",
+            }),
+            "tipo": forms.Select(attrs={
                 "class": "form-control",
             }),
             "stock_inicial": forms.NumberInput(attrs={
@@ -174,20 +236,39 @@ class ProductoForm(forms.ModelForm):
         self.usuario = usuario
 
         if usuario and getattr(usuario, "es_usuario_normal", False):
-            self.fields["categoria"].queryset = Categoria.objects.filter(
+            cats_qs = Categoria.objects.filter(
                 activo=True, eliminado=False, almacen_principal=usuario.almacen_asignado
             )
+            self.fields["categoria"].queryset = cats_qs
+            self.fields["tipo"].queryset = TipoCategoria.objects.filter(
+                activo=True, categoria__in=cats_qs
+            ).select_related("categoria").order_by("categoria__nombre", "nombre")
             self.fields["ubicaciones_seleccionadas"].queryset = Ubicacion.objects.filter(
                 activo=True, eliminado=False, almacen=usuario.almacen_asignado
             )
         else:
-            self.fields["categoria"].queryset = Categoria.objects.filter(activo=True, eliminado=False)
+            cats_qs = Categoria.objects.filter(activo=True, eliminado=False)
+            self.fields["categoria"].queryset = cats_qs
+            self.fields["tipo"].queryset = TipoCategoria.objects.filter(
+                activo=True, categoria__in=cats_qs
+            ).select_related("categoria").order_by("categoria__nombre", "nombre")
             self.fields["ubicaciones_seleccionadas"].queryset = Ubicacion.objects.filter(activo=True, eliminado=False)
+
+        self.fields["tipo"].required = False
+        self.fields["tipo"].empty_label = "Sin tipo (opcional)"
 
         if self.instance and self.instance.pk:
             self.fields["stock_inicial"].disabled = True
             self.fields["stock_inicial"].required = False
             self.fields["ubicaciones_seleccionadas"].initial = self.instance.ubicaciones.values_list("id", flat=True)
+
+    def clean(self):
+        cleaned_data = super().clean()
+        categoria = cleaned_data.get("categoria") or (self.instance.categoria if self.instance and self.instance.pk else None)
+        tipo = cleaned_data.get("tipo")
+        if tipo and categoria and tipo.categoria_id != categoria.id:
+            self.add_error("tipo", "El tipo seleccionado no pertenece a la categoría elegida.")
+        return cleaned_data
 
     def clean_codigo_barras(self):
         cb = self.cleaned_data.get("codigo_barras")
