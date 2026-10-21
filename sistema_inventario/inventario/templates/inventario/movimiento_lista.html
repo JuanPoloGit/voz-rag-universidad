@@ -68,7 +68,7 @@
         <div>
             <h1 class="card-title">Centro de Movimientos, Préstamos y Conteos</h1>
             <p style="color: var(--text-muted); font-size: 12.5px; margin-top: 2px;">
-                Control unificado de entradas, salidas (dotación y préstamos con fechas de entrega/devolución), traslados y conteos físicos.
+                Control unificado de entradas, dotación, préstamos con fechas de entrega/devolución, traslados y conteos físicos.
             </p>
         </div>
         <div class="action-group">
@@ -89,7 +89,7 @@
             <a href="{% url 'inventario:movimiento-lista' %}?vista=SALIDA{% if q %}&q={{ q }}{% endif %}"
                class="filter-pill {% if vista_actual == 'SALIDA' %}active{% endif %}">
                 <svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                Salidas
+                Dotación
             </a>
             <a href="{% url 'inventario:movimiento-lista' %}?vista=PRESTAMOS{% if q %}&q={{ q }}{% endif %}"
                class="filter-pill {% if vista_actual == 'PRESTAMOS' %}active{% endif %}">
@@ -532,7 +532,7 @@
             </button>
             <button type="button" class="mov-type-btn" data-target-form="secFormSalida">
                 <svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                Salida (Dotación)
+                Dotación
             </button>
             <button type="button" class="mov-type-btn" data-target-form="secFormPrestamo">
                 <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -613,7 +613,7 @@
             <input type="hidden" name="clave_idempotencia" class="idem-token-input">
 
             <div class="form-group">
-                <label>Producto a Retirar *</label>
+                <label>Producto a Entregar en Dotación *</label>
                 {{ salida_form.producto }}
             </div>
             {% if not user.es_usuario_normal %}
@@ -626,17 +626,17 @@
             {% endif %}
             <div class="form-grid-2">
                 <div class="form-group">
-                    <label>Cantidad a Retirar *</label>
+                    <label>Cantidad a Entregar *</label>
                     {{ salida_form.cantidad }}
                 </div>
                 <div class="form-group">
-                    <label>Destinatario / Responsable *</label>
+                    <label>Destinatario / Receptor de la Dotación *</label>
                     {{ salida_form.destinatario }}
                 </div>
             </div>
             <div class="form-grid-2">
                 <div class="form-group">
-                    <label>Motivo Obligatorio *</label>
+                    <label>Motivo de la Dotación *</label>
                     {{ salida_form.motivo }}
                 </div>
                 <div class="form-group">
@@ -650,7 +650,7 @@
             </div>
             <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-soft);">
                 <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalNuevoMovimiento')">Cancelar</button>
-                <button type="submit" class="btn btn-primary">Confirmar Salida</button>
+                <button type="submit" class="btn btn-primary">Confirmar Dotación</button>
             </div>
         </form>
 

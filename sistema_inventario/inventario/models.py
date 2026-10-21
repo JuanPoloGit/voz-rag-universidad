@@ -418,7 +418,7 @@ class Movimiento(models.Model):
 
     class Tipo(models.TextChoices):
         ENTRADA = "ENTRADA", _("Entrada")
-        SALIDA = "SALIDA", _("Salida")
+        SALIDA = "SALIDA", _("Dotación")
         PRESTAMO = "PRESTAMO", _("Préstamo")
         DEVOLUCION = "DEVOLUCION", _("Devolución")
         BAJA_PRESTAMO = "BAJA_PRESTAMO", _("Baja de préstamo por daño/pérdida")

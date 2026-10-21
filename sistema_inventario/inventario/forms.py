@@ -372,19 +372,19 @@ class SalidaForm(forms.Form):
     )
     cantidad = forms.IntegerField(
         min_value=1,
-        label="Cantidad a retirar",
+        label="Cantidad a entregar (Dotación)",
         widget=forms.NumberInput(attrs={"class": "form-control", "placeholder": "Ej. 3"}),
     )
     destinatario = forms.CharField(
         required=True,
         max_length=255,
-        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Persona que recibe el artículo"}),
-        label="Destinatario / Responsable",
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Persona que recibe la dotación"}),
+        label="Destinatario / Receptor de la dotación",
     )
     motivo = forms.CharField(
         required=True,
-        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ej. Práctica de laboratorio, consumo técnico"}),
-        label="Motivo obligatorio",
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ej. Asignación de equipo, dotación semestral, consumo"}),
+        label="Motivo de la dotación",
     )
     ubicacion = forms.ModelChoiceField(
         queryset=Ubicacion.objects.filter(activo=True, eliminado=False),

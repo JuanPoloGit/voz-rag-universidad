@@ -1483,7 +1483,7 @@ class SalidaCrearView(LoginRequiredMixin, View):
                 )
                 messages.success(
                     request,
-                    f"Salida registrada: -{mov.cantidad} unid. de '{existencia.producto.codigo_interno}' para {mov.destinatario}. Stock restante: {existencia.stock_disponible}.",
+                    f"Dotación registrada: -{mov.cantidad} unid. de '{existencia.producto.codigo_interno}' para {mov.destinatario}. Stock restante: {existencia.stock_disponible}.",
                 )
                 if alerta.get("nivel"):
                     messages.warning(request, alerta["mensaje"])

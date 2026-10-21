@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block page_title %}Salida de Stock{% endblock %}
+{% block page_title %}Dotación de Stock{% endblock %}
 {% block sidebar_salida %}active{% endblock %}
 
-{% block title %}Registrar Salida de Stock{% endblock %}
+{% block title %}Registrar Dotación — Inventario AudacIA{% endblock %}
 
 {% block content %}
 <div class="card" style="max-width: 650px; margin: 0 auto;">
-    <h2 style="margin-bottom: 0.5rem;">Registrar Salida de Mercancía</h2>
+    <h2 style="margin-bottom: 0.5rem;">Registrar Dotación de Mercancía</h2>
     <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">
         Descuenta del stock disponible con validación de no negatividad. Destinatario y motivo son obligatorios (§9.3).
     </p>
@@ -69,7 +69,7 @@
 
         <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
             <a href="{% url 'inventario:movimiento-lista' %}" class="btn btn-secondary">Cancelar</a>
-            <button type="submit" class="btn btn-primary" style="background: var(--danger); border-color: var(--danger);">Confirmar Salida de Stock</button>
+            <button type="submit" class="btn btn-primary" style="background: var(--danger); border-color: var(--danger);">Confirmar Entrega de Dotación</button>
         </div>
     </form>
 </div>
