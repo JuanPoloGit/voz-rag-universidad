@@ -84,43 +84,6 @@
         {% endif %}
     </form>
 
-    <!-- Panel rápido para Agregar / Editar Tipo Opcional -->
-    <div style="background: rgba(5, 11, 36, 0.45); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; margin-bottom: 18px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
-            <h3 id="panel-tipo-titulo" style="font-size: 13.5px; font-weight: 600; color: var(--accent-2); margin: 0;">
-                + Agregar Tipo Opcional a una Categoría
-            </h3>
-            <span style="font-size: 11.5px; color: var(--text-faint);">
-                Sub-clasificación opcional por categoría (ej. Destornillador, Alicate, Cable).
-            </span>
-        </div>
-
-        <form method="post" action="{% url 'inventario:tipo-categoria-crear' %}" id="form-tipo-rapido" style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">
-            {% csrf_token %}
-            <input type="hidden" name="next" value="{{ request.get_full_path }}">
-
-            <div style="flex: 1; min-width: 200px;">
-                <label for="select-tipo-categoria" style="margin-bottom: 4px;">Categoría *</label>
-                <select name="categoria" id="select-tipo-categoria" class="form-control" required>
-                    <option value="">Selecciona una categoría...</option>
-                    {% for cat in categorias %}
-                        <option value="{{ cat.id }}">{{ cat.nombre }} ({{ cat.almacen_principal.nombre }})</option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div style="flex: 1.2; min-width: 200px;">
-                <label for="input-tipo-nombre" style="margin-bottom: 4px;">Nombre del tipo *</label>
-                <input type="text" name="nombre" id="input-tipo-nombre" class="form-control" maxlength="100" required placeholder="Ej. Destornillador, Alicate, Solvente...">
-            </div>
-
-            <div class="action-group">
-                <button type="submit" class="btn btn-primary" id="btn-guardar-tipo">Guardar Tipo</button>
-                <button type="button" class="btn btn-secondary" id="btn-cancelar-tipo" style="display: none;">Cancelar</button>
-            </div>
-        </form>
-    </div>
-
     <!-- Tabla de Categorías -->
     <div class="table-responsive">
         <table class="data-table">
@@ -276,53 +239,88 @@
         </div>
     </form>
 </dialog>
+
+<!-- ═══ MODAL AGREGAR / EDITAR TIPO OPCIONAL ═══ -->
+<dialog id="modalTipoCategoria" class="app-modal">
+    <form method="post" action="{% url 'inventario:tipo-categoria-crear' %}" id="formModalTipo" style="display: flex; flex-direction: column;">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <input type="hidden" name="categoria" id="modalTipoCategoriaId" value="">
+        <div class="app-modal-header">
+            <h2 class="app-modal-title" id="tituloModalTipo">Agregar Tipo Opcional</h2>
+            <button type="button" class="app-modal-close" onclick="closeAppModal('modalTipoCategoria')" aria-label="Cerrar">&times;</button>
+        </div>
+        <div class="app-modal-body">
+            <div class="form-group">
+                <label>Categoría</label>
+                <div id="modalTipoCategoriaNombreDisplay" class="form-control" style="background: rgba(255,255,255,0.03); opacity: 0.95; font-weight: 600; color: var(--accent-2); min-height: 38px; display: flex; align-items: center;">
+                </div>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="modalTipoNombre">Nombre del Tipo *</label>
+                <input type="text" name="nombre" id="modalTipoNombre" class="form-control" maxlength="100" required placeholder="Ej. Cable UTP, Alicate, Destornillador...">
+                <div class="form-help">Sub-clasificación opcional específica para esta categoría.</div>
+            </div>
+        </div>
+        <div class="app-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalTipoCategoria')">Cancelar</button>
+            <button type="submit" class="btn btn-primary" id="btnSubmitModalTipo">Guardar Tipo</button>
+        </div>
+    </form>
+</dialog>
 {% endblock %}
 
 {% block extra_js %}
 <script>
 document.addEventListener("DOMContentLoaded", function() {
-    var formTipo = document.getElementById("form-tipo-rapido");
-    var selectCat = document.getElementById("select-tipo-categoria");
-    var inputNombre = document.getElementById("input-tipo-nombre");
-    var tituloPanel = document.getElementById("panel-tipo-titulo");
-    var btnGuardar = document.getElementById("btn-guardar-tipo");
-    var btnCancelar = document.getElementById("btn-cancelar-tipo");
-    var urlCrearDefault = "{% url 'inventario:tipo-categoria-crear' %}";
+    var formModalTipo = document.getElementById("formModalTipo");
+    var inputCatId = document.getElementById("modalTipoCategoriaId");
+    var displayCatNom = document.getElementById("modalTipoCategoriaNombreDisplay");
+    var inputTipoNom = document.getElementById("modalTipoNombre");
+    var tituloModalTipo = document.getElementById("tituloModalTipo");
+    var btnSubmitTipo = document.getElementById("btnSubmitModalTipo");
+    var urlCrearTipoDefault = "{% url 'inventario:tipo-categoria-crear' %}";
 
-    function resetModoCrear() {
-        formTipo.action = urlCrearDefault;
-        tituloPanel.textContent = "+ Agregar Tipo Opcional a una Categoría";
-        btnGuardar.textContent = "Guardar Tipo";
-        btnCancelar.style.display = "none";
-        inputNombre.value = "";
-    }
-
+    // Abrir modal al presionar "+ Tipo" en la tabla de categorías
     document.querySelectorAll(".btn-preseleccionar-cat").forEach(function(btn) {
         btn.addEventListener("click", function() {
-            resetModoCrear();
-            selectCat.value = btn.getAttribute("data-cat-id");
-            inputNombre.focus();
+            var catId = btn.getAttribute("data-cat-id");
+            var catNom = btn.getAttribute("data-cat-nombre");
+            formModalTipo.action = urlCrearTipoDefault;
+            inputCatId.value = catId;
+            displayCatNom.textContent = catNom;
+            inputTipoNom.value = "";
+            tituloModalTipo.textContent = "Nuevo Tipo para: " + catNom;
+            btnSubmitTipo.textContent = "Guardar Tipo";
+            openAppModal("modalTipoCategoria");
+            setTimeout(function() { inputTipoNom.focus(); }, 100);
         });
     });
 
+    // Abrir modal al presionar para renombrar un chip de tipo
     document.querySelectorAll(".btn-editar-tipo-chip").forEach(function(btn) {
-        btn.addEventListener("click", function() {
+        btn.addEventListener("click", function(e) {
+            e.preventDefault();
+            e.stopPropagation();
             var nombreActual = btn.getAttribute("data-nombre");
             var catId = btn.getAttribute("data-cat-id");
             var actionUrl = btn.getAttribute("data-action-url");
+            var row = btn.closest("tr");
+            var catNom = row ? row.querySelector("td strong").textContent.trim() : "Categoría";
 
-            formTipo.action = actionUrl;
-            selectCat.value = catId;
-            inputNombre.value = nombreActual;
-            tituloPanel.textContent = "Renombrar Tipo «" + nombreActual + "»";
-            btnGuardar.textContent = "Actualizar Nombre";
-            btnCancelar.style.display = "inline-flex";
-            inputNombre.focus();
-            inputNombre.select();
+            formModalTipo.action = actionUrl;
+            inputCatId.value = catId;
+            displayCatNom.textContent = catNom;
+            inputTipoNom.value = nombreActual;
+            tituloModalTipo.textContent = "Renombrar Tipo: «" + nombreActual + "»";
+            btnSubmitTipo.textContent = "Actualizar Tipo";
+            openAppModal("modalTipoCategoria");
+            setTimeout(function() {
+                inputTipoNom.focus();
+                inputTipoNom.select();
+            }, 100);
         });
     });
-
-    btnCancelar.addEventListener("click", resetModoCrear);
 
     // Modal Crear / Editar Categoría
     var formCat = document.getElementById("formModalCategoria");

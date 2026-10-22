@@ -498,14 +498,22 @@
             </table>
         </div>
 
-        {% if is_paginated %}
-            <div class="pagination">
+        {% if page_obj and page_obj.paginator.count > 0 %}
+            <div class="pagination" style="display: flex; justify-content: center; align-items: center; gap: 0.75rem; margin-top: 1.5rem;">
                 {% if page_obj.has_previous %}
                     <a href="?vista={{ vista_actual }}&page={{ page_obj.previous_page_number }}{% if q %}&q={{ q }}{% endif %}" class="btn btn-sm btn-secondary">&laquo; Anterior</a>
+                {% else %}
+                    <span class="btn btn-sm btn-secondary" style="opacity: 0.45; pointer-events: none; cursor: default;">&laquo; Anterior</span>
                 {% endif %}
-                <span class="page-info">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+
+                <span class="page-info" style="font-size: 12.5px; color: var(--text-dim);">
+                    Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }} &bull; {{ page_obj.paginator.count }} movimiento{{ page_obj.paginator.count|pluralize }}
+                </span>
+
                 {% if page_obj.has_next %}
                     <a href="?vista={{ vista_actual }}&page={{ page_obj.next_page_number }}{% if q %}&q={{ q }}{% endif %}" class="btn btn-sm btn-secondary">Siguiente &raquo;</a>
+                {% else %}
+                    <span class="btn btn-sm btn-secondary" style="opacity: 0.45; pointer-events: none; cursor: default;">Siguiente &raquo;</span>
                 {% endif %}
             </div>
         {% endif %}
@@ -562,6 +570,9 @@
             <div class="form-group">
                 <label>Almacén Destino *</label>
                 {{ entrada_form.almacen }}
+                <div id="helpAlmacenEntrada" class="form-help" style="display: none; color: var(--accent); margin-top: 4px;">
+                    Almacén fijo asignado al producto: <strong id="lblAlmacenEntrada"></strong>
+                </div>
             </div>
             {% else %}
                 {{ entrada_form.almacen }}
@@ -620,6 +631,9 @@
             <div class="form-group">
                 <label>Almacén Origen *</label>
                 {{ salida_form.almacen }}
+                <div id="helpAlmacenSalida" class="form-help" style="display: none; color: var(--accent); margin-top: 4px;">
+                    Almacén de origen: <strong id="lblAlmacenSalida"></strong>
+                </div>
             </div>
             {% else %}
                 {{ salida_form.almacen }}
@@ -628,6 +642,9 @@
                 <div class="form-group">
                     <label>Cantidad a Entregar *</label>
                     {{ salida_form.cantidad }}
+                    <div id="dispStockSalida" class="form-help" style="margin-top: 4px; font-weight: 500;">
+                        Stock disponible: <strong id="valStockSalida" style="color: var(--text);">—</strong>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>Destinatario / Receptor de la Dotación *</label>
@@ -668,6 +685,9 @@
             <div class="form-group">
                 <label>Almacén Origen *</label>
                 {{ prestamo_form.almacen }}
+                <div id="helpAlmacenPrestamo" class="form-help" style="display: none; color: var(--accent); margin-top: 4px;">
+                    Almacén de origen: <strong id="lblAlmacenPrestamo"></strong>
+                </div>
             </div>
             {% else %}
                 {{ prestamo_form.almacen }}
@@ -676,6 +696,9 @@
                 <div class="form-group">
                     <label>Cantidad a Prestar *</label>
                     {{ prestamo_form.cantidad }}
+                    <div id="dispStockPrestamo" class="form-help" style="margin-top: 4px; font-weight: 500;">
+                        Stock disponible: <strong id="valStockPrestamo" style="color: var(--text);">—</strong>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>Destinatario / Responsable *</label>
@@ -928,30 +951,153 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     });
 
-    // Ubicación fija no editable en entradas de stock
+    // Ubicación fija no editable y almacén sincronizado en entradas, salidas y préstamos
     var mapaUbicacionesStock = {{ mapa_ubicaciones_json|default:'{}'|safe }};
+
+    // 1. Sincronización Entrada
     var selectProductoEntrada = document.querySelector('#secFormEntrada select[name="producto"]');
     var txtUbicEntrada = document.getElementById("txtUbicacionEntrada");
     var inputUbicEntrada = document.getElementById("inputUbicacionEntrada");
+    var selectAlmEntrada = document.querySelector('#secFormEntrada select[name="almacen"]');
+    var helpAlmEntrada = document.getElementById("helpAlmacenEntrada");
+    var lblAlmEntrada = document.getElementById("lblAlmacenEntrada");
 
-    function actualizarUbicacionFijaEntrada(prodId) {
+    function actualizarProductoEntrada(prodId) {
         if (!txtUbicEntrada || !inputUbicEntrada) return;
         var info = mapaUbicacionesStock[String(prodId)];
         if (info && info.id) {
             inputUbicEntrada.value = info.id;
-            txtUbicEntrada.innerHTML = '<strong style="color: var(--ok);">' + info.nombre + '</strong> <span style="font-size: 11px; color: var(--text-muted); margin-left: 4px;">(Ubicación fija asignada en catálogo)</span>';
+            txtUbicEntrada.innerHTML = '<strong style="color: var(--ok);">' + info.nombre + '</strong>';
         } else {
             inputUbicEntrada.value = "";
-            txtUbicEntrada.innerHTML = '<span style="color: var(--text-muted); font-style: italic;">Sin ubicación física asignada en catálogo</span>';
+            txtUbicEntrada.innerHTML = '<span style="color: var(--text-muted); font-style: italic;">Sin ubicación física asignada</span>';
+        }
+
+        if (info && info.almacen_id && selectAlmEntrada) {
+            selectAlmEntrada.value = info.almacen_id;
+            selectAlmEntrada.style.pointerEvents = "none";
+            selectAlmEntrada.style.opacity = "0.85";
+            selectAlmEntrada.tabIndex = -1;
+            if (helpAlmEntrada && lblAlmEntrada) {
+                lblAlmEntrada.textContent = info.almacen_nombre;
+                helpAlmEntrada.style.display = "block";
+            }
+        } else if (selectAlmEntrada) {
+            selectAlmEntrada.style.pointerEvents = "";
+            selectAlmEntrada.style.opacity = "";
+            selectAlmEntrada.tabIndex = 0;
+            if (helpAlmEntrada) helpAlmEntrada.style.display = "none";
         }
     }
 
     if (selectProductoEntrada) {
         selectProductoEntrada.addEventListener("change", function() {
-            actualizarUbicacionFijaEntrada(selectProductoEntrada.value);
+            actualizarProductoEntrada(selectProductoEntrada.value);
         });
         if (selectProductoEntrada.value) {
-            actualizarUbicacionFijaEntrada(selectProductoEntrada.value);
+            actualizarProductoEntrada(selectProductoEntrada.value);
+        }
+    }
+
+    // 2. Sincronización Salida (Dotación)
+    var selectProductoSalida = document.querySelector('#secFormSalida select[name="producto"]');
+    var inputCantSalida = document.querySelector('#secFormSalida input[name="cantidad"]');
+    var valStockSalida = document.getElementById("valStockSalida");
+    var selectAlmSalida = document.querySelector('#secFormSalida select[name="almacen"]');
+    var helpAlmSalida = document.getElementById("helpAlmacenSalida");
+    var lblAlmSalida = document.getElementById("lblAlmacenSalida");
+
+    function actualizarProductoSalida(prodId) {
+        var info = mapaUbicacionesStock[String(prodId)];
+        if (info) {
+            if (info.almacen_id && selectAlmSalida) {
+                selectAlmSalida.value = info.almacen_id;
+                selectAlmSalida.style.pointerEvents = "none";
+                selectAlmSalida.style.opacity = "0.85";
+                selectAlmSalida.tabIndex = -1;
+                if (helpAlmSalida && lblAlmSalida) {
+                    lblAlmSalida.textContent = info.almacen_nombre;
+                    helpAlmSalida.style.display = "block";
+                }
+            }
+            if (inputCantSalida) {
+                inputCantSalida.max = info.stock_disponible;
+                if (valStockSalida) {
+                    valStockSalida.textContent = info.stock_disponible + " unid.";
+                    valStockSalida.style.color = info.stock_disponible > 0 ? "var(--ok)" : "var(--crit)";
+                }
+            }
+        } else {
+            if (selectAlmSalida) {
+                selectAlmSalida.style.pointerEvents = "";
+                selectAlmSalida.style.opacity = "";
+                selectAlmSalida.tabIndex = 0;
+                if (helpAlmSalida) helpAlmSalida.style.display = "none";
+            }
+            if (valStockSalida) {
+                valStockSalida.textContent = "—";
+                valStockSalida.style.color = "var(--text)";
+            }
+        }
+    }
+
+    if (selectProductoSalida) {
+        selectProductoSalida.addEventListener("change", function() {
+            actualizarProductoSalida(selectProductoSalida.value);
+        });
+        if (selectProductoSalida.value) {
+            actualizarProductoSalida(selectProductoSalida.value);
+        }
+    }
+
+    // 3. Sincronización Préstamo
+    var selectProductoPrestamo = document.querySelector('#secFormPrestamo select[name="producto"]');
+    var inputCantPrestamo = document.querySelector('#secFormPrestamo input[name="cantidad"]');
+    var valStockPrestamo = document.getElementById("valStockPrestamo");
+    var selectAlmPrestamo = document.querySelector('#secFormPrestamo select[name="almacen"]');
+    var helpAlmPrestamo = document.getElementById("helpAlmacenPrestamo");
+    var lblAlmPrestamo = document.getElementById("lblAlmacenPrestamo");
+
+    function actualizarProductoPrestamo(prodId) {
+        var info = mapaUbicacionesStock[String(prodId)];
+        if (info) {
+            if (info.almacen_id && selectAlmPrestamo) {
+                selectAlmPrestamo.value = info.almacen_id;
+                selectAlmPrestamo.style.pointerEvents = "none";
+                selectAlmPrestamo.style.opacity = "0.85";
+                selectAlmPrestamo.tabIndex = -1;
+                if (helpAlmPrestamo && lblAlmPrestamo) {
+                    lblAlmPrestamo.textContent = info.almacen_nombre;
+                    helpAlmPrestamo.style.display = "block";
+                }
+            }
+            if (inputCantPrestamo) {
+                inputCantPrestamo.max = info.stock_disponible;
+                if (valStockPrestamo) {
+                    valStockPrestamo.textContent = info.stock_disponible + " unid.";
+                    valStockPrestamo.style.color = info.stock_disponible > 0 ? "var(--ok)" : "var(--crit)";
+                }
+            }
+        } else {
+            if (selectAlmPrestamo) {
+                selectAlmPrestamo.style.pointerEvents = "";
+                selectAlmPrestamo.style.opacity = "";
+                selectAlmPrestamo.tabIndex = 0;
+                if (helpAlmPrestamo) helpAlmPrestamo.style.display = "none";
+            }
+            if (valStockPrestamo) {
+                valStockPrestamo.textContent = "—";
+                valStockPrestamo.style.color = "var(--text)";
+            }
+        }
+    }
+
+    if (selectProductoPrestamo) {
+        selectProductoPrestamo.addEventListener("change", function() {
+            actualizarProductoPrestamo(selectProductoPrestamo.value);
+        });
+        if (selectProductoPrestamo.value) {
+            actualizarProductoPrestamo(selectProductoPrestamo.value);
         }
     }
 

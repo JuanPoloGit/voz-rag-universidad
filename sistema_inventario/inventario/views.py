@@ -227,7 +227,11 @@ class UbicacionListaView(LoginRequiredMixin, ListView):
             qs = qs.filter(activo=True)
         user = self.request.user
         if getattr(user, "es_usuario_normal", False):
-            qs = qs.filter(almacen=user.almacen_asignado)
+            user_alms = user.get_almacenes_asignados()
+            qs = qs.filter(almacen__in=user_alms)
+            almacen_id = self.request.GET.get("almacen_id")
+            if almacen_id and almacen_id.isdigit():
+                qs = qs.filter(almacen_id=int(almacen_id))
         else:
             almacen_id = self.request.GET.get("almacen_id")
             if almacen_id:
@@ -239,8 +243,10 @@ class UbicacionListaView(LoginRequiredMixin, ListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        if not getattr(self.request.user, "es_usuario_normal", False):
-            context["almacenes"] = Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
+        user = self.request.user
+        alms_disponibles = user.get_almacenes_asignados() if getattr(user, "es_usuario_normal", False) else Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
+        if not getattr(user, "es_usuario_normal", False) or alms_disponibles.count() > 1:
+            context["almacenes"] = alms_disponibles
             context["almacen_seleccionado"] = self.request.GET.get("almacen_id")
         context["mostrar_inactivos"] = self.request.GET.get("mostrar_inactivos") == "1"
         context["q"] = self.request.GET.get("q", "")
@@ -293,10 +299,10 @@ class UbicacionCrearView(LoginRequiredMixin, CreateView):
 
     def form_valid(self, form):
         user = self.request.user
-        if getattr(user, "es_usuario_normal", False):
-            almacen = user.almacen_asignado
-        else:
-            almacen = form.cleaned_data.get("almacen")
+        almacen = form.cleaned_data.get("almacen")
+        if not user.tiene_acceso_almacen(almacen):
+            form.add_error("almacen", "No tienes permisos para crear ubicaciones en este almacén.")
+            return self.form_invalid(form)
 
         try:
             ubicacion = crear_ubicacion(
@@ -324,7 +330,7 @@ class UbicacionEditarView(LoginRequiredMixin, UpdateView):
     def dispatch(self, request, *args, **kwargs):
         obj = self.get_object()
         if getattr(request.user, "es_usuario_normal", False):
-            if not request.user.almacen_asignado or obj.almacen_id != request.user.almacen_asignado_id:
+            if not request.user.tiene_acceso_almacen(obj.almacen):
                 raise PermissionDenied("No tienes permisos para modificar ubicaciones de otro almacén.")
         return super().dispatch(request, *args, **kwargs)
 
@@ -367,7 +373,11 @@ class CategoriaListaView(LoginRequiredMixin, ListView):
             qs = qs.filter(activo=True)
         user = self.request.user
         if getattr(user, "es_usuario_normal", False):
-            qs = qs.filter(almacen_principal=user.almacen_asignado)
+            user_alms = user.get_almacenes_asignados()
+            qs = qs.filter(almacen_principal__in=user_alms)
+            almacen_id = self.request.GET.get("almacen_id")
+            if almacen_id and almacen_id.isdigit():
+                qs = qs.filter(almacen_principal_id=int(almacen_id))
         else:
             almacen_id = self.request.GET.get("almacen_id")
             if almacen_id:
@@ -383,8 +393,10 @@ class CategoriaListaView(LoginRequiredMixin, ListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        if not getattr(self.request.user, "es_usuario_normal", False):
-            context["almacenes"] = Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
+        user = self.request.user
+        alms_disponibles = user.get_almacenes_asignados() if getattr(user, "es_usuario_normal", False) else Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
+        if not getattr(user, "es_usuario_normal", False) or alms_disponibles.count() > 1:
+            context["almacenes"] = alms_disponibles
             context["almacen_seleccionado"] = self.request.GET.get("almacen_id")
         context["mostrar_inactivos"] = self.request.GET.get("mostrar_inactivos") == "1"
         context["q"] = self.request.GET.get("q", "")
@@ -438,10 +450,10 @@ class CategoriaCrearView(LoginRequiredMixin, CreateView):
 
     def form_valid(self, form):
         user = self.request.user
-        if getattr(user, "es_usuario_normal", False):
-            almacen_principal = user.almacen_asignado
-        else:
-            almacen_principal = form.cleaned_data.get("almacen_principal")
+        almacen_principal = form.cleaned_data.get("almacen_principal")
+        if not user.tiene_acceso_almacen(almacen_principal):
+            form.add_error("almacen_principal", "No tienes permisos para crear categorías en este almacén.")
+            return self.form_invalid(form)
 
         try:
             categoria = crear_categoria(
@@ -476,7 +488,7 @@ class CategoriaEditarView(LoginRequiredMixin, UpdateView):
     def dispatch(self, request, *args, **kwargs):
         obj = self.get_object()
         if getattr(request.user, "es_usuario_normal", False):
-            if not request.user.almacen_asignado or obj.almacen_principal_id != request.user.almacen_asignado_id:
+            if not request.user.tiene_acceso_almacen(obj.almacen_principal):
                 raise PermissionDenied("No tienes permisos para modificar categorías de otro almacén.")
         return super().dispatch(request, *args, **kwargs)
 
@@ -492,10 +504,10 @@ class CategoriaEditarView(LoginRequiredMixin, UpdateView):
 
     def form_valid(self, form):
         user = self.request.user
-        if getattr(user, "es_usuario_normal", False):
-            almacen_principal = user.almacen_asignado
-        else:
-            almacen_principal = form.cleaned_data.get("almacen_principal")
+        almacen_principal = form.cleaned_data.get("almacen_principal")
+        if not user.tiene_acceso_almacen(almacen_principal):
+            form.add_error("almacen_principal", "No tienes permisos para asignar este almacén.")
+            return self.form_invalid(form)
 
         try:
             categoria = actualizar_categoria(
@@ -604,7 +616,7 @@ class ProductoListaView(LoginRequiredMixin, ListView):
     model = Producto
     template_name = "inventario/producto_lista.html"
     context_object_name = "productos"
-    paginate_by = 25
+    paginate_by = 10
 
     def get(self, request, *args, **kwargs):
         q = request.GET.get("q", "").strip()
@@ -613,7 +625,7 @@ class ProductoListaView(LoginRequiredMixin, ListView):
             if match:
                 user = request.user
                 if getattr(user, "es_usuario_normal", False):
-                    if match.categoria.almacen_principal_id == getattr(user, "almacen_asignado_id", None):
+                    if user.tiene_acceso_almacen(match.categoria.almacen_principal):
                         return redirect("inventario:producto-detalle", pk=match.pk)
                 else:
                     return redirect("inventario:producto-detalle", pk=match.pk)
@@ -632,12 +644,13 @@ class ProductoListaView(LoginRequiredMixin, ListView):
 
         # 1. Almacén
         almacen_id = None
-        if es_normal:
-            almacen_id = user.almacen_asignado_id
-        elif almacen_id_raw and almacen_id_raw.isdigit():
+        user_alms = user.get_almacenes_asignados() if es_normal else Almacen.objects.filter(activo=True, eliminado=False)
+        if almacen_id_raw and almacen_id_raw.isdigit():
             alm_candidate = int(almacen_id_raw)
-            if Almacen.objects.filter(id=alm_candidate, activo=True, eliminado=False).exists():
+            if user_alms.filter(id=alm_candidate).exists():
                 almacen_id = alm_candidate
+        elif es_normal and user_alms.count() == 1:
+            almacen_id = user_alms.first().id
 
         # 2. Categoría (en cascada: si hay almacén seleccionado, sólo categorías de ese almacén)
         categoria_id = None
@@ -645,6 +658,8 @@ class ProductoListaView(LoginRequiredMixin, ListView):
             cat_qs = Categoria.objects.filter(id=int(categoria_id_raw), activo=True, eliminado=False)
             if almacen_id:
                 cat_qs = cat_qs.filter(almacen_principal_id=almacen_id)
+            elif es_normal:
+                cat_qs = cat_qs.filter(almacen_principal__in=user_alms)
             cat_obj = cat_qs.first()
             if cat_obj:
                 categoria_id = cat_obj.id
@@ -657,6 +672,8 @@ class ProductoListaView(LoginRequiredMixin, ListView):
                 tipo_qs = tipo_qs.filter(categoria_id=categoria_id)
             elif almacen_id:
                 tipo_qs = tipo_qs.filter(categoria__almacen_principal_id=almacen_id)
+            elif es_normal:
+                tipo_qs = tipo_qs.filter(categoria__almacen_principal__in=user_alms)
             tipo_obj = tipo_qs.first()
             if tipo_obj:
                 tipo_id = tipo_obj.id
@@ -671,6 +688,8 @@ class ProductoListaView(LoginRequiredMixin, ListView):
                 cat_obj = Categoria.objects.filter(id=categoria_id).first()
                 if cat_obj:
                     ub_qs = ub_qs.filter(almacen_id=cat_obj.almacen_principal_id)
+            elif es_normal:
+                ub_qs = ub_qs.filter(almacen__in=user_alms)
             ub_obj = ub_qs.first()
             if ub_obj:
                 ubicacion_id = ub_obj.id
@@ -690,7 +709,11 @@ class ProductoListaView(LoginRequiredMixin, ListView):
         f = self._resolver_filtros_validos()
 
         if f["es_normal"]:
-            qs = qs.filter(categoria__almacen_principal_id=f["almacen_id"])
+            user_alms = self.request.user.get_almacenes_asignados()
+            if f["almacen_id"]:
+                qs = qs.filter(categoria__almacen_principal_id=f["almacen_id"])
+            else:
+                qs = qs.filter(categoria__almacen_principal__in=user_alms)
         elif f["almacen_id"]:
             qs = qs.filter(
                 Q(categoria__almacen_principal_id=f["almacen_id"])
@@ -733,12 +756,14 @@ class ProductoListaView(LoginRequiredMixin, ListView):
 
         # 1. Almacenes para el selector
         if f["es_normal"]:
-            almacenes_qs = Almacen.objects.filter(id=user.almacen_asignado_id)
+            almacenes_qs = user.get_almacenes_asignados()
         else:
             almacenes_qs = Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
 
         # 2. Categorías en cascada relacional según almacén
         cats_qs = Categoria.objects.filter(activo=True, eliminado=False)
+        if f["es_normal"]:
+            cats_qs = cats_qs.filter(almacen_principal__in=almacenes_qs)
         if f["almacen_id"]:
             cats_qs = cats_qs.filter(almacen_principal_id=f["almacen_id"])
         cats_qs = cats_qs.select_related("almacen_principal").order_by("nombre")
@@ -749,10 +774,14 @@ class ProductoListaView(LoginRequiredMixin, ListView):
             tipos_qs = tipos_qs.filter(categoria_id=f["categoria_id"])
         elif f["almacen_id"]:
             tipos_qs = tipos_qs.filter(categoria__almacen_principal_id=f["almacen_id"])
+        elif f["es_normal"]:
+            tipos_qs = tipos_qs.filter(categoria__almacen_principal__in=almacenes_qs)
         tipos_qs = tipos_qs.select_related("categoria").order_by("nombre")
 
         # 4. Ubicaciones en cascada relacional según almacén o categoría
         ub_qs = Ubicacion.objects.filter(activo=True, eliminado=False)
+        if f["es_normal"]:
+            ub_qs = ub_qs.filter(almacen__in=almacenes_qs)
         if f["almacen_id"]:
             ub_qs = ub_qs.filter(almacen_id=f["almacen_id"])
         elif f["categoria_id"]:
@@ -775,8 +804,15 @@ class ProductoListaView(LoginRequiredMixin, ListView):
 
         context["producto_form"] = ProductoForm(usuario=user)
 
-        # Tipos completos para el modal de Crear/Editar producto
-        todos_los_tipos = TipoCategoria.objects.filter(activo=True).select_related("categoria").order_by("nombre")
+        # Listas JSON para el modal interactivo de creación/edición de producto (Jerarquía Almacén -> Ubicación / Categoría -> Tipo)
+        alms_para_modal = user.get_almacenes_asignados() if f["es_normal"] else Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
+        cats_para_modal = Categoria.objects.filter(activo=True, eliminado=False, almacen_principal__in=alms_para_modal).select_related("almacen_principal").order_by("nombre")
+        ubs_para_modal = Ubicacion.objects.filter(activo=True, eliminado=False, almacen__in=alms_para_modal).select_related("almacen").order_by("almacen__nombre", "nombre")
+        todos_los_tipos = TipoCategoria.objects.filter(activo=True, categoria__in=cats_para_modal).select_related("categoria").order_by("nombre")
+
+        context["almacenes_json"] = [{"id": a.id, "nombre": a.nombre} for a in alms_para_modal]
+        context["categorias_json"] = [{"id": c.id, "nombre": c.nombre, "almacen_id": c.almacen_principal_id, "almacen_nombre": c.almacen_principal.nombre} for c in cats_para_modal]
+        context["ubicaciones_json"] = [{"id": u.id, "nombre": u.nombre, "almacen_id": u.almacen_id, "almacen_nombre": u.almacen.nombre} for u in ubs_para_modal]
         context["tipos_por_categoria"] = [
             {"id": t.id, "nombre": t.nombre, "categoria_id": t.categoria_id}
             for t in todos_los_tipos
@@ -800,10 +836,14 @@ class ProductoCrearView(LoginRequiredMixin, CreateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         user = self.request.user
-        cats_qs = Categoria.objects.filter(activo=True, eliminado=False)
-        if getattr(user, "es_usuario_normal", False):
-            cats_qs = cats_qs.filter(almacen_principal=user.almacen_asignado)
+        alms = user.get_almacenes_asignados() if getattr(user, "es_usuario_normal", False) else Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
+        cats_qs = Categoria.objects.filter(activo=True, eliminado=False, almacen_principal__in=alms).select_related("almacen_principal").order_by("nombre")
+        ubs_qs = Ubicacion.objects.filter(activo=True, eliminado=False, almacen__in=alms).select_related("almacen").order_by("almacen__nombre", "nombre")
         tipos = TipoCategoria.objects.filter(activo=True, categoria__in=cats_qs).order_by("nombre")
+
+        context["almacenes_json"] = [{"id": a.id, "nombre": a.nombre} for a in alms]
+        context["categorias_json"] = [{"id": c.id, "nombre": c.nombre, "almacen_id": c.almacen_principal_id, "almacen_nombre": c.almacen_principal.nombre} for c in cats_qs]
+        context["ubicaciones_json"] = [{"id": u.id, "nombre": u.nombre, "almacen_id": u.almacen_id, "almacen_nombre": u.almacen.nombre} for u in ubs_qs]
         context["tipos_por_categoria"] = [
             {"id": t.id, "nombre": t.nombre, "categoria_id": t.categoria_id}
             for t in tipos
@@ -845,7 +885,7 @@ class ProductoEditarView(LoginRequiredMixin, UpdateView):
     def dispatch(self, request, *args, **kwargs):
         obj = self.get_object()
         if getattr(request.user, "es_usuario_normal", False):
-            if not request.user.almacen_asignado or obj.categoria.almacen_principal_id != request.user.almacen_asignado_id:
+            if not request.user.tiene_acceso_almacen(obj.categoria.almacen_principal):
                 raise PermissionDenied("No tienes permisos para modificar productos de otro almacén.")
         return super().dispatch(request, *args, **kwargs)
 
@@ -857,10 +897,14 @@ class ProductoEditarView(LoginRequiredMixin, UpdateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         user = self.request.user
-        cats_qs = Categoria.objects.filter(activo=True, eliminado=False)
-        if getattr(user, "es_usuario_normal", False):
-            cats_qs = cats_qs.filter(almacen_principal=user.almacen_asignado)
+        alms = user.get_almacenes_asignados() if getattr(user, "es_usuario_normal", False) else Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
+        cats_qs = Categoria.objects.filter(activo=True, eliminado=False, almacen_principal__in=alms).select_related("almacen_principal").order_by("nombre")
+        ubs_qs = Ubicacion.objects.filter(activo=True, eliminado=False, almacen__in=alms).select_related("almacen").order_by("almacen__nombre", "nombre")
         tipos = TipoCategoria.objects.filter(activo=True, categoria__in=cats_qs).order_by("nombre")
+
+        context["almacenes_json"] = [{"id": a.id, "nombre": a.nombre} for a in alms]
+        context["categorias_json"] = [{"id": c.id, "nombre": c.nombre, "almacen_id": c.almacen_principal_id, "almacen_nombre": c.almacen_principal.nombre} for c in cats_qs]
+        context["ubicaciones_json"] = [{"id": u.id, "nombre": u.nombre, "almacen_id": u.almacen_id, "almacen_nombre": u.almacen.nombre} for u in ubs_qs]
         context["tipos_por_categoria"] = [
             {"id": t.id, "nombre": t.nombre, "categoria_id": t.categoria_id}
             for t in tipos
@@ -906,21 +950,21 @@ class ProductoDetalleView(LoginRequiredMixin, DetailView):
         qs = super().get_queryset()
         user = self.request.user
         if getattr(user, "es_usuario_normal", False):
-            qs = qs.filter(categoria__almacen_principal=user.almacen_asignado)
+            qs = qs.filter(categoria__almacen_principal__in=user.get_almacenes_asignados())
         return qs
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         prod = self.object
         user = self.request.user
-        if getattr(user, "es_usuario_normal", False) and getattr(user, "almacen_asignado", None):
-            almacen = user.almacen_asignado
-            context["existencias"] = prod.existencias.filter(almacen=almacen).select_related("almacen")
+        if getattr(user, "es_usuario_normal", False):
+            user_alms = user.get_almacenes_asignados()
+            context["existencias"] = prod.existencias.filter(almacen__in=user_alms).select_related("almacen")
             context["movimientos"] = prod.movimientos.filter(
-                Q(almacen_origen=almacen) | Q(almacen_destino=almacen)
+                Q(almacen_origen__in=user_alms) | Q(almacen_destino__in=user_alms)
             ).select_related("usuario", "almacen_origen", "almacen_destino").order_by("-fecha_hora")[:25]
-            context["ubicaciones"] = prod.ubicaciones.filter(almacen=almacen).select_related("almacen")
-            cats_qs = Categoria.objects.filter(activo=True, eliminado=False, almacen_principal=almacen)
+            context["ubicaciones"] = prod.ubicaciones.filter(almacen__in=user_alms).select_related("almacen")
+            cats_qs = Categoria.objects.filter(activo=True, eliminado=False, almacen_principal__in=user_alms)
         else:
             context["existencias"] = prod.existencias.select_related("almacen").all()
             context["movimientos"] = prod.movimientos.select_related("usuario", "almacen_origen", "almacen_destino").order_by("-fecha_hora")[:25]
@@ -928,6 +972,11 @@ class ProductoDetalleView(LoginRequiredMixin, DetailView):
             cats_qs = Categoria.objects.filter(activo=True, eliminado=False)
 
         context["producto_form"] = ProductoForm(instance=prod, usuario=user)
+        alms_para_modal = user.get_almacenes_asignados() if getattr(user, "es_usuario_normal", False) else Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
+        context["almacenes_json"] = [{"id": a.id, "nombre": a.nombre} for a in alms_para_modal]
+        context["categorias_json"] = [{"id": c.id, "nombre": c.nombre, "almacen_id": c.almacen_principal_id, "almacen_nombre": c.almacen_principal.nombre} for c in cats_qs]
+        ubs_para_modal = Ubicacion.objects.filter(activo=True, eliminado=False, almacen__in=alms_para_modal).select_related("almacen").order_by("almacen__nombre", "nombre")
+        context["ubicaciones_json"] = [{"id": u.id, "nombre": u.nombre, "almacen_id": u.almacen_id, "almacen_nombre": u.almacen.nombre} for u in ubs_para_modal]
         tipos = TipoCategoria.objects.filter(activo=True, categoria__in=cats_qs).order_by("nombre")
         context["tipos_por_categoria"] = [
             {"id": t.id, "nombre": t.nombre, "categoria_id": t.categoria_id}
@@ -1326,7 +1375,7 @@ class MovimientoListaView(LoginRequiredMixin, ListView):
     model = Movimiento
     template_name = "inventario/movimiento_lista.html"
     context_object_name = "movimientos"
-    paginate_by = 30
+    paginate_by = 15
 
     def get_queryset(self):
         qs = Movimiento.objects.select_related(
@@ -1343,8 +1392,9 @@ class MovimientoListaView(LoginRequiredMixin, ListView):
 
         user = self.request.user
         if getattr(user, "es_usuario_normal", False):
-            if user.almacen_asignado:
-                qs = qs.filter(Q(almacen_origen=user.almacen_asignado) | Q(almacen_destino=user.almacen_asignado))
+            user_alms = user.get_almacenes_asignados()
+            if user_alms.exists():
+                qs = qs.filter(Q(almacen_origen__in=user_alms) | Q(almacen_destino__in=user_alms))
             else:
                 return qs.none()
 
@@ -1435,8 +1485,9 @@ class MovimientoListaView(LoginRequiredMixin, ListView):
             "producto", "almacen", "usuario", "ubicacion_origen", "movimiento"
         ).prefetch_related("devoluciones").order_by("-fecha_creacion")
         if getattr(user, "es_usuario_normal", False):
-            if user.almacen_asignado:
-                prestamos_qs = prestamos_qs.filter(almacen=user.almacen_asignado)
+            user_alms = user.get_almacenes_asignados()
+            if user_alms.exists():
+                prestamos_qs = prestamos_qs.filter(almacen__in=user_alms)
             else:
                 prestamos_qs = prestamos_qs.none()
 
@@ -1465,8 +1516,9 @@ class MovimientoListaView(LoginRequiredMixin, ListView):
             "producto", "almacen", "usuario_conteo", "usuario_confirmacion"
         ).order_by("-fecha_conteo")
         if getattr(user, "es_usuario_normal", False):
-            if user.almacen_asignado:
-                conteos_qs = conteos_qs.filter(almacen=user.almacen_asignado)
+            user_alms = user.get_almacenes_asignados()
+            if user_alms.exists():
+                conteos_qs = conteos_qs.filter(almacen__in=user_alms)
             else:
                 conteos_qs = conteos_qs.none()
         if q:
@@ -1506,13 +1558,21 @@ class MovimientoListaView(LoginRequiredMixin, ListView):
         context["traslado_form"] = TrasladoForm(usuario=user)
         context["conteo_form"] = ConteoFisicoForm(usuario=user)
 
-        # Mapa de ubicación fija por producto (inmutable en entradas de stock)
+        # Mapa de almacén, ubicación fija y stock disponible por producto
         import json
         mapa_ubic = {}
-        for pu in ProductoUbicacion.objects.select_related("ubicacion").all():
-            mapa_ubic[str(pu.producto_id)] = {
-                "id": str(pu.ubicacion_id),
-                "nombre": pu.ubicacion.nombre,
+        prods_qs = Producto.objects.filter(archivado=False).select_related("categoria__almacen_principal").prefetch_related("ubicaciones__almacen", "existencias__almacen")
+        for prod in prods_qs:
+            ub = prod.ubicaciones.first()
+            alm = ub.almacen if ub else prod.categoria.almacen_principal
+            ex = prod.existencias.filter(almacen=alm).first() if alm else None
+            stock_disp = ex.stock_disponible if ex else 0
+            mapa_ubic[str(prod.id)] = {
+                "id": str(ub.id) if ub else "",
+                "nombre": ub.nombre if ub else "Sin ubicación física",
+                "almacen_id": str(alm.id) if alm else "",
+                "almacen_nombre": alm.nombre if alm else "Sin almacén",
+                "stock_disponible": stock_disp,
             }
         context["mapa_ubicaciones_json"] = json.dumps(mapa_ubic)
         return context
@@ -1614,14 +1674,15 @@ class PrestamoListaView(LoginRequiredMixin, ListView):
     model = Prestamo
     template_name = "inventario/prestamo_lista.html"
     context_object_name = "prestamos"
-    paginate_by = 25
+    paginate_by = 10
 
     def get_queryset(self):
         qs = Prestamo.objects.select_related("producto", "almacen", "usuario", "ubicacion_origen").order_by("-fecha_creacion")
         user = self.request.user
         if getattr(user, "es_usuario_normal", False):
-            if user.almacen_asignado:
-                qs = qs.filter(almacen=user.almacen_asignado)
+            user_alms = user.get_almacenes_asignados()
+            if user_alms.exists():
+                qs = qs.filter(almacen__in=user_alms)
             else:
                 return qs.none()
 
@@ -1693,7 +1754,7 @@ class PrestamoDevolucionView(LoginRequiredMixin, View):
     def get(self, request, pk):
         prestamo = get_object_or_404(Prestamo, pk=pk)
         if getattr(request.user, "es_usuario_normal", False):
-            if prestamo.almacen_id != getattr(request.user, "almacen_asignado_id", None):
+            if not request.user.tiene_acceso_almacen(prestamo.almacen):
                 raise PermissionDenied("No tienes permisos para acceder a préstamos de otro almacén.")
         form = DevolucionPrestamoForm(initial={"cantidad": prestamo.cantidad_pendiente_devolucion})
         return render(request, "inventario/prestamo_devolucion.html", {"prestamo": prestamo, "form": form})
@@ -1734,7 +1795,7 @@ class PrestamoBajaView(LoginRequiredMixin, View):
     def get(self, request, pk):
         prestamo = get_object_or_404(Prestamo, pk=pk)
         if getattr(request.user, "es_usuario_normal", False):
-            if prestamo.almacen_id != getattr(request.user, "almacen_asignado_id", None):
+            if not request.user.tiene_acceso_almacen(prestamo.almacen):
                 raise PermissionDenied("No tienes permisos para dar de baja préstamos de otro almacén.")
         form = BajaPrestamoForm(initial={"cantidad": 1})
         return render(request, "inventario/prestamo_baja.html", {"prestamo": prestamo, "form": form})
@@ -1851,14 +1912,15 @@ class ConteoFisicoListaView(LoginRequiredMixin, ListView):
     model = ConteoFisico
     template_name = "inventario/conteo_lista.html"
     context_object_name = "conteos"
-    paginate_by = 25
+    paginate_by = 10
 
     def get_queryset(self):
         qs = ConteoFisico.objects.select_related("producto", "almacen", "usuario_conteo", "usuario_confirmacion").order_by("-fecha_conteo")
         user = self.request.user
         if getattr(user, "es_usuario_normal", False):
-            if user.almacen_asignado:
-                qs = qs.filter(almacen=user.almacen_asignado)
+            user_alms = user.get_almacenes_asignados()
+            if user_alms.exists():
+                qs = qs.filter(almacen__in=user_alms)
             else:
                 return qs.none()
         return qs
@@ -1933,7 +1995,7 @@ class MovimientoRevertirView(LoginRequiredMixin, View):
         movimiento = get_object_or_404(Movimiento, pk=pk)
         if getattr(request.user, "es_usuario_normal", False):
             alm_mov = movimiento.almacen_origen or movimiento.almacen_destino
-            if alm_mov and alm_mov.id != getattr(request.user, "almacen_asignado_id", None):
+            if alm_mov and not request.user.tiene_acceso_almacen(alm_mov):
                 raise PermissionDenied("No tienes permisos para revertir movimientos de otro almacén.")
         form = ReversionForm()
         return render(request, "inventario/movimiento_revertir.html", {"movimiento": movimiento, "form": form})

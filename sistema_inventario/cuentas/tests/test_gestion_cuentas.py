@@ -107,6 +107,27 @@ class GestionCuentasTest(TestCase):
         self.assertIsNotNone(admin_creado)
         self.assertEqual(admin_creado.rol, UsuarioAudacIA.Rol.ADMINISTRADOR)
 
+    def test_superusuario_no_puede_crear_otro_superusuario(self):
+        self.client.login(username="super_gestor", password="Password123")
+        # En el formulario GET, el rol SUPERUSUARIO no debe estar disponible
+        resp_get = self.client.get("/cuentas/usuarios/crear/")
+        self.assertEqual(resp_get.status_code, 200)
+        form = resp_get.context["form"]
+        roles_disponibles = [c[0] for c in form.fields["rol"].choices]
+        self.assertNotIn(UsuarioAudacIA.Rol.SUPERUSUARIO, roles_disponibles)
+
+        # Si se intenta enviar por POST rol=SUPERUSUARIO, debe ser rechazado
+        resp_post = self.client.post(
+            "/cuentas/usuarios/crear/",
+            {
+                "username": "segundo_super",
+                "nombre_completo": "Segundo Super",
+                "password": "Password123",
+                "rol": UsuarioAudacIA.Rol.SUPERUSUARIO,
+            },
+        )
+        self.assertFalse(UsuarioAudacIA.objects.filter(username="segundo_super").exists())
+
     def test_admin_no_puede_modificar_al_superusuario(self):
         self.client.login(username="admin_gestor", password="Password123")
         resp = self.client.get(f"/cuentas/usuarios/{self.superusuario.id}/editar/")

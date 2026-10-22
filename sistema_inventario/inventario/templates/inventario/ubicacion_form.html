@@ -37,7 +37,14 @@
                 <div class="form-help">Formato libre: Estante A, B-03, Cajón rojo, Zona cables, etc.</div>
             </div>
 
-            {% if not user.es_usuario_normal %}
+            {% if form.almacen.is_hidden %}
+                {{ form.almacen }}
+                <div class="form-group">
+                    <label>Almacén asignado</label>
+                    <input type="text" class="form-control" value="{{ user.get_almacenes_asignados.first.nombre }}" disabled>
+                    <div class="form-help">Como usuario operativo, tus registros se asocian a tu almacén asignado.</div>
+                </div>
+            {% else %}
                 <div class="form-group">
                     <label for="{{ form.almacen.id_for_label }}">Almacén al que pertenece *</label>
                     {{ form.almacen }}
@@ -46,13 +53,6 @@
                             {% for error in form.almacen.errors %}{{ error }}{% endfor %}
                         </div>
                     {% endif %}
-                </div>
-            {% else %}
-                {{ form.almacen }}
-                <div class="form-group">
-                    <label>Almacén asignado</label>
-                    <input type="text" class="form-control" value="{{ user.almacen_asignado.nombre }}" disabled>
-                    <div class="form-help">Como usuario operativo, tus registros se asocian a tu almacén asignado.</div>
                 </div>
             {% endif %}
 

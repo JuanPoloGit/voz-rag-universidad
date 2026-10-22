@@ -65,9 +65,9 @@ def obtener_alertas_stock(
     ).select_related("producto", "almacen")
 
     if usuario and getattr(usuario, "es_usuario_normal", False):
-        almacen_usuario = getattr(usuario, "almacen_asignado", None)
-        if almacen_usuario:
-            qs = qs.filter(almacen=almacen_usuario)
+        user_alms = usuario.get_almacenes_asignados()
+        if user_alms.exists():
+            qs = qs.filter(almacen__in=user_alms)
         else:
             qs = qs.none()
     elif almacen:

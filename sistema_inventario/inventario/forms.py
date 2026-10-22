@@ -51,19 +51,25 @@ class UbicacionForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.usuario = usuario
         if usuario and getattr(usuario, "es_usuario_normal", False):
-            # Para usuario normal confinado a su almacén:
-            self.fields["almacen"].queryset = Almacen.objects.filter(id=usuario.almacen_asignado_id)
-            self.fields["almacen"].initial = usuario.almacen_asignado
-            self.fields["almacen"].widget = forms.HiddenInput()
-            self.fields["almacen"].required = False
+            user_alms = usuario.get_almacenes_asignados()
+            self.fields["almacen"].queryset = user_alms.order_by("nombre")
+            self.fields["almacen"].initial = user_alms.first()
+            if user_alms.count() == 1:
+                self.fields["almacen"].widget = forms.HiddenInput()
+                self.fields["almacen"].required = False
         else:
-            self.fields["almacen"].queryset = Almacen.objects.filter(activo=True, eliminado=False)
+            self.fields["almacen"].queryset = Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
 
     def clean(self):
         cleaned_data = super().clean()
         if self.usuario and getattr(self.usuario, "es_usuario_normal", False):
-            cleaned_data["almacen"] = self.usuario.almacen_asignado
-            if "almacen" in self._errors:
+            user_alms = self.usuario.get_almacenes_asignados()
+            alm = cleaned_data.get("almacen")
+            if not alm and user_alms.count() == 1:
+                cleaned_data["almacen"] = user_alms.first()
+            elif alm and not self.usuario.tiene_acceso_almacen(alm):
+                self.add_error("almacen", "No tienes acceso al almacén seleccionado.")
+            if "almacen" in self._errors and cleaned_data.get("almacen"):
                 del self._errors["almacen"]
         return cleaned_data
 
@@ -99,16 +105,16 @@ class CategoriaForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.usuario = usuario
         if usuario and getattr(usuario, "es_usuario_normal", False):
-            self.fields["almacen_principal"].queryset = Almacen.objects.filter(
-                id=usuario.almacen_asignado_id
-            )
-            self.fields["almacen_principal"].initial = usuario.almacen_asignado
-            self.fields["almacen_principal"].widget = forms.HiddenInput()
-            self.fields["almacen_principal"].required = False
+            user_alms = usuario.get_almacenes_asignados()
+            self.fields["almacen_principal"].queryset = user_alms.order_by("nombre")
+            self.fields["almacen_principal"].initial = user_alms.first()
+            if user_alms.count() == 1:
+                self.fields["almacen_principal"].widget = forms.HiddenInput()
+                self.fields["almacen_principal"].required = False
         else:
             self.fields["almacen_principal"].queryset = Almacen.objects.filter(
                 activo=True, eliminado=False
-            )
+            ).order_by("nombre")
 
         if self.instance and self.instance.pk:
             tipos_actuales = list(
@@ -132,8 +138,13 @@ class CategoriaForm(forms.ModelForm):
     def clean(self):
         cleaned_data = super().clean()
         if self.usuario and getattr(self.usuario, "es_usuario_normal", False):
-            cleaned_data["almacen_principal"] = self.usuario.almacen_asignado
-            if "almacen_principal" in self._errors:
+            user_alms = self.usuario.get_almacenes_asignados()
+            alm = cleaned_data.get("almacen_principal")
+            if not alm and user_alms.count() == 1:
+                cleaned_data["almacen_principal"] = user_alms.first()
+            elif alm and not self.usuario.tiene_acceso_almacen(alm):
+                self.add_error("almacen_principal", "No tienes acceso al almacén seleccionado.")
+            if "almacen_principal" in self._errors and cleaned_data.get("almacen_principal"):
                 del self._errors["almacen_principal"]
         return cleaned_data
 
@@ -158,8 +169,9 @@ class TipoCategoriaForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.usuario = usuario
         if usuario and getattr(usuario, "es_usuario_normal", False):
+            user_alms = usuario.get_almacenes_asignados()
             self.fields["categoria"].queryset = Categoria.objects.filter(
-                activo=True, eliminado=False, almacen_principal=usuario.almacen_asignado
+                activo=True, eliminado=False, almacen_principal__in=user_alms
             ).order_by("nombre")
         else:
             self.fields["categoria"].queryset = Categoria.objects.filter(
@@ -170,12 +182,20 @@ class TipoCategoriaForm(forms.ModelForm):
 class ProductoForm(forms.ModelForm):
     """Formulario para creación y edición de productos."""
 
+    almacen = forms.ModelChoiceField(
+        queryset=Almacen.objects.none(),
+        required=False,
+        widget=forms.Select(attrs={"class": "form-control"}),
+        label="Almacén",
+        help_text="Almacén al que pertenece este producto (asociado a su categoría y ubicación).",
+        empty_label="Selecciona un almacén...",
+    )
     ubicacion = forms.ModelChoiceField(
         queryset=Ubicacion.objects.none(),
         required=False,
         widget=forms.Select(attrs={"class": "form-control"}),
         label="Ubicación física única",
-        help_text="Ubicación física única asignada para este producto.",
+        help_text="Ubicación física única asignada en bodega para este producto.",
         empty_label="Sin ubicación física (opcional)",
     )
 
@@ -207,6 +227,7 @@ class ProductoForm(forms.ModelForm):
             "stock_inicial": forms.NumberInput(attrs={
                 "class": "form-control",
                 "min": 0,
+                "placeholder": "Ej. 60 (total unidades base)",
             }),
             "stock_minimo": forms.NumberInput(attrs={
                 "class": "form-control",
@@ -223,7 +244,7 @@ class ProductoForm(forms.ModelForm):
             "unidades_por_empaque": forms.NumberInput(attrs={
                 "class": "form-control",
                 "min": 1,
-                "placeholder": "Ej. 50 (opcional)",
+                "placeholder": "Ej. 50 (unidades por empaque)",
             }),
             "descripcion": forms.Textarea(attrs={
                 "class": "form-control",
@@ -237,18 +258,23 @@ class ProductoForm(forms.ModelForm):
         self.usuario = usuario
 
         if usuario and getattr(usuario, "es_usuario_normal", False):
+            user_alms = usuario.get_almacenes_asignados()
             cats_qs = Categoria.objects.filter(
-                activo=True, eliminado=False, almacen_principal=usuario.almacen_asignado
+                activo=True, eliminado=False, almacen_principal__in=user_alms
             )
             ub_qs = Ubicacion.objects.filter(
-                activo=True, eliminado=False, almacen=usuario.almacen_asignado
+                activo=True, eliminado=False, almacen__in=user_alms
             )
+            self.fields["almacen"].queryset = user_alms.order_by("nombre")
+            if user_alms.count() == 1:
+                self.fields["almacen"].initial = user_alms.first()
         else:
+            self.fields["almacen"].queryset = Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
             cats_qs = Categoria.objects.filter(activo=True, eliminado=False)
             ub_qs = Ubicacion.objects.filter(activo=True, eliminado=False)
 
         self.fields["categoria"].queryset = cats_qs.order_by("nombre")
-        self.fields["ubicacion"].queryset = ub_qs.order_by("nombre")
+        self.fields["ubicacion"].queryset = ub_qs.order_by("almacen__nombre", "nombre")
 
         # Acotar las opciones de tipo a la categoría correspondiente
         cat_id_efectiva = None
@@ -274,15 +300,26 @@ class ProductoForm(forms.ModelForm):
         if self.instance and self.instance.pk:
             self.fields["stock_inicial"].disabled = True
             self.fields["stock_inicial"].required = False
+            self.fields["almacen"].initial = self.instance.categoria.almacen_principal_id
             self.fields["ubicacion"].initial = self.instance.ubicaciones.first()
 
     def clean(self):
         cleaned_data = super().clean()
         categoria = cleaned_data.get("categoria") or (self.instance.categoria if self.instance and self.instance.pk else None)
+        almacen = cleaned_data.get("almacen")
         tipo = cleaned_data.get("tipo")
-        if tipo and categoria and tipo.categoria_id != categoria.id:
-            self.add_error("tipo", "El tipo seleccionado no pertenece a la categoría elegida.")
         ub = cleaned_data.get("ubicacion")
+
+        if categoria:
+            if almacen and categoria.almacen_principal_id != almacen.id:
+                self.add_error("categoria", f"La categoría '{categoria.nombre}' pertenece a '{categoria.almacen_principal.nombre}', no al almacén '{almacen.nombre}'.")
+
+            if ub and ub.almacen_id != categoria.almacen_principal_id:
+                self.add_error("ubicacion", f"La ubicación '{ub.nombre}' pertenece a '{ub.almacen.nombre}', pero la categoría del producto pertenece a '{categoria.almacen_principal.nombre}'.")
+
+            if tipo and tipo.categoria_id != categoria.id:
+                self.add_error("tipo", "El tipo seleccionado no pertenece a la categoría elegida.")
+
         cleaned_data["ubicaciones_seleccionadas"] = [ub] if ub else []
         return cleaned_data
 
@@ -342,14 +379,16 @@ class EntradaForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.usuario = usuario
         if usuario and getattr(usuario, "es_usuario_normal", False):
-            self.fields["almacen"].queryset = Almacen.objects.filter(id=usuario.almacen_asignado_id)
-            self.fields["almacen"].initial = usuario.almacen_asignado
-            self.fields["almacen"].widget = forms.HiddenInput()
+            user_alms = usuario.get_almacenes_asignados()
+            self.fields["almacen"].queryset = user_alms.order_by("nombre")
+            self.fields["almacen"].initial = user_alms.first()
+            if user_alms.count() == 1:
+                self.fields["almacen"].widget = forms.HiddenInput()
             self.fields["producto"].queryset = Producto.objects.filter(
-                archivado=False, activo=True, categoria__almacen_principal=usuario.almacen_asignado
+                archivado=False, activo=True, categoria__almacen_principal__in=user_alms
             )
             self.fields["ubicacion"].queryset = Ubicacion.objects.filter(
-                activo=True, eliminado=False, almacen=usuario.almacen_asignado
+                activo=True, eliminado=False, almacen__in=user_alms
             )
 
     def clean(self):
@@ -358,6 +397,10 @@ class EntradaForm(forms.Form):
         cantidad = cleaned_data.get("cantidad")
         cantidad_empaques = cleaned_data.get("cantidad_empaques")
         producto = cleaned_data.get("producto")
+        almacen = cleaned_data.get("almacen")
+
+        if producto and almacen and producto.categoria.almacen_principal_id != almacen.id:
+            self.add_error("almacen", f"El producto '{producto.nombre}' pertenece al almacén '{producto.categoria.almacen_principal.nombre}'.")
 
         if es_empaque:
             if not cantidad_empaques:
@@ -415,15 +458,35 @@ class SalidaForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.usuario = usuario
         if usuario and getattr(usuario, "es_usuario_normal", False):
-            self.fields["almacen"].queryset = Almacen.objects.filter(id=usuario.almacen_asignado_id)
-            self.fields["almacen"].initial = usuario.almacen_asignado
-            self.fields["almacen"].widget = forms.HiddenInput()
+            user_alms = usuario.get_almacenes_asignados()
+            self.fields["almacen"].queryset = user_alms.order_by("nombre")
+            self.fields["almacen"].initial = user_alms.first()
+            if user_alms.count() == 1:
+                self.fields["almacen"].widget = forms.HiddenInput()
             self.fields["producto"].queryset = Producto.objects.filter(
-                archivado=False, activo=True, categoria__almacen_principal=usuario.almacen_asignado
+                archivado=False, activo=True, categoria__almacen_principal__in=user_alms
             )
             self.fields["ubicacion"].queryset = Ubicacion.objects.filter(
-                activo=True, eliminado=False, almacen=usuario.almacen_asignado
+                activo=True, eliminado=False, almacen__in=user_alms
             )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        producto = cleaned_data.get("producto")
+        almacen = cleaned_data.get("almacen")
+        cantidad = cleaned_data.get("cantidad")
+
+        if producto and almacen:
+            if producto.categoria.almacen_principal_id != almacen.id:
+                self.add_error("almacen", f"El producto '{producto.nombre}' pertenece al almacén '{producto.categoria.almacen_principal.nombre}'.")
+            if cantidad:
+                from inventario.models import Existencia
+                existencia = Existencia.objects.filter(producto=producto, almacen=almacen).first()
+                stock_disp = existencia.stock_disponible if existencia else 0
+                if cantidad > stock_disp:
+                    self.add_error("cantidad", f"No puedes entregar {cantidad} unidades. Stock disponible actual: {stock_disp} unidades.")
+
+        return cleaned_data
 
 
 class PrestamoForm(forms.Form):
@@ -471,12 +534,35 @@ class PrestamoForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.usuario = usuario
         if usuario and getattr(usuario, "es_usuario_normal", False):
-            self.fields["almacen"].queryset = Almacen.objects.filter(id=usuario.almacen_asignado_id)
-            self.fields["almacen"].initial = usuario.almacen_asignado
-            self.fields["almacen"].widget = forms.HiddenInput()
+            user_alms = usuario.get_almacenes_asignados()
+            self.fields["almacen"].queryset = user_alms.order_by("nombre")
+            self.fields["almacen"].initial = user_alms.first()
+            if user_alms.count() == 1:
+                self.fields["almacen"].widget = forms.HiddenInput()
             self.fields["producto"].queryset = Producto.objects.filter(
-                archivado=False, activo=True, categoria__almacen_principal=usuario.almacen_asignado
+                archivado=False, activo=True, categoria__almacen_principal__in=user_alms
             )
+            self.fields["ubicacion"].queryset = Ubicacion.objects.filter(
+                activo=True, eliminado=False, almacen__in=user_alms
+            )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        producto = cleaned_data.get("producto")
+        almacen = cleaned_data.get("almacen")
+        cantidad = cleaned_data.get("cantidad")
+
+        if producto and almacen:
+            if producto.categoria.almacen_principal_id != almacen.id:
+                self.add_error("almacen", f"El producto '{producto.nombre}' pertenece al almacén '{producto.categoria.almacen_principal.nombre}'.")
+            if cantidad:
+                from inventario.models import Existencia
+                existencia = Existencia.objects.filter(producto=producto, almacen=almacen).first()
+                stock_disp = existencia.stock_disponible if existencia else 0
+                if cantidad > stock_disp:
+                    self.add_error("cantidad", f"No puedes prestar {cantidad} unidades. Stock disponible actual: {stock_disp} unidades.")
+
+        return cleaned_data
 
 
 class DevolucionPrestamoForm(forms.Form):
@@ -565,12 +651,14 @@ class TrasladoForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.usuario = usuario
         if usuario and getattr(usuario, "es_usuario_normal", False):
-            self.fields["almacen_origen"].queryset = Almacen.objects.filter(id=usuario.almacen_asignado_id)
-            self.fields["almacen_origen"].initial = usuario.almacen_asignado
-            self.fields["almacen_origen"].widget = forms.HiddenInput()
-            self.fields["almacen_destino"].queryset = Almacen.objects.filter(activo=True, eliminado=False).exclude(id=usuario.almacen_asignado_id)
+            user_alms = usuario.get_almacenes_asignados()
+            self.fields["almacen_origen"].queryset = user_alms.order_by("nombre")
+            self.fields["almacen_origen"].initial = user_alms.first()
+            if user_alms.count() == 1:
+                self.fields["almacen_origen"].widget = forms.HiddenInput()
+            self.fields["almacen_destino"].queryset = Almacen.objects.filter(activo=True, eliminado=False).exclude(id__in=user_alms.values_list("id", flat=True))
             self.fields["producto"].queryset = Producto.objects.filter(
-                archivado=False, activo=True, categoria__almacen_principal=usuario.almacen_asignado
+                archivado=False, activo=True, categoria__almacen_principal__in=user_alms
             )
 
 
@@ -602,11 +690,13 @@ class ConteoFisicoForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.usuario = usuario
         if usuario and getattr(usuario, "es_usuario_normal", False):
-            self.fields["almacen"].queryset = Almacen.objects.filter(id=usuario.almacen_asignado_id)
-            self.fields["almacen"].initial = usuario.almacen_asignado
-            self.fields["almacen"].widget = forms.HiddenInput()
+            user_alms = usuario.get_almacenes_asignados()
+            self.fields["almacen"].queryset = user_alms.order_by("nombre")
+            self.fields["almacen"].initial = user_alms.first()
+            if user_alms.count() == 1:
+                self.fields["almacen"].widget = forms.HiddenInput()
             self.fields["producto"].queryset = Producto.objects.filter(
-                archivado=False, activo=True, categoria__almacen_principal=usuario.almacen_asignado
+                archivado=False, activo=True, categoria__almacen_principal__in=user_alms
             )
 
 

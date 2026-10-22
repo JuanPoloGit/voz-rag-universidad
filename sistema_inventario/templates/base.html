@@ -72,6 +72,7 @@
             line-height: 1.5;
             min-height: 100vh;
             -webkit-font-smoothing: antialiased;
+            overflow-x: clip;
         }
 
         ::selection { background: var(--accent); color: #fff; }
@@ -97,6 +98,7 @@
             position: sticky;
             top: 0;
             height: 100vh;
+            height: 100dvh;
             overflow-y: auto;
             display: flex;
             flex-direction: column;
@@ -390,6 +392,8 @@
         /* ─── MAIN CONTENT ────────────────────────────────────────── */
         .main-content {
             flex: 1;
+            min-width: 0;
+            width: 100%;
             padding: 28px 32px 60px;
         }
 
@@ -483,6 +487,8 @@
             border-radius: var(--radius);
             padding: 20px 22px 22px;
             margin-bottom: 1.5rem;
+            min-width: 0;
+            max-width: 100%;
         }
 
         .card-header {
@@ -804,7 +810,7 @@
         }
 
         @media (max-width: 1280px) {
-            .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+            .kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
         }
 
         /* ─── Modals (<dialog>) ───────────────────────────────────── */
@@ -1289,9 +1295,9 @@
            RESPONSIVE — Universal (Desktop, Tablet, Apple iOS, Mobile)
            ═══════════════════════════════════════════════════════════════ */
         @media (max-width: 980px) {
-            .kpi-grid { grid-template-columns: repeat(2, 1fr); }
-            .charts-grid { grid-template-columns: 1fr; }
-            .tables-grid { grid-template-columns: 1fr; }
+            .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .charts-grid { grid-template-columns: minmax(0, 1fr); }
+            .tables-grid { grid-template-columns: minmax(0, 1fr); }
 
             .sidebar {
                 position: fixed;
@@ -1334,7 +1340,7 @@
         }
 
         @media (max-width: 640px) {
-            .kpi-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+            .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
             .kpi-card { padding: 14px; }
             .kpi-value { font-size: 22px; }
             .topbar-title {
@@ -1345,7 +1351,7 @@
                 border-radius: 10px;
             }
             .form-grid-2 {
-                grid-template-columns: 1fr;
+                grid-template-columns: minmax(0, 1fr);
                 gap: 10px;
             }
             dialog.app-modal {
@@ -1364,10 +1370,6 @@
                 padding: 6px 10px;
                 font-size: 11.5px;
             }
-        }
-
-        @media (max-width: 420px) {
-            .kpi-grid { grid-template-columns: 1fr; }
         }
     </style>
     {% block extra_css %}{% endblock %}
@@ -1508,8 +1510,8 @@
                             </div>
 
                             <div class="notif-dropdown-body">
-                                {% if alertas_resumen.criticas or alertas_resumen.bajas %}
-                                    {% for ex in alertas_resumen.criticas %}
+                                {% if alertas_resumen.criticas_no_leidas or alertas_resumen.bajas_no_leidas %}
+                                    {% for ex in alertas_resumen.criticas_no_leidas %}
                                         <div class="notif-float-item alert-crit" data-notif-item="{{ ex.notificacion_key }}">
                                             <a href="{% url 'inventario:producto-detalle' ex.producto.pk %}"
                                                onclick="marcarYRedirigirGlobal(event, '{{ ex.notificacion_key }}', '{% url 'inventario:producto-detalle' ex.producto.pk %}')"
@@ -1517,7 +1519,7 @@
                                                 <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                                                     <span class="status-inline status-crit"><span class="status-dot"></span>Sin stock</span>
                                                     <strong style="color: var(--text); font-size: 13px;">{{ ex.producto.codigo_interno }} — {{ ex.producto.nombre }}</strong>
-                                                    <span class="badge badge-accent js-notif-new-badge" style="font-size: 9.5px; padding: 1px 6px; {% if ex.es_leida %}display: none;{% endif %}">Nueva</span>
+                                                    <span class="badge badge-accent js-notif-new-badge" style="font-size: 9.5px; padding: 1px 6px;">Nueva</span>
                                                 </div>
                                                 <div style="font-size: 11.8px; color: var(--text-dim); margin-top: 3px;">
                                                     Bodega <strong>{{ ex.almacen.nombre }}</strong> · Disponible: <strong>0</strong> (mínimo {{ ex.producto.stock_minimo }})
@@ -1526,16 +1528,16 @@
                                             <form method="post" action="{% url 'inventario:alerta-marcar-leida' %}" class="js-notif-ajax-form" style="margin: 0; flex-shrink: 0;">
                                                 {% csrf_token %}
                                                 <input type="hidden" name="key" value="{{ ex.notificacion_key }}">
-                                                <input type="hidden" name="accion" value="{% if ex.es_leida %}no_leida{% else %}una{% endif %}" class="js-notif-accion-input">
+                                                <input type="hidden" name="accion" value="una" class="js-notif-accion-input">
                                                 <input type="hidden" name="next" value="{{ request.get_full_path }}">
                                                 <button type="submit" class="btn btn-sm btn-secondary js-notif-btn-label" style="padding: 5px 9px; font-size: 11px;">
-                                                    {% if ex.es_leida %}Leída{% else %}Marcar leída{% endif %}
+                                                    Marcar leída
                                                 </button>
                                             </form>
                                         </div>
                                     {% endfor %}
 
-                                    {% for ex in alertas_resumen.bajas %}
+                                    {% for ex in alertas_resumen.bajas_no_leidas %}
                                         <div class="notif-float-item alert-warn" data-notif-item="{{ ex.notificacion_key }}">
                                             <a href="{% url 'inventario:producto-detalle' ex.producto.pk %}"
                                                onclick="marcarYRedirigirGlobal(event, '{{ ex.notificacion_key }}', '{% url 'inventario:producto-detalle' ex.producto.pk %}')"
@@ -1543,7 +1545,7 @@
                                                 <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                                                     <span class="status-inline status-warn"><span class="status-dot"></span>Stock bajo</span>
                                                     <strong style="color: var(--text); font-size: 13px;">{{ ex.producto.codigo_interno }} — {{ ex.producto.nombre }}</strong>
-                                                    <span class="badge badge-accent js-notif-new-badge" style="font-size: 9.5px; padding: 1px 6px; {% if ex.es_leida %}display: none;{% endif %}">Nueva</span>
+                                                    <span class="badge badge-accent js-notif-new-badge" style="font-size: 9.5px; padding: 1px 6px;">Nueva</span>
                                                 </div>
                                                 <div style="font-size: 11.8px; color: var(--text-dim); margin-top: 3px;">
                                                     Bodega <strong>{{ ex.almacen.nombre }}</strong> · Disponible: <strong>{{ ex.stock_disponible }}</strong> (mínimo {{ ex.producto.stock_minimo }})
@@ -1552,17 +1554,17 @@
                                             <form method="post" action="{% url 'inventario:alerta-marcar-leida' %}" class="js-notif-ajax-form" style="margin: 0; flex-shrink: 0;">
                                                 {% csrf_token %}
                                                 <input type="hidden" name="key" value="{{ ex.notificacion_key }}">
-                                                <input type="hidden" name="accion" value="{% if ex.es_leida %}no_leida{% else %}una{% endif %}" class="js-notif-accion-input">
+                                                <input type="hidden" name="accion" value="una" class="js-notif-accion-input">
                                                 <input type="hidden" name="next" value="{{ request.get_full_path }}">
                                                 <button type="submit" class="btn btn-sm btn-secondary js-notif-btn-label" style="padding: 5px 9px; font-size: 11px;">
-                                                    {% if ex.es_leida %}Leída{% else %}Marcar leída{% endif %}
+                                                    Marcar leída
                                                 </button>
                                             </form>
                                         </div>
                                     {% endfor %}
                                 {% else %}
-                                    <div style="text-align: center; padding: 1.75rem 1rem; color: var(--text-muted); font-size: 12.5px;">
-                                        Todo el inventario se encuentra en niveles óptimos.
+                                    <div id="notifEmptyState" style="text-align: center; padding: 1.75rem 1rem; color: var(--text-muted); font-size: 12.5px;">
+                                        No tienes notificaciones pendientes.
                                     </div>
                                 {% endif %}
                             </div>
@@ -1772,33 +1774,51 @@
                             if (!r.ok) throw new Error("HTTP " + r.status);
                             return r.json();
                         }).then(function(data) {
-                            if (accion === "todas") {
-                                panelNotif.querySelectorAll(".js-notif-new-badge").forEach(function(b) {
-                                    b.style.display = "none";
-                                });
-                                panelNotif.querySelectorAll(".js-notif-accion-input").forEach(function(inp) {
-                                    inp.value = "no_leida";
-                                });
-                                panelNotif.querySelectorAll(".js-notif-btn-label").forEach(function(btn) {
-                                    btn.textContent = "Leída";
-                                });
-                                form.style.display = "none";
-                            } else {
-                                var item = form.closest(".notif-float-item");
-                                var newBadge = item ? item.querySelector(".js-notif-new-badge") : null;
-                                var inpAcc = form.querySelector(".js-notif-accion-input");
-                                var btnLbl = form.querySelector(".js-notif-btn-label");
-                                if (accion === "una") {
-                                    if (newBadge) newBadge.style.display = "none";
-                                    if (inpAcc) inpAcc.value = "no_leida";
-                                    if (btnLbl) btnLbl.textContent = "Leída";
-                                } else {
-                                    if (newBadge) newBadge.style.display = "inline-block";
-                                    if (inpAcc) inpAcc.value = "una";
-                                    if (btnLbl) btnLbl.textContent = "Marcar leída";
+                            var notifBody = panelNotif.querySelector(".notif-dropdown-body");
+                            var formMarcarTodas = panelNotif.querySelector('form[data-accion="todas"]');
+                            function ensureEmptyState() {
+                                var remaining = notifBody.querySelectorAll(".notif-float-item");
+                                if (remaining.length === 0) {
+                                    if (formMarcarTodas) formMarcarTodas.style.display = "none";
+                                    var emptyMsg = document.getElementById("notifEmptyState");
+                                    if (!emptyMsg) {
+                                        emptyMsg = document.createElement("div");
+                                        emptyMsg.id = "notifEmptyState";
+                                        emptyMsg.style.cssText = "text-align: center; padding: 1.75rem 1rem; color: var(--text-muted); font-size: 12.5px;";
+                                        emptyMsg.textContent = "No tienes notificaciones pendientes.";
+                                        notifBody.appendChild(emptyMsg);
+                                    } else {
+                                        emptyMsg.style.display = "block";
+                                    }
                                 }
                             }
-                            actualizarContadorCampana(data ? data.total_no_leidas : undefined);
+
+                            if (accion === "todas") {
+                                var items = panelNotif.querySelectorAll(".notif-float-item");
+                                items.forEach(function(item) {
+                                    item.style.transition = "opacity 0.2s ease, transform 0.2s ease";
+                                    item.style.opacity = "0";
+                                    item.style.transform = "translateX(10px)";
+                                    setTimeout(function() {
+                                        item.remove();
+                                        ensureEmptyState();
+                                    }, 200);
+                                });
+                                if (formMarcarTodas) formMarcarTodas.style.display = "none";
+                                setTimeout(ensureEmptyState, 250);
+                            } else {
+                                var item = form.closest(".notif-float-item");
+                                if (item) {
+                                    item.style.transition = "opacity 0.2s ease, transform 0.2s ease";
+                                    item.style.opacity = "0";
+                                    item.style.transform = "translateX(10px)";
+                                    setTimeout(function() {
+                                        item.remove();
+                                        ensureEmptyState();
+                                    }, 200);
+                                }
+                            }
+                            actualizarContadorCampana(data ? data.total_no_leidas : 0);
                         }).catch(function(err) {
                             console.error("Error al actualizar notificación:", err);
                         });
@@ -1822,9 +1842,26 @@
 
             // 1. Auto-filtrado sin botón: formularios con data-auto-filter="true"
             document.querySelectorAll('form[data-auto-filter="true"]').forEach(function(form) {
+                function submitCleanForm() {
+                    if ((form.method || "get").toLowerCase() === "get") {
+                        var formData = new FormData(form);
+                        var cleanParams = new URLSearchParams();
+                        formData.forEach(function(val, key) {
+                            if (val && typeof val === "string" && val.trim()) {
+                                cleanParams.append(key, val.trim());
+                            }
+                        });
+                        var query = cleanParams.toString();
+                        var action = form.getAttribute("action") || window.location.pathname;
+                        window.location.href = action + (query ? "?" + query : "");
+                        return;
+                    }
+                    form.submit();
+                }
+
                 form.querySelectorAll("select, input[type='checkbox'], input[type='radio']").forEach(function(el) {
                     el.addEventListener("change", function() {
-                        form.submit();
+                        submitCleanForm();
                     });
                 });
                 var timer = null;
@@ -1832,7 +1869,7 @@
                     input.addEventListener("input", function() {
                         clearTimeout(timer);
                         timer = setTimeout(function() {
-                            form.submit();
+                            submitCleanForm();
                         }, 420);
                     });
                     if (input.value && document.activeElement === input) {

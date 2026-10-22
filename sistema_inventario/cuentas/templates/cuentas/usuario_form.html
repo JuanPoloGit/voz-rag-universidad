@@ -4,6 +4,34 @@
 {% block page_title %}{{ accion }} Usuario{% endblock %}
 {% block sidebar_usuarios %}active{% endblock %}
 
+{% block extra_css %}
+<style>
+    .almacen-option-row {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 8px 10px;
+        background: var(--bg-surface, var(--bg-elevated));
+        border: 1px solid var(--border-soft);
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 12.8px;
+        font-weight: normal;
+        margin: 0;
+        user-select: none;
+        transition: all 0.15s ease;
+    }
+    .almacen-option-row:hover {
+        border-color: var(--accent-bright);
+        background: rgba(59, 111, 240, 0.10);
+    }
+    .almacen-option-row input[type="checkbox"]:checked + span {
+        color: var(--accent-bright);
+        font-weight: 600;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="card" style="max-width: 640px;">
     <div class="card-header">
@@ -55,12 +83,40 @@
             {% endif %}
         </div>
 
-        <div class="form-group">
-            <label for="{{ form.almacen_asignado.id_for_label }}">{{ form.almacen_asignado.label }}</label>
-            {{ form.almacen_asignado }}
-            <div class="form-help">{{ form.almacen_asignado.help_text }}</div>
-            {% if form.almacen_asignado.errors %}
-                <div class="form-error">{{ form.almacen_asignado.errors.0 }}</div>
+        <div class="form-group" id="grupoAlmacenesAsignados">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-wrap: wrap; gap: 6px;">
+                <label style="margin: 0; font-weight: 600;">{{ form.almacenes_asignados.label }}</label>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span id="almacenesCounterBadge" class="badge badge-accent" style="font-size: 11px; padding: 2px 7px;">0 seleccionados</span>
+                    <button type="button" id="btnSelectAllAlmacenes" style="background: none; border: none; color: var(--accent-bright); font-size: 11.5px; cursor: pointer; text-decoration: underline; padding: 0;">Todos</button>
+                    <span style="color: var(--border);">|</span>
+                    <button type="button" id="btnClearAlmacenes" style="background: none; border: none; color: var(--text-faint); font-size: 11.5px; cursor: pointer; text-decoration: underline; padding: 0;">Ninguno</button>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 6px;">
+                <input type="text" id="almacenSearchInput" placeholder="Filtrar almacenes por nombre..." class="form-control" style="height: 32px; font-size: 12.5px; padding: 4px 10px; background: var(--bg-panel-2);">
+            </div>
+
+            <div id="almacenesScrollBox" style="max-height: 180px; overflow-y: auto; padding: 8px; background: var(--bg-panel-2); border: 1px solid var(--border); border-radius: var(--radius-sm);">
+                <div id="almacenesGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px;">
+                    {% for choice in form.almacenes_asignados %}
+                        <label class="almacen-option-row" data-name="{{ choice.choice_label|lower }}">
+                            {{ choice.tag }}
+                            <span class="almacen-option-name">{{ choice.choice_label }}</span>
+                        </label>
+                    {% empty %}
+                        <div style="color: var(--text-muted); font-size: 12px; padding: 8px;">No hay almacenes activos registrados.</div>
+                    {% endfor %}
+                </div>
+                <div id="almacenSearchEmpty" style="display: none; padding: 12px; color: var(--text-faint); font-size: 12px; text-align: center;">
+                    No se encontraron almacenes con ese nombre.
+                </div>
+            </div>
+
+            <div class="form-help" style="margin-top: 6px;">Selecciona al menos un almacén para usuarios con rol operativo. El usuario solo podrá ver y gestionar inventario de los almacenes asignados.</div>
+            {% if form.almacenes_asignados.errors %}
+                <div class="form-error" style="color: var(--crit); margin-top: 4px; font-size: 12px;">{{ form.almacenes_asignados.errors.0 }}</div>
             {% endif %}
         </div>
 
@@ -75,4 +131,98 @@
         </div>
     </form>
 </div>
+
+<script>
+window.initUsuarioForm = function(root) {
+    root = root || document;
+    var rolSelect = root.querySelector('select[name="rol"]');
+    var grpAlmacenes = root.querySelector('#grupoAlmacenesAsignados');
+
+    function actualizarVisibilidadAlmacen() {
+        if (!rolSelect || !grpAlmacenes) return;
+        var esUsuarioNormal = (rolSelect.value === "USUARIO");
+        grpAlmacenes.style.display = esUsuarioNormal ? "block" : "none";
+    }
+
+    if (rolSelect && !rolSelect.dataset.listenerAttached) {
+        rolSelect.dataset.listenerAttached = "1";
+        rolSelect.addEventListener("change", actualizarVisibilidadAlmacen);
+    }
+    actualizarVisibilidadAlmacen();
+
+    var counterBadge = root.querySelector("#almacenesCounterBadge");
+    var checkboxes = root.querySelectorAll('input[name="almacenes_asignados"]');
+    var btnSelectAll = root.querySelector("#btnSelectAllAlmacenes");
+    var btnClear = root.querySelector("#btnClearAlmacenes");
+    var searchInput = root.querySelector("#almacenSearchInput");
+    var searchEmpty = root.querySelector("#almacenSearchEmpty");
+    var optionRows = root.querySelectorAll(".almacen-option-row");
+
+    function updateCounter() {
+        var checked = root.querySelectorAll('input[name="almacenes_asignados"]:checked').length;
+        if (counterBadge) {
+            counterBadge.textContent = checked === 1 ? "1 seleccionado" : checked + " seleccionados";
+            counterBadge.className = checked > 0 ? "badge badge-accent" : "badge badge-secondary";
+        }
+    }
+
+    checkboxes.forEach(function(box) {
+        if (!box.dataset.listenerAttached) {
+            box.dataset.listenerAttached = "1";
+            box.addEventListener("change", updateCounter);
+        }
+    });
+
+    if (btnSelectAll && !btnSelectAll.dataset.listenerAttached) {
+        btnSelectAll.dataset.listenerAttached = "1";
+        btnSelectAll.addEventListener("click", function(e) {
+            e.preventDefault();
+            optionRows.forEach(function(row) {
+                if (row.style.display !== "none") {
+                    var box = row.querySelector('input[type="checkbox"]');
+                    if (box) box.checked = true;
+                }
+            });
+            updateCounter();
+        });
+    }
+
+    if (btnClear && !btnClear.dataset.listenerAttached) {
+        btnClear.dataset.listenerAttached = "1";
+        btnClear.addEventListener("click", function(e) {
+            e.preventDefault();
+            checkboxes.forEach(function(box) {
+                box.checked = false;
+            });
+            updateCounter();
+        });
+    }
+
+    if (searchInput && !searchInput.dataset.listenerAttached) {
+        searchInput.dataset.listenerAttached = "1";
+        searchInput.addEventListener("input", function() {
+            var q = this.value.toLowerCase().trim();
+            var visible = 0;
+            optionRows.forEach(function(row) {
+                var name = row.getAttribute("data-name") || "";
+                if (!q || name.indexOf(q) !== -1) {
+                    row.style.display = "flex";
+                    visible++;
+                } else {
+                    row.style.display = "none";
+                }
+            });
+            if (searchEmpty) {
+                searchEmpty.style.display = visible === 0 ? "block" : "none";
+            }
+        });
+    }
+
+    updateCounter();
+};
+
+document.addEventListener("DOMContentLoaded", function() {
+    window.initUsuarioForm(document);
+});
+</script>
 {% endblock %}

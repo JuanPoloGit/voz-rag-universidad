@@ -33,9 +33,12 @@ def validar_invariantes_usuario(sender, instance, **kwargs):
         instance.is_superuser = False
         instance.is_staff = False
         if not instance.almacen_asignado_id:
-            raise ValidationError(
-                _("Los usuarios con rol Usuario deben tener obligatoriamente un almacén asignado.")
-            )
+            if instance.pk and instance.almacenes_asignados.exists():
+                instance.almacen_asignado = instance.almacenes_asignados.first()
+            else:
+                raise ValidationError(
+                    _("Los usuarios con rol Usuario deben tener obligatoriamente al menos un almacén asignado.")
+                )
 
     # 2. Verificar regla de superusuario único
     if instance.rol == UsuarioAudacIA.Rol.SUPERUSUARIO or instance.is_superuser:

@@ -286,6 +286,7 @@
                                         data-url="{% url 'inventario:producto-editar' prod.id %}"
                                         data-codigo="{{ prod.codigo_interno }}"
                                         data-nombre="{{ prod.nombre }}"
+                                        data-almacen="{{ prod.categoria.almacen_principal_id }}"
                                         data-categoria="{{ prod.categoria_id }}"
                                         data-tipo="{{ prod.tipo_id|default:'' }}"
                                         data-stock-inicial="{{ prod.stock_inicial }}"
@@ -330,14 +331,22 @@
         </table>
     </div>
 
-    {% if is_paginated %}
-        <div class="pagination">
+    {% if page_obj and page_obj.paginator.count > 0 %}
+        <div class="pagination" style="display: flex; justify-content: center; align-items: center; gap: 0.75rem; margin-top: 1.5rem;">
             {% if page_obj.has_previous %}
                 <a href="?page={{ page_obj.previous_page_number }}{% if q %}&q={{ q }}{% endif %}{% if almacen_seleccionado %}&almacen_id={{ almacen_seleccionado }}{% endif %}{% if categoria_seleccionada %}&categoria_id={{ categoria_seleccionada }}{% endif %}{% if tipo_seleccionado %}&tipo_id={{ tipo_seleccionado }}{% endif %}{% if ubicacion_seleccionada %}&ubicacion_id={{ ubicacion_seleccionada }}{% endif %}{% if estado_activo %}&estado_activo={{ estado_activo }}{% endif %}" class="btn btn-sm btn-secondary">&laquo; Anterior</a>
+            {% else %}
+                <span class="btn btn-sm btn-secondary" style="opacity: 0.45; pointer-events: none; cursor: default;">&laquo; Anterior</span>
             {% endif %}
-            <span class="page-info">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+
+            <span class="page-info" style="font-size: 12.5px; color: var(--text-dim);">
+                Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }} &bull; {{ page_obj.paginator.count }} producto{{ page_obj.paginator.count|pluralize }}
+            </span>
+
             {% if page_obj.has_next %}
                 <a href="?page={{ page_obj.next_page_number }}{% if q %}&q={{ q }}{% endif %}{% if almacen_seleccionado %}&almacen_id={{ almacen_seleccionado }}{% endif %}{% if categoria_seleccionada %}&categoria_id={{ categoria_seleccionada }}{% endif %}{% if tipo_seleccionado %}&tipo_id={{ tipo_seleccionado }}{% endif %}{% if ubicacion_seleccionada %}&ubicacion_id={{ ubicacion_seleccionada }}{% endif %}{% if estado_activo %}&estado_activo={{ estado_activo }}{% endif %}" class="btn btn-sm btn-secondary">Siguiente &raquo;</a>
+            {% else %}
+                <span class="btn btn-sm btn-secondary" style="opacity: 0.45; pointer-events: none; cursor: default;">Siguiente &raquo;</span>
             {% endif %}
         </div>
     {% endif %}
@@ -365,20 +374,35 @@
 
             <div class="form-grid-2">
                 <div class="form-group">
+                    <label for="id_almacen">Almacén *</label>
+                    {{ producto_form.almacen }}
+                    <div class="form-help">Almacén donde residirá el producto.</div>
+                </div>
+                <div class="form-group">
+                    <label for="id_ubicacion">Ubicación Física Única (opcional)</label>
+                    {{ producto_form.ubicacion }}
+                    <div class="form-help">Ubicación específica dentro del almacén.</div>
+                </div>
+            </div>
+
+            <div class="form-grid-2">
+                <div class="form-group">
                     <label for="id_categoria">Categoría *</label>
                     {{ producto_form.categoria }}
+                    <div class="form-help">Categoría perteneciente al almacén.</div>
                 </div>
                 <div class="form-group">
                     <label for="id_tipo">Tipo asociado (opcional)</label>
                     {{ producto_form.tipo }}
+                    <div class="form-help">Subtipo perteneciente a la categoría seleccionada.</div>
                 </div>
             </div>
 
             <div class="form-grid-2">
                 <div class="form-group" id="grupoStockInicial">
-                    <label for="id_stock_inicial">Stock Inicial</label>
+                    <label for="id_stock_inicial">Stock Inicial (Unidades Base)</label>
                     {{ producto_form.stock_inicial }}
-                    <div class="form-help">Inmutable después de creado.</div>
+                    <div class="form-help">Total de unidades que ingresan inicialmente. Inmutable.</div>
                 </div>
                 <div class="form-group">
                     <label for="id_stock_minimo">Stock Mínimo (Umbral Alerta)</label>
@@ -392,25 +416,22 @@
                     {{ producto_form.codigo_barras }}
                 </div>
                 <div class="form-group">
-                    <label for="id_ubicacion">Ubicación Física Única</label>
-                    {{ producto_form.ubicacion }}
+                    <label for="id_nombre_empaque">Nombre de Empaque (opcional)</label>
+                    {{ producto_form.nombre_empaque }}
+                    <div class="form-help">Ej. Caja, Paquete, Bulto.</div>
                 </div>
             </div>
 
             <div class="form-grid-2">
                 <div class="form-group">
-                    <label for="id_nombre_empaque">Nombre de Empaque (opcional)</label>
-                    {{ producto_form.nombre_empaque }}
-                </div>
-                <div class="form-group">
-                    <label for="id_unidades_por_empaque">Unidades por Empaque</label>
+                    <label for="id_unidades_por_empaque">Unidades por Empaque (Factor)</label>
                     {{ producto_form.unidades_por_empaque }}
+                    <div class="form-help">Cuántas unidades contiene 1 empaque (ej. 50). Nota: no suma unidades al stock inicial.</div>
                 </div>
-            </div>
-
-            <div class="form-group" style="margin-bottom: 0;">
-                <label for="id_descripcion">Descripción / Notas</label>
-                {{ producto_form.descripcion }}
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label for="id_descripcion">Descripción / Notas</label>
+                    {{ producto_form.descripcion }}
+                </div>
             </div>
         </div>
 
@@ -421,6 +442,9 @@
     </form>
 </dialog>
 
+{{ almacenes_json|json_script:"almacenes-data" }}
+{{ categorias_json|json_script:"categorias-data" }}
+{{ ubicaciones_json|json_script:"ubicaciones-data" }}
 {{ tipos_por_categoria|json_script:"tipos-por-categoria-data" }}
 {% endblock %}
 
@@ -432,19 +456,59 @@ document.addEventListener("DOMContentLoaded", function() {
     var btnSubmit = document.getElementById("btnSubmitModalProducto");
     var urlCrear = "{% url 'inventario:producto-crear' %}";
 
+    var almacenesEl = document.getElementById("almacenes-data");
+    var categoriasEl = document.getElementById("categorias-data");
+    var ubicacionesEl = document.getElementById("ubicaciones-data");
+    var tiposEl = document.getElementById("tipos-por-categoria-data");
+
+    var todosAlmacenes = almacenesEl ? JSON.parse(almacenesEl.textContent) : [];
+    var todasCategorias = categoriasEl ? JSON.parse(categoriasEl.textContent) : [];
+    var todasUbicaciones = ubicacionesEl ? JSON.parse(ubicacionesEl.textContent) : [];
+    var todosLosTipos = tiposEl ? JSON.parse(tiposEl.textContent) : [];
+
     var inputNombre = formModal.querySelector('[name="nombre"]');
+    var selectAlmacen = formModal.querySelector('[name="almacen"]');
     var selectCategoria = formModal.querySelector('[name="categoria"]');
     var selectTipo = formModal.querySelector('[name="tipo"]');
+    var selectUbic = formModal.querySelector('[name="ubicacion"]');
     var inputStockIni = formModal.querySelector('[name="stock_inicial"]');
     var inputStockMin = formModal.querySelector('[name="stock_minimo"]');
     var inputBarras = formModal.querySelector('[name="codigo_barras"]');
     var inputEmpaque = formModal.querySelector('[name="nombre_empaque"]');
     var inputUnidadesEmp = formModal.querySelector('[name="unidades_por_empaque"]');
     var inputDesc = formModal.querySelector('[name="descripcion"]');
-    var selectUbic = formModal.querySelector('[name="ubicacion"]') || formModal.querySelector('[name="ubicaciones_seleccionadas"]');
 
-    var tiposEl = document.getElementById("tipos-por-categoria-data");
-    var todosLosTipos = tiposEl ? JSON.parse(tiposEl.textContent) : [];
+    function filtrarCategoriasPorAlmacen(almId, catSeleccionada) {
+        if (!selectCategoria) return;
+        selectCategoria.innerHTML = '<option value="">Selecciona una categoría...</option>';
+        todasCategorias.forEach(function(c) {
+            if (!almId || String(c.almacen_id) === String(almId)) {
+                var opt = document.createElement("option");
+                opt.value = String(c.id);
+                opt.textContent = c.nombre + (almId ? "" : " (" + c.almacen_nombre + ")");
+                if (String(c.id) === String(catSeleccionada)) {
+                    opt.selected = true;
+                }
+                selectCategoria.appendChild(opt);
+            }
+        });
+    }
+
+    function filtrarUbicacionesPorAlmacen(almId, ubicSeleccionada) {
+        if (!selectUbic) return;
+        selectUbic.innerHTML = '<option value="">Sin ubicación física (opcional)</option>';
+        todasUbicaciones.forEach(function(u) {
+            if (!almId || String(u.almacen_id) === String(almId)) {
+                var opt = document.createElement("option");
+                opt.value = String(u.id);
+                opt.textContent = u.nombre + (almId ? "" : " (" + u.almacen_nombre + ")");
+                if (String(u.id) === String(ubicSeleccionada)) {
+                    opt.selected = true;
+                }
+                selectUbic.appendChild(opt);
+            }
+        });
+    }
 
     function filtrarTiposPorCategoria(catId, tipoSeleccionado) {
         if (!selectTipo) return;
@@ -463,9 +527,26 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     }
 
+    if (selectAlmacen) {
+        selectAlmacen.addEventListener("change", function() {
+            var almId = selectAlmacen.value;
+            filtrarCategoriasPorAlmacen(almId, "");
+            filtrarUbicacionesPorAlmacen(almId, "");
+            filtrarTiposPorCategoria("", "");
+        });
+    }
+
     if (selectCategoria) {
         selectCategoria.addEventListener("change", function() {
-            filtrarTiposPorCategoria(selectCategoria.value, "");
+            var catId = selectCategoria.value;
+            if (catId) {
+                var catObj = todasCategorias.find(function(c) { return String(c.id) === String(catId); });
+                if (catObj && selectAlmacen && String(selectAlmacen.value) !== String(catObj.almacen_id)) {
+                    selectAlmacen.value = String(catObj.almacen_id);
+                    filtrarUbicacionesPorAlmacen(catObj.almacen_id, selectUbic ? selectUbic.value : "");
+                }
+            }
+            filtrarTiposPorCategoria(catId, "");
         });
     }
 
@@ -502,12 +583,10 @@ document.addEventListener("DOMContentLoaded", function() {
                 inputStockIni.value = "0";
             }
             if (inputStockMin) inputStockMin.value = "0";
-            if (selectUbic) {
-                selectUbic.value = "";
-                Array.from(selectUbic.options).forEach(function(opt) { opt.selected = false; });
-                if (window.syncMultiSelectDropdown) window.syncMultiSelectDropdown(selectUbic);
-            }
-            filtrarTiposPorCategoria(selectCategoria ? selectCategoria.value : "", "");
+            if (selectAlmacen) selectAlmacen.value = "";
+            filtrarCategoriasPorAlmacen("", "");
+            filtrarUbicacionesPorAlmacen("", "");
+            filtrarTiposPorCategoria("", "");
             openAppModal("modalProducto");
         });
     }
@@ -521,9 +600,16 @@ document.addEventListener("DOMContentLoaded", function() {
             btnSubmit.textContent = "Guardar Cambios";
 
             if (inputNombre) inputNombre.value = btn.getAttribute("data-nombre") || "";
+            var almId = btn.getAttribute("data-almacen") || "";
             var catId = btn.getAttribute("data-categoria") || "";
             var tipoId = btn.getAttribute("data-tipo") || "";
-            if (selectCategoria) selectCategoria.value = catId;
+            var ubId = btn.getAttribute("data-ubicacion") || "";
+
+            if (selectAlmacen && almId) {
+                selectAlmacen.value = almId;
+            }
+            filtrarCategoriasPorAlmacen(almId, catId);
+            filtrarUbicacionesPorAlmacen(almId, ubId);
             filtrarTiposPorCategoria(catId, tipoId);
 
             if (inputStockIni) {
@@ -535,16 +621,6 @@ document.addEventListener("DOMContentLoaded", function() {
             if (inputEmpaque) inputEmpaque.value = btn.getAttribute("data-nombre-empaque") || "";
             if (inputUnidadesEmp) inputUnidadesEmp.value = btn.getAttribute("data-unidades-empaque") || "";
             if (inputDesc) inputDesc.value = btn.getAttribute("data-descripcion") || "";
-
-            if (selectUbic) {
-                var uIds = (btn.getAttribute("data-ubicaciones") || "").split(",").filter(Boolean);
-                var ubId = btn.getAttribute("data-ubicacion") || (uIds[0] || "");
-                selectUbic.value = ubId;
-                Array.from(selectUbic.options).forEach(function(opt) {
-                    opt.selected = String(opt.value) === String(ubId);
-                });
-                if (window.syncMultiSelectDropdown) window.syncMultiSelectDropdown(selectUbic);
-            }
 
             openAppModal("modalProducto");
         });

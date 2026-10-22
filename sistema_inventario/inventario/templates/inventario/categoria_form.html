@@ -37,12 +37,12 @@
                 <div class="form-help">Ej: "Cables" generará códigos internos que inician con "CAB-".</div>
             </div>
 
-            {% if user.es_usuario_normal %}
+            {% if form.almacen_principal.is_hidden %}
                 {{ form.almacen_principal }}
                 <div class="form-group">
                     <label>Almacén Principal</label>
-                    <input type="text" class="form-control" value="{{ user.almacen_asignado.nombre }}" disabled>
-                    <div class="form-help">Tu almacén asignado por defecto para los productos de esta categoría.</div>
+                    <input type="text" class="form-control" value="{{ user.get_almacenes_asignados.first.nombre }}" disabled>
+                    <div class="form-help">Tu almacén asignado para los productos de esta categoría.</div>
                 </div>
             {% else %}
                 <div class="form-group">

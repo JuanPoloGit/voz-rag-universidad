@@ -37,8 +37,7 @@ def _validar_acceso_almacen(usuario: Any, almacen: Almacen) -> None:
         raise PermissionDenied("Se requiere autenticación para operar sobre el inventario.")
 
     if getattr(usuario, "es_usuario_normal", False):
-        almacen_asignado = getattr(usuario, "almacen_asignado", None)
-        if not almacen_asignado or almacen_asignado.id != almacen.id:
+        if not usuario.tiene_acceso_almacen(almacen):
             raise PermissionDenied("No tienes permisos para realizar operaciones en este almacén.")
 
 

@@ -203,8 +203,8 @@ def crear_ubicacion(
         raise PermissionDenied("Se requiere autenticación para crear ubicaciones.")
 
     if getattr(usuario, "es_usuario_normal", False):
-        if not usuario.almacen_asignado or usuario.almacen_asignado_id != almacen.id:
-            raise PermissionDenied("Solo puedes registrar ubicaciones en tu almacén asignado.")
+        if not usuario.tiene_acceso_almacen(almacen):
+            raise PermissionDenied("Solo puedes registrar ubicaciones en tus almacenes asignados.")
 
     nombre = (nombre or "").strip()
     if not nombre:
@@ -257,7 +257,7 @@ def actualizar_ubicacion(
     ubicacion_db = Ubicacion.objects.select_related("almacen").get(pk=ubicacion.pk)
 
     if getattr(usuario, "es_usuario_normal", False):
-        if not usuario.almacen_asignado or usuario.almacen_asignado_id != ubicacion_db.almacen_id:
+        if not usuario.tiene_acceso_almacen(ubicacion_db.almacen):
             raise PermissionDenied("No tienes permisos para modificar ubicaciones de otros almacenes.")
 
     nombre = (nombre or "").strip()
@@ -305,7 +305,7 @@ def reactivar_ubicacion(
         raise PermissionDenied("Se requiere autenticación.")
 
     if getattr(usuario, "es_usuario_normal", False):
-        if not usuario.almacen_asignado or usuario.almacen_asignado_id != ubicacion.almacen_id:
+        if not usuario.tiene_acceso_almacen(ubicacion.almacen):
             raise PermissionDenied("No tienes permisos para reactivar ubicaciones de otros almacenes.")
 
     with transaction.atomic():
@@ -338,7 +338,7 @@ def eliminar_ubicacion(
         raise PermissionDenied("Se requiere autenticación.")
 
     if getattr(usuario, "es_usuario_normal", False):
-        if not usuario.almacen_asignado or usuario.almacen_asignado_id != ubicacion.almacen_id:
+        if not usuario.tiene_acceso_almacen(ubicacion.almacen):
             raise PermissionDenied("No tienes permisos para eliminar ubicaciones de otros almacenes.")
 
     if ProductoUbicacion.objects.filter(ubicacion=ubicacion, producto__archivado=False).exists():
@@ -385,8 +385,8 @@ def crear_categoria(
         raise PermissionDenied("Se requiere autenticación para crear categorías.")
 
     if getattr(usuario, "es_usuario_normal", False):
-        if not usuario.almacen_asignado or usuario.almacen_asignado_id != almacen_principal.id:
-            raise PermissionDenied("Solo puedes registrar categorías en tu almacén asignado.")
+        if not usuario.tiene_acceso_almacen(almacen_principal):
+            raise PermissionDenied("Solo puedes registrar categorías en tus almacenes asignados.")
 
     nombre = (nombre or "").strip()
     if not nombre:
@@ -442,10 +442,10 @@ def actualizar_categoria(
     categoria_db = Categoria.objects.select_related("almacen_principal").get(pk=categoria.pk)
 
     if getattr(usuario, "es_usuario_normal", False):
-        if not usuario.almacen_asignado or usuario.almacen_asignado_id != categoria_db.almacen_principal_id:
+        if not usuario.tiene_acceso_almacen(categoria_db.almacen_principal):
             raise PermissionDenied("No tienes permisos para modificar categorías de otros almacenes.")
-        if usuario.almacen_asignado_id != almacen_principal.id:
-            raise PermissionDenied("No puedes cambiar el almacén principal a otro distinto al asignado.")
+        if not usuario.tiene_acceso_almacen(almacen_principal):
+            raise PermissionDenied("Solo puedes asignar almacenes a los que tienes acceso.")
 
     nombre = (nombre or "").strip()
     if not nombre:
@@ -506,8 +506,8 @@ def crear_tipo_categoria(
         raise PermissionDenied("Se requiere autenticación para crear tipos de categoría.")
 
     if getattr(usuario, "es_usuario_normal", False):
-        if not usuario.almacen_asignado or categoria.almacen_principal_id != usuario.almacen_asignado_id:
-            raise PermissionDenied("Solo puedes registrar tipos en categorías de tu almacén asignado.")
+        if not usuario.tiene_acceso_almacen(categoria.almacen_principal):
+            raise PermissionDenied("Solo puedes registrar tipos en categorías de tus almacenes asignados.")
 
     nombre = (nombre or "").strip()
     if not nombre:
@@ -559,7 +559,7 @@ def actualizar_tipo_categoria(
     tipo_db = TipoCategoria.objects.select_related("categoria", "categoria__almacen_principal").get(pk=tipo.pk)
 
     if getattr(usuario, "es_usuario_normal", False):
-        if not usuario.almacen_asignado or tipo_db.categoria.almacen_principal_id != usuario.almacen_asignado_id:
+        if not usuario.tiene_acceso_almacen(tipo_db.categoria.almacen_principal):
             raise PermissionDenied("No tienes permisos para modificar tipos de otros almacenes.")
 
     nombre = (nombre or "").strip()
@@ -611,7 +611,7 @@ def eliminar_tipo_categoria(
     tipo_db = TipoCategoria.objects.select_related("categoria").get(pk=tipo.pk)
 
     if getattr(usuario, "es_usuario_normal", False):
-        if not usuario.almacen_asignado or tipo_db.categoria.almacen_principal_id != usuario.almacen_asignado_id:
+        if not usuario.tiene_acceso_almacen(tipo_db.categoria.almacen_principal):
             raise PermissionDenied("No tienes permisos para eliminar tipos de otros almacenes.")
 
     valores_anteriores = {
@@ -681,7 +681,7 @@ def reactivar_categoria(
         raise PermissionDenied("Se requiere autenticación.")
 
     if getattr(usuario, "es_usuario_normal", False):
-        if not usuario.almacen_asignado or usuario.almacen_asignado_id != categoria.almacen_principal_id:
+        if not usuario.tiene_acceso_almacen(categoria.almacen_principal):
             raise PermissionDenied("No tienes permisos para reactivar categorías de otros almacenes.")
 
     with transaction.atomic():
@@ -714,7 +714,7 @@ def eliminar_categoria(
         raise PermissionDenied("Se requiere autenticación.")
 
     if getattr(usuario, "es_usuario_normal", False):
-        if not usuario.almacen_asignado or usuario.almacen_asignado_id != categoria.almacen_principal_id:
+        if not usuario.tiene_acceso_almacen(categoria.almacen_principal):
             raise PermissionDenied("No tienes permisos para eliminar categorías de otros almacenes.")
 
     if categoria.productos.filter(archivado=False).exists():
@@ -770,8 +770,8 @@ def crear_producto(
         raise PermissionDenied("Se requiere autenticación para crear productos.")
 
     if getattr(usuario, "es_usuario_normal", False):
-        if not usuario.almacen_asignado or categoria.almacen_principal_id != usuario.almacen_asignado_id:
-            raise PermissionDenied("Solo puedes registrar productos en categorías de tu almacén asignado.")
+        if not usuario.tiene_acceso_almacen(categoria.almacen_principal):
+            raise PermissionDenied("Solo puedes registrar productos en categorías de tus almacenes asignados.")
 
     nombre = (nombre or "").strip()
     if not nombre:
@@ -874,10 +874,10 @@ def actualizar_producto(
     producto_db = Producto.objects.select_related("categoria", "tipo").get(pk=producto.pk)
 
     if getattr(usuario, "es_usuario_normal", False):
-        if not usuario.almacen_asignado or producto_db.categoria.almacen_principal_id != usuario.almacen_asignado_id:
+        if not usuario.tiene_acceso_almacen(producto_db.categoria.almacen_principal):
             raise PermissionDenied("No tienes permisos para modificar productos de otros almacenes.")
-        if categoria and categoria.almacen_principal_id != usuario.almacen_asignado_id:
-            raise PermissionDenied("Solo puedes asignar categorías pertenecientes a tu almacén asignado.")
+        if categoria and not usuario.tiene_acceso_almacen(categoria.almacen_principal):
+            raise PermissionDenied("Solo puedes asignar categorías pertenecientes a tus almacenes asignados.")
 
     categoria_efectiva = categoria or producto_db.categoria
 
@@ -964,7 +964,7 @@ def toggle_activo_producto(
         raise PermissionDenied("Se requiere autenticación.")
 
     if getattr(usuario, "es_usuario_normal", False):
-        if not usuario.almacen_asignado or producto.categoria.almacen_principal_id != usuario.almacen_asignado_id:
+        if not usuario.tiene_acceso_almacen(producto.categoria.almacen_principal):
             raise PermissionDenied("No tienes permisos para cambiar el estado de productos de otros almacenes.")
 
     anterior = producto.activo

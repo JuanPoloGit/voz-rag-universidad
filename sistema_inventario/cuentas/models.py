@@ -45,19 +45,27 @@ class UsuarioAudacIA(AbstractUser):
         help_text=_("Define los permisos del usuario en el sistema."),
     )
 
-    # El almacén se asigna obligatoriamente a los usuarios con rol USUARIO.
-    # Administradores y Superusuario tienen acceso a todos los almacenes
-    # y este campo queda en null.
+    # El almacén se asigna obligatoriamente a los usuarios con rol USUARIO (1 o más almacenes).
+    # Administradores y Superusuario tienen acceso a todos los almacenes.
     almacen_asignado = models.ForeignKey(
         "inventario.Almacen",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
         related_name="usuarios_asignados",
-        verbose_name=_("almacén asignado"),
+        verbose_name=_("almacén principal asignado"),
         help_text=_(
-            "Almacén al que pertenece este usuario. "
+            "Almacén principal al que pertenece este usuario. "
             "Obligatorio para rol Usuario; null para Administrador y Superusuario."
+        ),
+    )
+    almacenes_asignados = models.ManyToManyField(
+        "inventario.Almacen",
+        blank=True,
+        related_name="usuarios_con_acceso",
+        verbose_name=_("almacenes asignados"),
+        help_text=_(
+            "Almacenes a los que tiene acceso este usuario. Puede tener uno o varios asignados."
         ),
     )
 
@@ -112,15 +120,39 @@ class UsuarioAudacIA(AbstractUser):
     def es_usuario_normal(self):
         return self.rol == self.Rol.USUARIO
 
+    def get_almacenes_asignados(self):
+        """Retorna un QuerySet de almacenes a los que tiene acceso el usuario."""
+        from inventario.models import Almacen
+        if self.es_administrador:
+            return Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
+
+        ids = set()
+        if self.almacen_asignado_id:
+            ids.add(self.almacen_asignado_id)
+        if self.pk:
+            for alm_id in self.almacenes_asignados.filter(activo=True, eliminado=False).values_list("id", flat=True):
+                ids.add(alm_id)
+
+        if not ids:
+            return Almacen.objects.none()
+        return Almacen.objects.filter(id__in=ids, activo=True, eliminado=False).order_by("nombre")
+
     def tiene_acceso_almacen(self, almacen):
         """¿Puede este usuario operar en el almacén dado?
 
         - Superusuario y Administrador: todos los almacenes.
-        - Usuario: solo su almacén asignado.
+        - Usuario: almacén principal asignado o cualquiera en sus almacenes asignados.
         """
         if self.es_administrador:
             return True
-        return self.almacen_asignado_id == almacen.id if almacen else False
+        if not almacen:
+            return False
+        alm_id = getattr(almacen, "id", almacen)
+        if self.almacen_asignado_id == alm_id:
+            return True
+        if self.pk:
+            return self.almacenes_asignados.filter(id=alm_id, activo=True, eliminado=False).exists()
+        return False
 
 
 class IntentoFallido(models.Model):

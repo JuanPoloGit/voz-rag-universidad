@@ -230,6 +230,18 @@
             </div>
             <div class="form-grid-2">
                 <div class="form-group">
+                    <label>Almacén *</label>
+                    {{ producto_form.almacen }}
+                    <div class="form-help">Almacén principal donde reside el producto.</div>
+                </div>
+                <div class="form-group">
+                    <label>Ubicación Física Única (opcional)</label>
+                    {{ producto_form.ubicacion }}
+                    <div class="form-help">Espacio físico específico dentro del almacén.</div>
+                </div>
+            </div>
+            <div class="form-grid-2">
+                <div class="form-group">
                     <label>Categoría *</label>
                     {{ producto_form.categoria }}
                 </div>
@@ -258,10 +270,6 @@
                     {{ producto_form.unidades_por_empaque }}
                 </div>
             </div>
-            <div class="form-group">
-                <label>Ubicación Física Única</label>
-                {{ producto_form.ubicacion }}
-            </div>
             <div class="form-group" style="margin-bottom: 0;">
                 <label>Descripción</label>
                 {{ producto_form.descripcion }}
@@ -276,19 +284,63 @@
 {% endblock %}
 
 {% block extra_js %}
+{{ almacenes_json|json_script:"almacenes-data-detalle" }}
+{{ categorias_json|json_script:"categorias-data-detalle" }}
+{{ ubicaciones_json|json_script:"ubicaciones-data-detalle" }}
 {{ tipos_por_categoria|json_script:"tipos-por-categoria-data-detalle" }}
 <script>
 document.addEventListener("DOMContentLoaded", function() {
-    var catSelect = document.querySelector("#modalEditarProductoDetalle select[name='categoria']");
-    var tipoSelect = document.querySelector("#modalEditarProductoDetalle select[name='tipo']");
+    var modal = document.getElementById("modalEditarProductoDetalle");
+    var almSelect = modal ? modal.querySelector("select[name='almacen']") : null;
+    var catSelect = modal ? modal.querySelector("select[name='categoria']") : null;
+    var ubicSelect = modal ? modal.querySelector("select[name='ubicacion']") : null;
+    var tipoSelect = modal ? modal.querySelector("select[name='tipo']") : null;
+
+    var catsEl = document.getElementById("categorias-data-detalle");
+    var ubsEl = document.getElementById("ubicaciones-data-detalle");
     var dataEl = document.getElementById("tipos-por-categoria-data-detalle");
 
-    function sincronizarTiposModalDetalle(tipoSeleccionado) {
-        if (!catSelect || !tipoSelect || !dataEl) return;
-        var catId = catSelect.value;
-        var todosTipos = JSON.parse(dataEl.textContent || "[]");
-        var prevVal = (tipoSeleccionado !== undefined) ? tipoSeleccionado : tipoSelect.value;
+    var todasCategorias = catsEl ? JSON.parse(catsEl.textContent || "[]") : [];
+    var todasUbicaciones = ubsEl ? JSON.parse(ubsEl.textContent || "[]") : [];
+    var todosTipos = dataEl ? JSON.parse(dataEl.textContent || "[]") : [];
 
+    function filtrarCategoriasDetalle(almId, catSeleccionada) {
+        if (!catSelect) return;
+        var prevVal = catSeleccionada !== undefined ? catSeleccionada : catSelect.value;
+        catSelect.innerHTML = '<option value="">Selecciona una categoría...</option>';
+        todasCategorias.forEach(function(c) {
+            if (!almId || String(c.almacen_id) === String(almId)) {
+                var opt = document.createElement("option");
+                opt.value = String(c.id);
+                opt.textContent = c.nombre + (almId ? "" : " (" + c.almacen_nombre + ")");
+                if (String(c.id) === String(prevVal)) {
+                    opt.selected = true;
+                }
+                catSelect.appendChild(opt);
+            }
+        });
+    }
+
+    function filtrarUbicacionesDetalle(almId, ubicSeleccionada) {
+        if (!ubicSelect) return;
+        var prevVal = ubicSeleccionada !== undefined ? ubicSeleccionada : ubicSelect.value;
+        ubicSelect.innerHTML = '<option value="">Sin ubicación física (opcional)</option>';
+        todasUbicaciones.forEach(function(u) {
+            if (!almId || String(u.almacen_id) === String(almId)) {
+                var opt = document.createElement("option");
+                opt.value = String(u.id);
+                opt.textContent = u.nombre + (almId ? "" : " (" + u.almacen_nombre + ")");
+                if (String(u.id) === String(prevVal)) {
+                    opt.selected = true;
+                }
+                ubicSelect.appendChild(opt);
+            }
+        });
+    }
+
+    function sincronizarTiposModalDetalle(catId, tipoSeleccionado) {
+        if (!tipoSelect) return;
+        var prevVal = tipoSeleccionado !== undefined ? tipoSeleccionado : tipoSelect.value;
         tipoSelect.innerHTML = '<option value="">Sin tipo (opcional)</option>';
         if (!catId) return;
 
@@ -305,14 +357,41 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     }
 
-    if (catSelect) {
-        catSelect.addEventListener("change", function() {
-            sincronizarTiposModalDetalle("");
+    if (almSelect) {
+        almSelect.addEventListener("change", function() {
+            var almId = almSelect.value;
+            filtrarCategoriasDetalle(almId, "");
+            filtrarUbicacionesDetalle(almId, "");
+            sincronizarTiposModalDetalle("", "");
         });
     }
 
-    // Inicializar al cargar con el tipo actual del producto
-    sincronizarTiposModalDetalle("{{ producto.tipo_id|default:'' }}");
+    if (catSelect) {
+        catSelect.addEventListener("change", function() {
+            var catId = catSelect.value;
+            if (catId) {
+                var catObj = todasCategorias.find(function(c) { return String(c.id) === String(catId); });
+                if (catObj && almSelect && String(almSelect.value) !== String(catObj.almacen_id)) {
+                    almSelect.value = String(catObj.almacen_id);
+                    filtrarUbicacionesDetalle(catObj.almacen_id, ubicSelect ? ubicSelect.value : "");
+                }
+            }
+            sincronizarTiposModalDetalle(catId, "");
+        });
+    }
+
+    // Inicializar al cargar
+    var almInicial = "{{ producto.categoria.almacen_principal_id|default:'' }}";
+    var catInicial = "{{ producto.categoria_id|default:'' }}";
+    var ubicInicial = "{% with ub=producto.ubicaciones.first %}{{ ub.id|default:'' }}{% endwith %}";
+    var tipoInicial = "{{ producto.tipo_id|default:'' }}";
+
+    if (almSelect && almInicial) {
+        almSelect.value = almInicial;
+        filtrarCategoriasDetalle(almInicial, catInicial);
+        filtrarUbicacionesDetalle(almInicial, ubicInicial);
+    }
+    sincronizarTiposModalDetalle(catInicial, tipoInicial);
 });
 </script>
 {% endblock %}

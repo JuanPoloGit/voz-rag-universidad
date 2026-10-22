@@ -59,6 +59,30 @@
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                     <div class="form-group">
+                        <label for="{{ form.almacen.id_for_label }}">Almacén *</label>
+                        {{ form.almacen }}
+                        {% if form.almacen.errors %}
+                            <div class="form-error">
+                                {% for error in form.almacen.errors %}{{ error }}{% endfor %}
+                            </div>
+                        {% endif %}
+                        <div class="form-help">Almacén principal donde residirá el producto y sus ubicaciones.</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="{{ form.ubicacion.id_for_label }}">Ubicación física única (opcional)</label>
+                        {{ form.ubicacion }}
+                        {% if form.ubicacion.errors %}
+                            <div class="form-error">
+                                {% for error in form.ubicacion.errors %}{{ error }}{% endfor %}
+                            </div>
+                        {% endif %}
+                        <div class="form-help">Ubicación física específica dentro del almacén.</div>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div class="form-group">
                         <label for="{{ form.categoria.id_for_label }}">Categoría *</label>
                         {{ form.categoria }}
                         {% if form.categoria.errors %}
@@ -66,6 +90,7 @@
                                 {% for error in form.categoria.errors %}{{ error }}{% endfor %}
                             </div>
                         {% endif %}
+                        <div class="form-help">Categoría perteneciente al almacén seleccionado.</div>
                     </div>
 
                     <div class="form-group">
@@ -76,7 +101,7 @@
                                 {% for error in form.tipo.errors %}{{ error }}{% endfor %}
                             </div>
                         {% endif %}
-                        <div class="form-help">Subclasificación opcional ligada a la categoría seleccionada.</div>
+                        <div class="form-help">Subclasificación ligada a la categoría seleccionada.</div>
                     </div>
                 </div>
 
@@ -161,20 +186,9 @@
                 </div>
             </div>
 
-            <!-- Sección: Ubicaciones Físicas y Descripción -->
+            <!-- Sección: Descripción y Notas -->
             <div style="margin-bottom: 1.5rem;">
-                <h3 style="font-size: 1.1rem; margin-bottom: 1rem; color: var(--text);">Ubicación y Detalles</h3>
-
-                <div class="form-group">
-                    <label for="{{ form.ubicacion.id_for_label }}">Ubicación física única</label>
-                    {{ form.ubicacion }}
-                    {% if form.ubicacion.errors %}
-                        <div class="form-error">
-                            {% for error in form.ubicacion.errors %}{{ error }}{% endfor %}
-                        </div>
-                    {% endif %}
-                    <div class="form-help">Ubicación física asignada en bodega para este producto.</div>
-                </div>
+                <h3 style="font-size: 1.1rem; margin-bottom: 1rem; color: var(--text);">Detalles y Observaciones</h3>
 
                 <div class="form-group">
                     <label for="{{ form.descripcion.id_for_label }}">Descripción o notas</label>
@@ -201,7 +215,10 @@
 {% endblock %}
 
 {% block extra_js %}
-{{ tipos_por_categoria|json_script:"tipos-por-categoria-data" }}
+{{ almacenes_json|json_script:"almacenes-data-form" }}
+{{ categorias_json|json_script:"categorias-data-form" }}
+{{ ubicaciones_json|json_script:"ubicaciones-data-form" }}
+{{ tipos_por_categoria|json_script:"tipos-por-categoria-data-form" }}
 <script>
 document.addEventListener("DOMContentLoaded", function() {
     var nombreInput = document.getElementById("{{ form.nombre.id_for_label }}");
@@ -246,30 +263,62 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     }
 
-    // Filtrado dinámico de tipos opcionales según la categoría seleccionada
+    // Filtrado relacional jerárquico: Almacén -> Ubicación & Categoría -> Tipo
+    var almSelect = document.getElementById("{{ form.almacen.id_for_label }}");
     var catSelect = document.getElementById("{{ form.categoria.id_for_label }}");
+    var ubicSelect = document.getElementById("{{ form.ubicacion.id_for_label }}");
     var tipoSelect = document.getElementById("{{ form.tipo.id_for_label }}");
-    var dataEl = document.getElementById("tipos-por-categoria-data");
 
-    if (catSelect && tipoSelect && dataEl) {
-        var todosTipos = JSON.parse(dataEl.textContent || "[]");
-        var valorInicialTipo = tipoSelect.value;
+    var almsEl = document.getElementById("almacenes-data-form");
+    var catsEl = document.getElementById("categorias-data-form");
+    var ubsEl = document.getElementById("ubicaciones-data-form");
+    var tiposEl = document.getElementById("tipos-por-categoria-data-form");
 
-        function filtrarTipos(mantenerValor) {
-            var catId = parseInt(catSelect.value, 10);
-            var prevVal = mantenerValor ? valorInicialTipo : tipoSelect.value;
-            tipoSelect.innerHTML = "";
+    var todasCategorias = catsEl ? JSON.parse(catsEl.textContent || "[]") : [];
+    var todasUbicaciones = ubsEl ? JSON.parse(ubsEl.textContent || "[]") : [];
+    var todosTipos = tiposEl ? JSON.parse(tiposEl.textContent || "[]") : [];
 
-            var optEmpty = document.createElement("option");
-            optEmpty.value = "";
-            optEmpty.textContent = "Sin tipo (opcional)";
-            tipoSelect.appendChild(optEmpty);
+    function filtrarCategoriasPorAlmacen(almId, catSeleccionada) {
+        if (!catSelect) return;
+        var prevVal = catSeleccionada !== undefined ? catSeleccionada : catSelect.value;
+        catSelect.innerHTML = '<option value="">Selecciona una categoría...</option>';
+        todasCategorias.forEach(function(c) {
+            if (!almId || String(c.almacen_id) === String(almId)) {
+                var opt = document.createElement("option");
+                opt.value = String(c.id);
+                opt.textContent = c.nombre + (almId ? "" : " (" + c.almacen_nombre + ")");
+                if (String(c.id) === String(prevVal)) {
+                    opt.selected = true;
+                }
+                catSelect.appendChild(opt);
+            }
+        });
+    }
 
-            var filtrados = todosTipos.filter(function(t) {
-                return !catId || t.categoria_id === catId;
-            });
+    function filtrarUbicacionesPorAlmacen(almId, ubicSeleccionada) {
+        if (!ubicSelect) return;
+        var prevVal = ubicSeleccionada !== undefined ? ubicSeleccionada : ubicSelect.value;
+        ubicSelect.innerHTML = '<option value="">Sin ubicación física (opcional)</option>';
+        todasUbicaciones.forEach(function(u) {
+            if (!almId || String(u.almacen_id) === String(almId)) {
+                var opt = document.createElement("option");
+                opt.value = String(u.id);
+                opt.textContent = u.nombre + (almId ? "" : " (" + u.almacen_nombre + ")");
+                if (String(u.id) === String(prevVal)) {
+                    opt.selected = true;
+                }
+                ubicSelect.appendChild(opt);
+            }
+        });
+    }
 
-            filtrados.forEach(function(t) {
+    function filtrarTiposPorCategoria(catId, tipoSeleccionado) {
+        if (!tipoSelect) return;
+        var prevVal = tipoSeleccionado !== undefined ? tipoSeleccionado : tipoSelect.value;
+        tipoSelect.innerHTML = '<option value="">Sin tipo (opcional)</option>';
+        if (!catId) return;
+        todosTipos.forEach(function(t) {
+            if (String(t.categoria_id) === String(catId)) {
                 var opt = document.createElement("option");
                 opt.value = String(t.id);
                 opt.textContent = t.nombre;
@@ -277,14 +326,52 @@ document.addEventListener("DOMContentLoaded", function() {
                     opt.selected = true;
                 }
                 tipoSelect.appendChild(opt);
-            });
-        }
-
-        catSelect.addEventListener("change", function() {
-            filtrarTipos(false);
+            }
         });
+    }
 
-        filtrarTipos(true);
+    if (almSelect) {
+        almSelect.addEventListener("change", function() {
+            var almId = almSelect.value;
+            filtrarCategoriasPorAlmacen(almId, "");
+            filtrarUbicacionesPorAlmacen(almId, "");
+            filtrarTiposPorCategoria("", "");
+        });
+    }
+
+    if (catSelect) {
+        catSelect.addEventListener("change", function() {
+            var catId = catSelect.value;
+            if (catId) {
+                var catObj = todasCategorias.find(function(c) { return String(c.id) === String(catId); });
+                if (catObj && almSelect && String(almSelect.value) !== String(catObj.almacen_id)) {
+                    almSelect.value = String(catObj.almacen_id);
+                    filtrarUbicacionesPorAlmacen(catObj.almacen_id, ubicSelect ? ubicSelect.value : "");
+                }
+            }
+            filtrarTiposPorCategoria(catId, "");
+        });
+    }
+
+    // Inicializar al cargar
+    var almInicial = almSelect ? almSelect.value : "";
+    var catInicial = catSelect ? catSelect.value : "";
+    var ubicInicial = ubicSelect ? ubicSelect.value : "";
+    var tipoInicial = tipoSelect ? tipoSelect.value : "";
+
+    if (catInicial && !almInicial) {
+        var catObj = todasCategorias.find(function(c) { return String(c.id) === String(catInicial); });
+        if (catObj && almSelect) {
+            almSelect.value = String(catObj.almacen_id);
+            almInicial = String(catObj.almacen_id);
+        }
+    }
+    if (almInicial) {
+        filtrarCategoriasPorAlmacen(almInicial, catInicial);
+        filtrarUbicacionesPorAlmacen(almInicial, ubicInicial);
+    }
+    if (catInicial) {
+        filtrarTiposPorCategoria(catInicial, tipoInicial);
     }
 });
 </script>

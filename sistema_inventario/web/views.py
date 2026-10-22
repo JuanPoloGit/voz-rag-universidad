@@ -22,14 +22,23 @@ class DashboardView(LoginRequiredMixin, View):
     """Panel de Control y visualización general operativa (§11)."""
 
     def get(self, request):
+        if "almacen_id" in request.GET and not request.GET.get("almacen_id", "").strip():
+            from django.shortcuts import redirect
+            return redirect("web:dashboard")
+
         user = request.user
         almacen_id = request.GET.get("almacen_id", "").strip()
         almacen_obj = None
 
         if getattr(user, "es_usuario_normal", False):
-            almacenes = Almacen.objects.filter(id=user.almacen_asignado_id)
-            almacen_obj = user.almacen_asignado
-            almacen_id = str(user.almacen_asignado_id) if user.almacen_asignado_id else ""
+            almacenes = user.get_almacenes_asignados()
+            if almacen_id and almacen_id.isdigit():
+                almacen_obj = almacenes.filter(id=int(almacen_id)).first()
+            if not almacen_obj and almacenes.count() == 1:
+                almacen_obj = almacenes.first()
+                almacen_id = str(almacen_obj.id)
+            elif not almacen_obj:
+                almacen_id = ""
         else:
             almacenes = Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
             if almacen_id and almacen_id.isdigit():
@@ -60,7 +69,11 @@ class GraficoCategoriasJSONView(LoginRequiredMixin, View):
         almacen_id = request.GET.get("almacen_id", "").strip()
         almacen_obj = None
         if getattr(user, "es_usuario_normal", False):
-            almacen_obj = user.almacen_asignado
+            user_alms = user.get_almacenes_asignados()
+            if almacen_id and almacen_id.isdigit():
+                almacen_obj = user_alms.filter(id=int(almacen_id)).first()
+            elif user_alms.count() == 1:
+                almacen_obj = user_alms.first()
         elif almacen_id and almacen_id.isdigit():
             almacen_obj = Almacen.objects.filter(id=int(almacen_id), activo=True, eliminado=False).first()
         datos = obtener_datos_grafico_categorias(user, almacen=almacen_obj)
@@ -77,7 +90,11 @@ class GraficoBalanceJSONView(LoginRequiredMixin, View):
         almacen_id = request.GET.get("almacen_id", "").strip()
         almacen_obj = None
         if getattr(user, "es_usuario_normal", False):
-            almacen_obj = user.almacen_asignado
+            user_alms = user.get_almacenes_asignados()
+            if almacen_id and almacen_id.isdigit():
+                almacen_obj = user_alms.filter(id=int(almacen_id)).first()
+            elif user_alms.count() == 1:
+                almacen_obj = user_alms.first()
         elif almacen_id and almacen_id.isdigit():
             almacen_obj = Almacen.objects.filter(id=int(almacen_id), activo=True, eliminado=False).first()
         datos = obtener_datos_grafico_balance_movimientos(user, dias=dias, almacen=almacen_obj)
@@ -104,8 +121,8 @@ class ReporteExistenciasView(LoginRequiredMixin, View):
         )
 
         if getattr(user, "es_usuario_normal", False):
-            almacenes = Almacen.objects.filter(id=user.almacen_asignado_id)
-            categorias = Categoria.objects.filter(activo=True, eliminado=False, almacen_principal=user.almacen_asignado)
+            almacenes = user.get_almacenes_asignados()
+            categorias = Categoria.objects.filter(activo=True, eliminado=False, almacen_principal__in=almacenes)
         else:
             almacenes = Almacen.objects.filter(activo=True, eliminado=False)
             categorias = Categoria.objects.filter(activo=True, eliminado=False)

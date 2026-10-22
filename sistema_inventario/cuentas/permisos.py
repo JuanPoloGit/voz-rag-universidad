@@ -42,15 +42,14 @@ def puede_acceder_almacen(usuario, almacen) -> bool:
     if not almacen.activo or getattr(almacen, "eliminado", False):
         return False
 
-    # El almacén debe ser exactamente su almacén asignado
-    return getattr(usuario, "almacen_asignado_id", None) == almacen.id
+    return usuario.tiene_acceso_almacen(almacen)
 
 
 def filtrar_por_almacen(queryset, usuario, campo="almacen"):
     """Filtra un QuerySet según los permisos de almacén del usuario.
 
     - Administradores y Superusuarios: ven todos los registros.
-    - Usuarios normales: ven únicamente los registros de su almacén asignado.
+    - Usuarios normales: ven únicamente los registros de sus almacenes asignados.
     - Usuarios no autorizados: QuerySet vacío (none()).
     """
     if not usuario or not getattr(usuario, "is_authenticated", False):
@@ -62,11 +61,11 @@ def filtrar_por_almacen(queryset, usuario, campo="almacen"):
     if getattr(usuario, "es_administrador", False):
         return queryset
 
-    almacen_id = getattr(usuario, "almacen_asignado_id", None)
-    if not almacen_id:
+    almacenes = usuario.get_almacenes_asignados()
+    if not almacenes.exists():
         return queryset.none()
 
-    return queryset.filter(**{campo: usuario.almacen_asignado})
+    return queryset.filter(**{f"{campo}__in": almacenes}).distinct()
 
 
 def obtener_almacen_o_denegar(usuario, almacen_id) -> Almacen:

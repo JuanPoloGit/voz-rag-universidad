@@ -57,10 +57,14 @@
                             {% endif %}
                         </td>
                         <td>
-                            {% if u.almacen_asignado %}
-                                {{ u.almacen_asignado.nombre }}
-                            {% else %}
+                            {% if u.es_administrador %}
                                 <span class="text-faint">(Todos los almacenes)</span>
+                            {% elif u.get_almacenes_asignados %}
+                                {% for alm in u.get_almacenes_asignados %}
+                                    <span class="badge badge-accent" style="margin-right: 3px; font-size: 11px;">{{ alm.nombre }}</span>
+                                {% endfor %}
+                            {% else %}
+                                <span class="text-faint">Sin almacén</span>
                             {% endif %}
                         </td>
                         <td>
@@ -133,6 +137,97 @@ document.addEventListener("DOMContentLoaded", function() {
     var cuerpoModal = document.getElementById("cuerpoModalUsuario");
     var tituloModal = document.getElementById("tituloModalUsuario");
 
+    function initUsuarioFormHandlers(root) {
+        root = root || document;
+        var rolSelect = root.querySelector('select[name="rol"]');
+        var grpAlmacenes = root.querySelector('#grupoAlmacenesAsignados');
+
+        function actualizarVisibilidadAlmacen() {
+            if (!rolSelect || !grpAlmacenes) return;
+            var esUsuarioNormal = (rolSelect.value === "USUARIO");
+            grpAlmacenes.style.display = esUsuarioNormal ? "block" : "none";
+        }
+
+        if (rolSelect && !rolSelect.dataset.listenerAttached) {
+            rolSelect.dataset.listenerAttached = "1";
+            rolSelect.addEventListener("change", actualizarVisibilidadAlmacen);
+        }
+        actualizarVisibilidadAlmacen();
+
+        var counterBadge = root.querySelector("#almacenesCounterBadge");
+        var checkboxes = root.querySelectorAll('input[name="almacenes_asignados"]');
+        var btnSelectAll = root.querySelector("#btnSelectAllAlmacenes");
+        var btnClear = root.querySelector("#btnClearAlmacenes");
+        var searchInput = root.querySelector("#almacenSearchInput");
+        var searchEmpty = root.querySelector("#almacenSearchEmpty");
+        var optionRows = root.querySelectorAll(".almacen-option-row");
+
+        function updateCounter() {
+            var checked = root.querySelectorAll('input[name="almacenes_asignados"]:checked').length;
+            if (counterBadge) {
+                counterBadge.textContent = checked === 1 ? "1 seleccionado" : checked + " seleccionados";
+                counterBadge.className = checked > 0 ? "badge badge-accent" : "badge badge-secondary";
+            }
+        }
+
+        checkboxes.forEach(function(box) {
+            if (!box.dataset.listenerAttached) {
+                box.dataset.listenerAttached = "1";
+                box.addEventListener("change", updateCounter);
+            }
+        });
+
+        if (btnSelectAll && !btnSelectAll.dataset.listenerAttached) {
+            btnSelectAll.dataset.listenerAttached = "1";
+            btnSelectAll.addEventListener("click", function(e) {
+                e.preventDefault();
+                optionRows.forEach(function(row) {
+                    if (row.style.display !== "none") {
+                        var box = row.querySelector('input[type="checkbox"]');
+                        if (box) box.checked = true;
+                    }
+                });
+                updateCounter();
+            });
+        }
+
+        if (btnClear && !btnClear.dataset.listenerAttached) {
+            btnClear.dataset.listenerAttached = "1";
+            btnClear.addEventListener("click", function(e) {
+                e.preventDefault();
+                checkboxes.forEach(function(box) {
+                    box.checked = false;
+                });
+                updateCounter();
+            });
+        }
+
+        if (searchInput && !searchInput.dataset.listenerAttached) {
+            searchInput.dataset.listenerAttached = "1";
+            searchInput.addEventListener("input", function() {
+                var q = this.value.toLowerCase().trim();
+                var visible = 0;
+                optionRows.forEach(function(row) {
+                    var name = row.getAttribute("data-name") || "";
+                    if (!q || name.indexOf(q) !== -1) {
+                        row.style.display = "flex";
+                        visible++;
+                    } else {
+                        row.style.display = "none";
+                    }
+                });
+                if (searchEmpty) {
+                    searchEmpty.style.display = visible === 0 ? "block" : "none";
+                }
+            });
+        }
+
+        updateCounter();
+        if (typeof window.initPasswordToggles === "function") {
+            window.initPasswordToggles(root);
+        }
+    }
+
     function enlazarFormularioModal(urlEndpoint) {
         var form = cuerpoModal.querySelector("form");
         if (!form) return;
@@ -177,6 +272,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 if (nuevoForm) {
                     cuerpoModal.appendChild(nuevoForm);
                     enlazarFormularioModal(urlEndpoint);
+                    initUsuarioFormHandlers(cuerpoModal);
                 } else {
                     window.location.reload();
                 }
@@ -204,6 +300,7 @@ document.addEventListener("DOMContentLoaded", function() {
                         cuerpoModal.innerHTML = "";
                         cuerpoModal.appendChild(form);
                         enlazarFormularioModal(url);
+                        initUsuarioFormHandlers(cuerpoModal);
                     } else {
                         window.location.href = url;
                     }
