@@ -24,6 +24,22 @@ class AlmacenForm(forms.ModelForm):
             }),
         }
 
+    def validate_unique(self):
+        nombre = self.cleaned_data.get("nombre")
+        if nombre:
+            qs = Almacen.objects.filter(nombre__iexact=nombre.strip(), eliminado=False)
+            if self.instance.pk:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                self.add_error("nombre", "Ya existe un almacén activo con este Nombre.")
+
+        exclude = self._get_validation_exclusions()
+        exclude.add("nombre")
+        try:
+            self.instance.validate_unique(exclude=exclude)
+        except forms.ValidationError as e:
+            self._update_errors(e)
+
 
 class UbicacionForm(forms.ModelForm):
     """Formulario para creación y edición de ubicaciones."""
@@ -72,6 +88,28 @@ class UbicacionForm(forms.ModelForm):
             if "almacen" in self._errors and cleaned_data.get("almacen"):
                 del self._errors["almacen"]
         return cleaned_data
+
+    def validate_unique(self):
+        nombre = self.cleaned_data.get("nombre")
+        almacen = self.cleaned_data.get("almacen")
+        if nombre and almacen:
+            qs = Ubicacion.objects.filter(
+                almacen=almacen,
+                nombre__iexact=nombre.strip(),
+                eliminado=False,
+            )
+            if self.instance.pk:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                self.add_error("nombre", "Ya existe una ubicación con este/a Nombre en este almacén.")
+
+        exclude = self._get_validation_exclusions()
+        exclude.add("nombre")
+        exclude.add("almacen")
+        try:
+            self.instance.validate_unique(exclude=exclude)
+        except forms.ValidationError as e:
+            self._update_errors(e)
 
 
 class CategoriaForm(forms.ModelForm):
@@ -148,6 +186,22 @@ class CategoriaForm(forms.ModelForm):
                 del self._errors["almacen_principal"]
         return cleaned_data
 
+    def validate_unique(self):
+        nombre = self.cleaned_data.get("nombre")
+        if nombre:
+            qs = Categoria.objects.filter(nombre__iexact=nombre.strip(), eliminado=False)
+            if self.instance.pk:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                self.add_error("nombre", "Ya existe un/a categoría con este/a Nombre.")
+
+        exclude = self._get_validation_exclusions()
+        exclude.add("nombre")
+        try:
+            self.instance.validate_unique(exclude=exclude)
+        except forms.ValidationError as e:
+            self._update_errors(e)
+
 
 class TipoCategoriaForm(forms.ModelForm):
     """Formulario para crear o editar un tipo ligado a una categoría."""
@@ -178,6 +232,28 @@ class TipoCategoriaForm(forms.ModelForm):
                 activo=True, eliminado=False
             ).order_by("nombre")
 
+    def validate_unique(self):
+        nombre = self.cleaned_data.get("nombre")
+        categoria = self.cleaned_data.get("categoria")
+        if nombre and categoria:
+            qs = TipoCategoria.objects.filter(
+                categoria=categoria,
+                nombre__iexact=nombre.strip(),
+                eliminado=False,
+            )
+            if self.instance.pk:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                self.add_error("nombre", "Ya existe un tipo con este/a Nombre en esta categoría.")
+
+        exclude = self._get_validation_exclusions()
+        exclude.add("nombre")
+        exclude.add("categoria")
+        try:
+            self.instance.validate_unique(exclude=exclude)
+        except forms.ValidationError as e:
+            self._update_errors(e)
+
 
 class ProductoForm(forms.ModelForm):
     """Formulario para creación y edición de productos."""
@@ -192,11 +268,11 @@ class ProductoForm(forms.ModelForm):
     )
     ubicacion = forms.ModelChoiceField(
         queryset=Ubicacion.objects.none(),
-        required=False,
+        required=True,
         widget=forms.Select(attrs={"class": "form-control"}),
-        label="Ubicación física única",
-        help_text="Ubicación física única asignada en bodega para este producto.",
-        empty_label="Sin ubicación física (opcional)",
+        label="Ubicación Física Única *",
+        help_text="Ubicación física obligatoria asignada en bodega para este producto.",
+        empty_label="Selecciona una ubicación física obligatoria...",
     )
 
     class Meta:
@@ -310,6 +386,9 @@ class ProductoForm(forms.ModelForm):
         tipo = cleaned_data.get("tipo")
         ub = cleaned_data.get("ubicacion")
 
+        if not ub:
+            self.add_error("ubicacion", "La ubicación física es obligatoria para registrar o editar el producto.")
+
         if categoria:
             if almacen and categoria.almacen_principal_id != almacen.id:
                 self.add_error("categoria", f"La categoría '{categoria.nombre}' pertenece a '{categoria.almacen_principal.nombre}', no al almacén '{almacen.nombre}'.")
@@ -320,12 +399,37 @@ class ProductoForm(forms.ModelForm):
             if tipo and tipo.categoria_id != categoria.id:
                 self.add_error("tipo", "El tipo seleccionado no pertenece a la categoría elegida.")
 
+        if self.usuario and getattr(self.usuario, "es_usuario_normal", False):
+            user_alms = self.usuario.get_almacenes_asignados()
+            if almacen and not user_alms.filter(id=almacen.id).exists():
+                self.add_error("almacen", "No tienes acceso al almacén seleccionado.")
+            if categoria and not user_alms.filter(id=categoria.almacen_principal_id).exists():
+                self.add_error("categoria", "No tienes acceso a la categoría seleccionada.")
+            if ub and not user_alms.filter(id=ub.almacen_id).exists():
+                self.add_error("ubicacion", "No tienes acceso a la ubicación física seleccionada.")
+
         cleaned_data["ubicaciones_seleccionadas"] = [ub] if ub else []
         return cleaned_data
 
     def clean_codigo_barras(self):
         cb = self.cleaned_data.get("codigo_barras")
         return (cb or "").strip() or None
+
+    def validate_unique(self):
+        cb = self.cleaned_data.get("codigo_barras")
+        if cb:
+            qs = Producto.objects.filter(codigo_barras=cb, archivado=False)
+            if self.instance.pk:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                self.add_error("codigo_barras", "Ya existe un producto activo con este Código de barras.")
+
+        exclude = self._get_validation_exclusions()
+        exclude.add("codigo_barras")
+        try:
+            self.instance.validate_unique(exclude=exclude)
+        except forms.ValidationError as e:
+            self._update_errors(e)
 
 
 class EntradaForm(forms.Form):
@@ -365,9 +469,9 @@ class EntradaForm(forms.Form):
         label="Ubicación física (opcional)",
     )
     motivo = forms.CharField(
-        required=False,
+        required=True,
         widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ej. Recepción de lote, compra local"}),
-        label="Motivo de la entrada",
+        label="Motivo de la entrada *",
     )
     observacion = forms.CharField(
         required=False,
@@ -384,6 +488,7 @@ class EntradaForm(forms.Form):
             self.fields["almacen"].initial = user_alms.first()
             if user_alms.count() == 1:
                 self.fields["almacen"].widget = forms.HiddenInput()
+                self.fields["almacen"].required = False
             self.fields["producto"].queryset = Producto.objects.filter(
                 archivado=False, activo=True, categoria__almacen_principal__in=user_alms
             )
@@ -398,6 +503,16 @@ class EntradaForm(forms.Form):
         cantidad_empaques = cleaned_data.get("cantidad_empaques")
         producto = cleaned_data.get("producto")
         almacen = cleaned_data.get("almacen")
+
+        if self.usuario and getattr(self.usuario, "es_usuario_normal", False):
+            user_alms = self.usuario.get_almacenes_asignados()
+            if not almacen and user_alms.count() == 1:
+                almacen = user_alms.first()
+                cleaned_data["almacen"] = almacen
+            if almacen and not user_alms.filter(id=almacen.id).exists():
+                self.add_error("almacen", "No tienes acceso al almacén seleccionado.")
+            if producto and not user_alms.filter(id=producto.categoria.almacen_principal_id).exists():
+                self.add_error("producto", "El producto seleccionado no pertenece a tus almacenes asignados.")
 
         if producto and almacen and producto.categoria.almacen_principal_id != almacen.id:
             self.add_error("almacen", f"El producto '{producto.nombre}' pertenece al almacén '{producto.categoria.almacen_principal.nombre}'.")
@@ -440,13 +555,7 @@ class SalidaForm(forms.Form):
     motivo = forms.CharField(
         required=True,
         widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ej. Asignación de equipo, dotación semestral, consumo"}),
-        label="Motivo de la dotación",
-    )
-    ubicacion = forms.ModelChoiceField(
-        queryset=Ubicacion.objects.filter(activo=True, eliminado=False),
-        required=False,
-        widget=forms.Select(attrs={"class": "form-control"}),
-        label="Ubicación de origen (opcional)",
+        label="Motivo de la dotación *",
     )
     observacion = forms.CharField(
         required=False,
@@ -463,11 +572,9 @@ class SalidaForm(forms.Form):
             self.fields["almacen"].initial = user_alms.first()
             if user_alms.count() == 1:
                 self.fields["almacen"].widget = forms.HiddenInput()
+                self.fields["almacen"].required = False
             self.fields["producto"].queryset = Producto.objects.filter(
                 archivado=False, activo=True, categoria__almacen_principal__in=user_alms
-            )
-            self.fields["ubicacion"].queryset = Ubicacion.objects.filter(
-                activo=True, eliminado=False, almacen__in=user_alms
             )
 
     def clean(self):
@@ -475,6 +582,16 @@ class SalidaForm(forms.Form):
         producto = cleaned_data.get("producto")
         almacen = cleaned_data.get("almacen")
         cantidad = cleaned_data.get("cantidad")
+
+        if self.usuario and getattr(self.usuario, "es_usuario_normal", False):
+            user_alms = self.usuario.get_almacenes_asignados()
+            if not almacen and user_alms.count() == 1:
+                almacen = user_alms.first()
+                cleaned_data["almacen"] = almacen
+            if almacen and not user_alms.filter(id=almacen.id).exists():
+                self.add_error("almacen", "No tienes acceso al almacén seleccionado.")
+            if producto and not user_alms.filter(id=producto.categoria.almacen_principal_id).exists():
+                self.add_error("producto", "El producto seleccionado no pertenece a tus almacenes asignados.")
 
         if producto and almacen:
             if producto.categoria.almacen_principal_id != almacen.id:
@@ -514,15 +631,9 @@ class PrestamoForm(forms.Form):
         label="Destinatario / Responsable",
     )
     motivo = forms.CharField(
-        required=False,
-        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ej. Proyecto de grado, práctica"}),
-        label="Motivo del préstamo",
-    )
-    ubicacion = forms.ModelChoiceField(
-        queryset=Ubicacion.objects.filter(activo=True, eliminado=False),
-        required=False,
-        widget=forms.Select(attrs={"class": "form-control"}),
-        label="Ubicación de origen (opcional)",
+        required=True,
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ej. Proyecto de grado, práctica de laboratorio"}),
+        label="Motivo del préstamo *",
     )
     observacion = forms.CharField(
         required=False,
@@ -539,11 +650,9 @@ class PrestamoForm(forms.Form):
             self.fields["almacen"].initial = user_alms.first()
             if user_alms.count() == 1:
                 self.fields["almacen"].widget = forms.HiddenInput()
+                self.fields["almacen"].required = False
             self.fields["producto"].queryset = Producto.objects.filter(
                 archivado=False, activo=True, categoria__almacen_principal__in=user_alms
-            )
-            self.fields["ubicacion"].queryset = Ubicacion.objects.filter(
-                activo=True, eliminado=False, almacen__in=user_alms
             )
 
     def clean(self):
@@ -551,6 +660,16 @@ class PrestamoForm(forms.Form):
         producto = cleaned_data.get("producto")
         almacen = cleaned_data.get("almacen")
         cantidad = cleaned_data.get("cantidad")
+
+        if self.usuario and getattr(self.usuario, "es_usuario_normal", False):
+            user_alms = self.usuario.get_almacenes_asignados()
+            if not almacen and user_alms.count() == 1:
+                almacen = user_alms.first()
+                cleaned_data["almacen"] = almacen
+            if almacen and not user_alms.filter(id=almacen.id).exists():
+                self.add_error("almacen", "No tienes acceso al almacén seleccionado.")
+            if producto and not user_alms.filter(id=producto.categoria.almacen_principal_id).exists():
+                self.add_error("producto", "El producto seleccionado no pertenece a tus almacenes asignados.")
 
         if producto and almacen:
             if producto.categoria.almacen_principal_id != almacen.id:
@@ -637,14 +756,15 @@ class TrasladoForm(forms.Form):
         label="Ubicación física de destino",
     )
     cantidad = forms.IntegerField(
+        required=False,
         min_value=1,
         label="Cantidad a trasladar",
-        widget=forms.NumberInput(attrs={"class": "form-control", "placeholder": "Ej. 5"}),
+        widget=forms.NumberInput(attrs={"class": "form-control", "placeholder": "Cantidad total disponible"}),
     )
     motivo = forms.CharField(
-        required=False,
-        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ej. Redistribución de stock"}),
-        label="Motivo del traslado",
+        required=True,
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ej. Traslado interno o entre almacenes..."}),
+        label="Motivo del traslado *",
     )
 
     def __init__(self, *args, usuario=None, **kwargs):
@@ -656,10 +776,88 @@ class TrasladoForm(forms.Form):
             self.fields["almacen_origen"].initial = user_alms.first()
             if user_alms.count() == 1:
                 self.fields["almacen_origen"].widget = forms.HiddenInput()
-            self.fields["almacen_destino"].queryset = Almacen.objects.filter(activo=True, eliminado=False).exclude(id__in=user_alms.values_list("id", flat=True))
+                self.fields["almacen_origen"].required = False
+                self.fields["almacen_destino"].queryset = Almacen.objects.none()
+                self.fields["almacen_destino"].widget = forms.HiddenInput()
+                self.fields["almacen_destino"].required = False
+                self.fields["ubicacion_destino"].queryset = Ubicacion.objects.none()
+                self.fields["ubicacion_destino"].widget = forms.HiddenInput()
+                self.fields["ubicacion_destino"].required = False
+            else:
+                self.fields["almacen_destino"].queryset = user_alms.order_by("nombre")
+                self.fields["ubicacion_destino"].queryset = Ubicacion.objects.filter(
+                    activo=True, eliminado=False, almacen__in=user_alms
+                )
             self.fields["producto"].queryset = Producto.objects.filter(
                 archivado=False, activo=True, categoria__almacen_principal__in=user_alms
             )
+            self.fields["ubicacion_origen"].queryset = Ubicacion.objects.filter(
+                activo=True, eliminado=False, almacen__in=user_alms
+            )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        prod = cleaned_data.get("producto")
+        alm_orig = cleaned_data.get("almacen_origen")
+        alm_dest = cleaned_data.get("almacen_destino")
+        ub_orig = cleaned_data.get("ubicacion_origen")
+        ub_dest = cleaned_data.get("ubicacion_destino")
+        cant = cleaned_data.get("cantidad")
+        motivo = cleaned_data.get("motivo")
+
+        is_normal = self.usuario and getattr(self.usuario, "es_usuario_normal", False)
+        user_alms = self.usuario.get_almacenes_asignados() if is_normal else None
+
+        if prod:
+            alm_orig = prod.categoria.almacen_principal
+            cleaned_data["almacen_origen"] = alm_orig
+            if is_normal and not user_alms.filter(id=alm_orig.id).exists():
+                self.add_error("producto", "No tienes permisos sobre el almacén de este producto.")
+
+            from inventario.models import Existencia
+            ex = Existencia.objects.filter(producto=prod, almacen=alm_orig).first()
+            stock_disp = ex.stock_disponible if ex else 0
+            if not cant:
+                cleaned_data["cantidad"] = stock_disp
+                cant = stock_disp
+            if stock_disp <= 0:
+                self.add_error("producto", f"El producto '{prod.codigo_interno}' no tiene existencias disponibles para trasladar.")
+            elif cant > stock_disp:
+                self.add_error("cantidad", f"No puedes trasladar {cant} unidades. Stock disponible en origen: {stock_disp} unidades.")
+
+            ub_actual = prod.ubicaciones.first()
+            es_cambio_ubicacion_interna = ub_orig and ((ub_actual and ub_orig.id != ub_actual.id) or not ub_actual)
+
+            if is_normal and user_alms.count() <= 1:
+                if alm_dest:
+                    self.add_error("almacen_destino", "Solo tienes un almacén asignado; no puedes realizar traslados hacia otros almacenes.")
+                if not ub_orig:
+                    self.add_error("ubicacion_origen", "Selecciona una nueva ubicación física dentro de tu almacén.")
+                elif ub_actual and ub_orig.id == ub_actual.id:
+                    self.add_error("ubicacion_origen", "Debes seleccionar una ubicación diferente a la actual para realizar un traslado interno.")
+                cleaned_data["almacen_destino"] = None
+                cleaned_data["ubicacion_destino"] = None
+            elif es_cambio_ubicacion_interna and not alm_dest:
+                cleaned_data["almacen_destino"] = None
+                cleaned_data["ubicacion_destino"] = None
+            else:
+                if not alm_dest:
+                    self.add_error("almacen_destino", "Debe seleccionar el almacén de destino.")
+                elif alm_dest.id == alm_orig.id:
+                    self.add_error("almacen_destino", "El almacén de destino debe ser diferente al de origen.")
+                elif is_normal and not user_alms.filter(id=alm_dest.id).exists():
+                    self.add_error("almacen_destino", "Solo puedes trasladar hacia almacenes que tengas asignados.")
+
+                if alm_dest:
+                    if not ub_dest:
+                        self.add_error("ubicacion_destino", "Debe seleccionar la ubicación física en el almacén de destino.")
+                    elif ub_dest.almacen_id != getattr(alm_dest, "id", None):
+                        self.add_error("ubicacion_destino", "La ubicación física seleccionada no pertenece al almacén destino.")
+
+        if not motivo:
+            self.add_error("motivo", "El motivo del traslado es obligatorio.")
+
+        return cleaned_data
 
 
 class ConteoFisicoForm(forms.Form):
@@ -677,13 +875,18 @@ class ConteoFisicoForm(forms.Form):
     )
     cantidad_contada = forms.IntegerField(
         min_value=0,
-        label="Cantidad física verificada",
-        widget=forms.NumberInput(attrs={"class": "form-control"}),
+        label="Cantidad física verificada *",
+        widget=forms.NumberInput(attrs={"class": "form-control", "placeholder": "Ej. 15"}),
     )
     motivo = forms.CharField(
+        required=True,
+        widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "Ej. Auditoría física programada"}),
+        label="Motivo del conteo *",
+    )
+    observacion = forms.CharField(
         required=False,
-        widget=forms.Textarea(attrs={"class": "form-control", "rows": 2, "placeholder": "Notas de la inspección física"}),
-        label="Observación / Justificación",
+        widget=forms.Textarea(attrs={"class": "form-control", "rows": 2, "placeholder": "Notas de la inspección física (opcional)"}),
+        label="Observación (opcional)",
     )
 
     def __init__(self, *args, usuario=None, **kwargs):
@@ -695,9 +898,30 @@ class ConteoFisicoForm(forms.Form):
             self.fields["almacen"].initial = user_alms.first()
             if user_alms.count() == 1:
                 self.fields["almacen"].widget = forms.HiddenInput()
+                self.fields["almacen"].required = False
             self.fields["producto"].queryset = Producto.objects.filter(
                 archivado=False, activo=True, categoria__almacen_principal__in=user_alms
             )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        prod = cleaned_data.get("producto")
+        almacen = cleaned_data.get("almacen")
+
+        if self.usuario and getattr(self.usuario, "es_usuario_normal", False):
+            user_alms = self.usuario.get_almacenes_asignados()
+            if not almacen and user_alms.count() == 1:
+                almacen = user_alms.first()
+                cleaned_data["almacen"] = almacen
+            if almacen and not user_alms.filter(id=almacen.id).exists():
+                self.add_error("almacen", "No tienes acceso al almacén seleccionado.")
+            if prod and not user_alms.filter(id=prod.categoria.almacen_principal_id).exists():
+                self.add_error("producto", "El producto no pertenece a tus almacenes asignados.")
+
+        if prod and almacen and prod.categoria.almacen_principal_id != almacen.id:
+            self.add_error("almacen", f"El producto '{prod.nombre}' pertenece al almacén '{prod.categoria.almacen_principal.nombre}'.")
+
+        return cleaned_data
 
 
 class ReversionForm(forms.Form):

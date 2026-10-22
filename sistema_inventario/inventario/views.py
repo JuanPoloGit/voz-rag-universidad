@@ -98,6 +98,36 @@ def _obtener_ip(request) -> str:
     return request.META.get("REMOTE_ADDR", "127.0.0.1")
 
 
+class AjaxModalFormMixin:
+    """Mixin para vistas de formulario embebidas en modales (<dialog>).
+    
+    Si la solicitud proviene de un modal vía AJAX (X-Requested-With: XMLHttpRequest),
+    retorna JSON 400 con errores estructurados al fallar la validación,
+    evitando que la página se cierre o navegue a la vista standalone.
+    """
+
+    def form_invalid(self, form):
+        if self.request.headers.get("x-requested-with") == "XMLHttpRequest":
+            errores = {}
+            for field, err_list in form.errors.get_json_data().items():
+                errores[field] = [e["message"] for e in err_list]
+            return JsonResponse({
+                "success": False,
+                "errors": errores,
+                "message": "Por favor corrige los errores señalados en el formulario.",
+            }, status=400)
+        return super().form_invalid(form)
+
+    def responder_exito(self, redirect_url=None):
+        target = redirect_url or (str(self.success_url) if hasattr(self, "success_url") else "/")
+        if self.request.headers.get("x-requested-with") == "XMLHttpRequest":
+            return JsonResponse({
+                "success": True,
+                "redirect_url": str(target),
+            })
+        return redirect(target)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. ALMACENES
 # ─────────────────────────────────────────────────────────────────────────────
@@ -160,7 +190,7 @@ class AlmacenEliminarView(LoginRequiredMixin, RolRequeridoMixin, View):
         return redirect(request.POST.get("next") or "inventario:almacen-lista")
 
 
-class AlmacenCrearView(LoginRequiredMixin, RolRequeridoMixin, CreateView):
+class AlmacenCrearView(LoginRequiredMixin, RolRequeridoMixin, AjaxModalFormMixin, CreateView):
     """Creación de un nuevo almacén (solo Administradores y Superusuario)."""
 
     model = Almacen
@@ -178,13 +208,13 @@ class AlmacenCrearView(LoginRequiredMixin, RolRequeridoMixin, CreateView):
                 ip_origen=_obtener_ip(self.request),
             )
             messages.success(self.request, f"Almacén '{almacen.nombre}' creado exitosamente.")
-            return redirect(self.success_url)
+            return self.responder_exito(self.success_url)
         except Exception as exc:
             form.add_error(None, str(exc))
             return self.form_invalid(form)
 
 
-class AlmacenEditarView(LoginRequiredMixin, RolRequeridoMixin, UpdateView):
+class AlmacenEditarView(LoginRequiredMixin, RolRequeridoMixin, AjaxModalFormMixin, UpdateView):
     """Edición de un almacén existente (solo Administradores y Superusuario)."""
 
     model = Almacen
@@ -203,7 +233,7 @@ class AlmacenEditarView(LoginRequiredMixin, RolRequeridoMixin, UpdateView):
                 ip_origen=_obtener_ip(self.request),
             )
             messages.success(self.request, f"Almacén '{almacen.nombre}' actualizado exitosamente.")
-            return redirect(self.success_url)
+            return self.responder_exito(self.success_url)
         except Exception as exc:
             form.add_error(None, str(exc))
             return self.form_invalid(form)
@@ -284,7 +314,7 @@ class UbicacionEliminarView(LoginRequiredMixin, View):
         return redirect(request.POST.get("next") or "inventario:ubicacion-lista")
 
 
-class UbicacionCrearView(LoginRequiredMixin, CreateView):
+class UbicacionCrearView(LoginRequiredMixin, AjaxModalFormMixin, CreateView):
     """Creación de ubicación en almacén autorizado."""
 
     model = Ubicacion
@@ -313,14 +343,14 @@ class UbicacionCrearView(LoginRequiredMixin, CreateView):
                 ip_origen=_obtener_ip(self.request),
             )
             messages.success(self.request, f"Ubicación '{ubicacion.nombre}' creada exitosamente.")
-            return redirect(self.success_url)
+            return self.responder_exito(self.success_url)
         except Exception as exc:
             form.add_error(None, str(exc))
             return self.form_invalid(form)
 
 
-class UbicacionEditarView(LoginRequiredMixin, UpdateView):
-    """Edición de ubicación física conservando historial del nombre previo."""
+class UbicacionEditarView(LoginRequiredMixin, AjaxModalFormMixin, UpdateView):
+    """Edición de ubicación física conservando historial del nombre previo y permitiendo cambio de almacén (§Punto 4)."""
 
     model = Ubicacion
     form_class = UbicacionForm
@@ -345,11 +375,12 @@ class UbicacionEditarView(LoginRequiredMixin, UpdateView):
                 ubicacion=self.object,
                 nombre=form.cleaned_data["nombre"],
                 descripcion=form.cleaned_data.get("descripcion", ""),
+                almacen=form.cleaned_data.get("almacen"),
                 usuario=self.request.user,
                 ip_origen=_obtener_ip(self.request),
             )
             messages.success(self.request, f"Ubicación '{ubicacion.nombre}' actualizada exitosamente.")
-            return redirect(self.success_url)
+            return self.responder_exito(self.success_url)
         except Exception as exc:
             form.add_error(None, str(exc))
             return self.form_invalid(form)
@@ -435,7 +466,7 @@ class CategoriaEliminarView(LoginRequiredMixin, View):
         return redirect(request.POST.get("next") or "inventario:categoria-lista")
 
 
-class CategoriaCrearView(LoginRequiredMixin, CreateView):
+class CategoriaCrearView(LoginRequiredMixin, AjaxModalFormMixin, CreateView):
     """Creación de una categoría con almacén principal obligatorio y tipos opcionales."""
 
     model = Categoria
@@ -471,13 +502,13 @@ class CategoriaCrearView(LoginRequiredMixin, CreateView):
                     ip_origen=_obtener_ip(self.request),
                 )
             messages.success(self.request, f"Categoría '{categoria.nombre}' creada exitosamente.")
-            return redirect(self.success_url)
+            return self.responder_exito(self.success_url)
         except Exception as exc:
             form.add_error(None, str(exc))
             return self.form_invalid(form)
 
 
-class CategoriaEditarView(LoginRequiredMixin, UpdateView):
+class CategoriaEditarView(LoginRequiredMixin, AjaxModalFormMixin, UpdateView):
     """Edición de categoría y sus tipos opcionales."""
 
     model = Categoria
@@ -526,7 +557,7 @@ class CategoriaEditarView(LoginRequiredMixin, UpdateView):
                     ip_origen=_obtener_ip(self.request),
                 )
             messages.success(self.request, f"Categoría '{categoria.nombre}' actualizada exitosamente.")
-            return redirect(self.success_url)
+            return self.responder_exito(self.success_url)
         except NecesitaTraslado as exc:
             form.add_error(None, str(exc))
             return self.form_invalid(form)
@@ -544,6 +575,8 @@ class TipoCategoriaCrearView(LoginRequiredMixin, View):
         next_url = request.POST.get("next") or reverse("inventario:categoria-lista")
 
         if not categoria_id or not str(categoria_id).isdigit():
+            if request.headers.get("x-requested-with") == "XMLHttpRequest":
+                return JsonResponse({"success": False, "errors": {"categoria": ["Debe seleccionar una categoría válida."]}}, status=400)
             messages.error(request, "Debe seleccionar una categoría válida.")
             return redirect(next_url)
 
@@ -556,8 +589,12 @@ class TipoCategoriaCrearView(LoginRequiredMixin, View):
                 ip_origen=_obtener_ip(request),
             )
             messages.success(request, f"Tipo '{tipo.nombre}' agregado a la categoría '{categoria.nombre}'.")
+            if request.headers.get("x-requested-with") == "XMLHttpRequest":
+                return JsonResponse({"success": True, "redirect_url": next_url})
         except Exception as exc:
             msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
+            if request.headers.get("x-requested-with") == "XMLHttpRequest":
+                return JsonResponse({"success": False, "errors": {"nombre": [msg]}}, status=400)
             messages.error(request, msg)
         return redirect(next_url)
 
@@ -578,8 +615,12 @@ class TipoCategoriaEditarView(LoginRequiredMixin, View):
                 ip_origen=_obtener_ip(request),
             )
             messages.success(request, f"Tipo actualizado a '{actualizado.nombre}'.")
+            if request.headers.get("x-requested-with") == "XMLHttpRequest":
+                return JsonResponse({"success": True, "redirect_url": next_url})
         except Exception as exc:
             msg = exc.messages[0] if hasattr(exc, "messages") and exc.messages else str(exc)
+            if request.headers.get("x-requested-with") == "XMLHttpRequest":
+                return JsonResponse({"success": False, "errors": {"nombre": [msg]}}, status=400)
             messages.error(request, msg)
         return redirect(next_url)
 
@@ -820,7 +861,7 @@ class ProductoListaView(LoginRequiredMixin, ListView):
         return context
 
 
-class ProductoCrearView(LoginRequiredMixin, CreateView):
+class ProductoCrearView(LoginRequiredMixin, AjaxModalFormMixin, CreateView):
     """Creación de un nuevo producto en catálogo con opción de stock inicial y tipo opcional."""
 
     model = Producto
@@ -868,13 +909,13 @@ class ProductoCrearView(LoginRequiredMixin, CreateView):
                 ip_origen=_obtener_ip(self.request),
             )
             messages.success(self.request, f"Producto '{producto.codigo_interno} — {producto.nombre}' creado exitosamente.")
-            return redirect(self.success_url)
+            return self.responder_exito(self.success_url)
         except Exception as exc:
             form.add_error(None, str(exc))
             return self.form_invalid(form)
 
 
-class ProductoEditarView(LoginRequiredMixin, UpdateView):
+class ProductoEditarView(LoginRequiredMixin, AjaxModalFormMixin, UpdateView):
     """Edición de datos operativos de un producto."""
 
     model = Producto
@@ -931,9 +972,10 @@ class ProductoEditarView(LoginRequiredMixin, UpdateView):
             )
             messages.success(self.request, f"Producto '{producto.codigo_interno} — {producto.nombre}' actualizado exitosamente.")
             next_url = self.request.POST.get("next")
-            if next_url:
-                return redirect(next_url)
-            return redirect(self.success_url)
+            return self.responder_exito(next_url or self.success_url)
+        except Exception as exc:
+            form.add_error(None, str(exc))
+            return self.form_invalid(form)
         except Exception as exc:
             form.add_error(None, str(exc))
             return self.form_invalid(form)
@@ -1320,18 +1362,44 @@ class AlertaMarcarLeidaView(LoginRequiredMixin, View):
 
 
 class ActualizarNombrePerfilView(LoginRequiredMixin, View):
-    """Permite al usuario autenticado actualizar su nombre completo desde Mi Perfil."""
+    """Permite al usuario autenticado actualizar su nombre completo y username (solo superusuario) desde Mi Perfil."""
 
     def post(self, request):
+        user = request.user
         nuevo_nombre = (request.POST.get("nombre_completo") or "").strip()
+        nuevo_username = (request.POST.get("username") or "").strip()
+        next_url = request.POST.get("next") or reverse("cuentas:perfil")
+
         if not nuevo_nombre:
+            if request.headers.get("x-requested-with") == "XMLHttpRequest":
+                return JsonResponse({"success": False, "errors": {"nombre_completo": ["El nombre completo no puede estar vacío."]}}, status=400)
             messages.error(request, "El nombre completo no puede estar vacío.")
-        else:
-            user = request.user
-            user.nombre_completo = nuevo_nombre
-            user.save(update_fields=["nombre_completo"])
-            messages.success(request, "Tu nombre de perfil ha sido actualizado exitosamente.")
-        return redirect(request.POST.get("next") or "cuentas:cambiar_password")
+            return redirect(next_url)
+
+        fields_to_update = ["nombre_completo"]
+        user.nombre_completo = nuevo_nombre
+
+        # El nombre de usuario si se puede cambiar, pero únicamente por el superusuario
+        if nuevo_username and nuevo_username != user.username:
+            if not user.es_superusuario_inventario:
+                if request.headers.get("x-requested-with") == "XMLHttpRequest":
+                    return JsonResponse({"success": False, "errors": {"username": ["Solo el superusuario puede modificar el nombre de usuario."]}}, status=400)
+                messages.error(request, "Solo el superusuario puede modificar el nombre de usuario.")
+                return redirect(next_url)
+            from cuentas.models import UsuarioAudacIA
+            if UsuarioAudacIA.objects.filter(username__iexact=nuevo_username).exclude(pk=user.pk).exists():
+                if request.headers.get("x-requested-with") == "XMLHttpRequest":
+                    return JsonResponse({"success": False, "errors": {"username": ["Ya existe otro usuario con este nombre de usuario."]}}, status=400)
+                messages.error(request, "Ya existe otro usuario con este nombre de usuario.")
+                return redirect(next_url)
+            user.username = nuevo_username
+            fields_to_update.append("username")
+
+        user.save(update_fields=fields_to_update)
+        messages.success(request, "Tu perfil ha sido actualizado exitosamente.")
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            return JsonResponse({"success": True, "redirect_url": next_url})
+        return redirect(next_url)
 
 
 class AlertasStockJSONView(LoginRequiredMixin, View):
@@ -1402,15 +1470,21 @@ class MovimientoListaView(LoginRequiredMixin, ListView):
         tipo = self.request.GET.get("tipo", "")
 
         if not vista or vista == "TODOS":
-            if tipo in ("SALIDA", "PRESTAMO", "DEVOLUCION", "BAJA_PRESTAMO"):
+            if tipo in ("SALIDA", "DEVOLUCION", "BAJA_PRESTAMO"):
                 vista = "SALIDA"
+            elif tipo == "PRESTAMO":
+                vista = "PRESTAMOS"
             elif tipo in ("TRASLADO_INTERNO", "TRASLADO_ENTRE"):
                 vista = "TRASLADO"
             else:
-                vista = "ENTRADA"
+                vista = "PRESTAMOS"
 
         if tipo:
             qs = qs.filter(tipo=tipo)
+        elif vista == "PRESTAMOS":
+            qs = qs.filter(tipo__in=[Movimiento.Tipo.PRESTAMO, Movimiento.Tipo.DEVOLUCION, Movimiento.Tipo.BAJA_PRESTAMO])
+        elif vista == "DOTACION":
+            qs = qs.filter(tipo=Movimiento.Tipo.SALIDA).exclude(destinatario="").exclude(destinatario__isnull=True)
         elif vista == "ENTRADA":
             qs = qs.filter(tipo=Movimiento.Tipo.ENTRADA)
         elif vista == "SALIDA":
@@ -1448,12 +1522,14 @@ class MovimientoListaView(LoginRequiredMixin, ListView):
         q = self.request.GET.get("q", "").strip()
 
         if not vista or vista == "TODOS":
-            if tipo in ("SALIDA", "PRESTAMO", "DEVOLUCION", "BAJA_PRESTAMO"):
+            if tipo in ("SALIDA", "DEVOLUCION", "BAJA_PRESTAMO"):
                 vista = "SALIDA"
+            elif tipo == "PRESTAMO":
+                vista = "PRESTAMOS"
             elif tipo in ("TRASLADO_INTERNO", "TRASLADO_ENTRE"):
                 vista = "TRASLADO"
             else:
-                vista = "ENTRADA"
+                vista = "PRESTAMOS"
 
         # Enriquecer cada movimiento con Fecha de Entrega y Fecha de Devolución cuando aplique
         for mov in context["movimientos"]:
@@ -1558,10 +1634,22 @@ class MovimientoListaView(LoginRequiredMixin, ListView):
         context["traslado_form"] = TrasladoForm(usuario=user)
         context["conteo_form"] = ConteoFisicoForm(usuario=user)
 
-        # Mapa de almacén, ubicación fija y stock disponible por producto
+        # Información de roles y almacenes para sincronización de UI
+        es_normal = getattr(user, "es_usuario_normal", False)
+        user_alms = user.get_almacenes_asignados() if es_normal else Almacen.objects.filter(activo=True, eliminado=False)
+        context["es_usuario_normal"] = es_normal
+        context["usuario_almacenes_count"] = user_alms.count() if es_normal else 999
+        primer_alm = user_alms.first() if es_normal and user_alms.count() == 1 else None
+        context["usuario_almacen_unico_id"] = str(primer_alm.id) if primer_alm else ""
+        context["usuario_almacen_unico_nombre"] = primer_alm.nombre if primer_alm else ""
+
+        # Mapa de almacén, ubicación fija y stock disponible por producto (acotado por permisos de rol)
         import json
         mapa_ubic = {}
         prods_qs = Producto.objects.filter(archivado=False).select_related("categoria__almacen_principal").prefetch_related("ubicaciones__almacen", "existencias__almacen")
+        if es_normal:
+            prods_qs = prods_qs.filter(categoria__almacen_principal__in=user_alms)
+
         for prod in prods_qs:
             ub = prod.ubicaciones.first()
             alm = ub.almacen if ub else prod.categoria.almacen_principal
@@ -1573,8 +1661,22 @@ class MovimientoListaView(LoginRequiredMixin, ListView):
                 "almacen_id": str(alm.id) if alm else "",
                 "almacen_nombre": alm.nombre if alm else "Sin almacén",
                 "stock_disponible": stock_disp,
+                "nombre_empaque": prod.nombre_empaque or "Paquete",
+                "unidades_por_empaque": prod.unidades_por_empaque or 1,
             }
         context["mapa_ubicaciones_json"] = json.dumps(mapa_ubic)
+
+        # Ubicaciones agrupadas por almacén para el selector dinámico de traslado (acotadas por permisos de rol)
+        alms_ubs = {}
+        ubs_qs = Ubicacion.objects.filter(activo=True, eliminado=False).order_by("nombre")
+        if es_normal:
+            ubs_qs = ubs_qs.filter(almacen__in=user_alms)
+        for u in ubs_qs:
+            aid = str(u.almacen_id)
+            if aid not in alms_ubs:
+                alms_ubs[aid] = []
+            alms_ubs[aid].append({"id": str(u.id), "nombre": u.nombre})
+        context["almacen_ubicaciones_json"] = json.dumps(alms_ubs)
         return context
 
 
@@ -1612,9 +1714,16 @@ class EntradaCrearView(LoginRequiredMixin, View):
                     request,
                     f"Entrada registrada: +{mov.cantidad} unid. de '{existencia.producto.codigo_interno}'. Stock actual: {existencia.stock_disponible}.",
                 )
+                if request.headers.get("x-requested-with") == "XMLHttpRequest":
+                    return JsonResponse({"success": True, "redirect_url": next_url or reverse("inventario:movimiento-lista")})
                 return redirect(next_url or "inventario:movimiento-lista")
             except Exception as exc:
                 form.add_error(None, str(exc))
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            errores = {}
+            for field, err_list in form.errors.get_json_data().items():
+                errores[field] = [e["message"] for e in err_list]
+            return JsonResponse({"success": False, "errors": errores}, status=400)
         if next_url:
             for errs in form.errors.values():
                 for e in errs:
@@ -1653,9 +1762,16 @@ class SalidaCrearView(LoginRequiredMixin, View):
                 )
                 if alerta.get("nivel"):
                     messages.warning(request, alerta["mensaje"])
+                if request.headers.get("x-requested-with") == "XMLHttpRequest":
+                    return JsonResponse({"success": True, "redirect_url": next_url or reverse("inventario:movimiento-lista")})
                 return redirect(next_url or "inventario:movimiento-lista")
             except Exception as exc:
                 form.add_error(None, str(exc))
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            errores = {}
+            for field, err_list in form.errors.get_json_data().items():
+                errores[field] = [e["message"] for e in err_list]
+            return JsonResponse({"success": False, "errors": errores}, status=400)
         if next_url:
             for errs in form.errors.values():
                 for e in errs:
@@ -1737,9 +1853,16 @@ class PrestamoCrearView(LoginRequiredMixin, View):
                 )
                 if alerta.get("nivel"):
                     messages.warning(request, alerta["mensaje"])
+                if request.headers.get("x-requested-with") == "XMLHttpRequest":
+                    return JsonResponse({"success": True, "redirect_url": next_url or reverse("inventario:movimiento-lista")})
                 return redirect(next_url or "inventario:prestamo-lista")
             except Exception as exc:
                 form.add_error(None, str(exc))
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            errores = {}
+            for field, err_list in form.errors.get_json_data().items():
+                errores[field] = [e["message"] for e in err_list]
+            return JsonResponse({"success": False, "errors": errores}, status=400)
         if next_url:
             for errs in form.errors.values():
                 for e in errs:
@@ -1778,9 +1901,16 @@ class PrestamoDevolucionView(LoginRequiredMixin, View):
                     request,
                     f"Devolución registrada: {dev.cantidad} unid. de '{p_db.producto.codigo_interno}'. Saldo pendiente: {p_db.cantidad_pendiente_devolucion} ({p_db.get_estado_display()}).",
                 )
+                if request.headers.get("x-requested-with") == "XMLHttpRequest":
+                    return JsonResponse({"success": True, "redirect_url": next_url or reverse("inventario:prestamo-lista")})
                 return redirect(next_url or "inventario:prestamo-lista")
             except Exception as exc:
                 form.add_error(None, str(exc))
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            errores = {}
+            for field, err_list in form.errors.get_json_data().items():
+                errores[field] = [e["message"] for e in err_list]
+            return JsonResponse({"success": False, "errors": errores}, status=400)
         if next_url:
             for errs in form.errors.values():
                 for e in errs:
@@ -1819,9 +1949,16 @@ class PrestamoBajaView(LoginRequiredMixin, View):
                     request,
                     f"Baja por daño/pérdida registrada: {baja.cantidad} unid. de '{p_db.producto.codigo_interno}'. Saldo pendiente: {p_db.cantidad_pendiente_devolucion}.",
                 )
+                if request.headers.get("x-requested-with") == "XMLHttpRequest":
+                    return JsonResponse({"success": True, "redirect_url": next_url or reverse("inventario:prestamo-lista")})
                 return redirect(next_url or "inventario:prestamo-lista")
             except Exception as exc:
                 form.add_error(None, str(exc))
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            errores = {}
+            for field, err_list in form.errors.get_json_data().items():
+                errores[field] = [e["message"] for e in err_list]
+            return JsonResponse({"success": False, "errors": errores}, status=400)
         if next_url:
             for errs in form.errors.values():
                 for e in errs:
@@ -1850,7 +1987,10 @@ class TrasladoCrearView(LoginRequiredMixin, View):
             alm_dest = form.cleaned_data.get("almacen_destino")
             ub_orig = form.cleaned_data.get("ubicacion_origen")
             ub_dest = form.cleaned_data.get("ubicacion_destino")
-            cant = form.cleaned_data["cantidad"]
+            cant = form.cleaned_data.get("cantidad")
+            if not cant:
+                ex_o = Existencia.objects.filter(producto=prod, almacen=alm_orig).first()
+                cant = ex_o.stock_disponible if ex_o else 0
             mot = form.cleaned_data.get("motivo", "")
             idem = request.POST.get("clave_idempotencia") or None
 
@@ -1875,13 +2015,21 @@ class TrasladoCrearView(LoginRequiredMixin, View):
                     )
                 else:
                     # Traslado interno
-                    if not ub_orig or not ub_dest:
-                        raise ValidationError("Para un traslado interno debe indicar ubicación de origen y de destino.")
+                    current_ub = prod.ubicaciones.filter(almacen=alm_orig).first()
+                    nueva_ub = ub_dest or ub_orig
+                    if not nueva_ub:
+                        raise ValidationError("Para un traslado interno debe indicar la nueva ubicación de destino.")
+                    if current_ub and current_ub.id == nueva_ub.id:
+                        raise ValidationError("La nueva ubicación debe ser distinta a la ubicación actual del producto.")
+                    origen_efectivo = current_ub or ub_orig
+                    if not origen_efectivo:
+                        raise ValidationError("Debe indicar la ubicación de origen.")
+
                     ex, mov = registrar_traslado_interno(
                         producto=prod,
                         almacen=alm_orig,
-                        ubicacion_origen=ub_orig,
-                        ubicacion_destino=ub_dest,
+                        ubicacion_origen=origen_efectivo,
+                        ubicacion_destino=nueva_ub,
                         usuario=request.user,
                         motivo=mot,
                         clave_idempotencia=idem,
@@ -1889,11 +2037,18 @@ class TrasladoCrearView(LoginRequiredMixin, View):
                     )
                     messages.success(
                         request,
-                        f"Traslado interno completado: '{prod.codigo_interno}' reubicado de '{ub_orig.nombre}' a '{ub_dest.nombre}'.",
+                        f"Traslado interno completado: '{prod.codigo_interno}' reubicado a '{nueva_ub.nombre}'.",
                     )
+                if request.headers.get("x-requested-with") == "XMLHttpRequest":
+                    return JsonResponse({"success": True, "redirect_url": next_url or reverse("inventario:movimiento-lista")})
                 return redirect(next_url or "inventario:movimiento-lista")
             except Exception as exc:
                 form.add_error(None, str(exc))
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            errores = {}
+            for field, err_list in form.errors.get_json_data().items():
+                errores[field] = [e["message"] for e in err_list]
+            return JsonResponse({"success": False, "errors": errores}, status=400)
         if next_url:
             for errs in form.errors.values():
                 for e in errs:
@@ -1938,21 +2093,31 @@ class ConteoFisicoCrearView(LoginRequiredMixin, View):
         next_url = request.POST.get("next")
         if form.is_valid():
             try:
+                mot = form.cleaned_data.get("motivo", "").strip()
+                obs = form.cleaned_data.get("observacion", "").strip()
+                motivo_completo = f"{mot} — {obs}" if obs else mot
                 conteo = registrar_conteo_fisico(
                     producto=form.cleaned_data["producto"],
                     almacen=form.cleaned_data["almacen"],
                     cantidad_contada=form.cleaned_data["cantidad_contada"],
                     usuario=request.user,
-                    motivo=form.cleaned_data.get("motivo", ""),
+                    motivo=motivo_completo,
                     ip_origen=_obtener_ip(request),
                 )
                 messages.success(
                     request,
                     f"Conteo registrado: Contado {conteo.cantidad_contada} unid. vs {conteo.stock_sistema} en sistema (Diferencia: {conteo.diferencia:+d}). Pendiente de confirmación administrativa.",
                 )
+                if request.headers.get("x-requested-with") == "XMLHttpRequest":
+                    return JsonResponse({"success": True, "redirect_url": next_url or reverse("inventario:conteo-lista")})
                 return redirect(next_url or "inventario:conteo-lista")
             except Exception as exc:
                 form.add_error(None, str(exc))
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            errores = {}
+            for field, err_list in form.errors.get_json_data().items():
+                errores[field] = [e["message"] for e in err_list]
+            return JsonResponse({"success": False, "errors": errores}, status=400)
         if next_url:
             for errs in form.errors.values():
                 for e in errs:

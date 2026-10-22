@@ -19,6 +19,7 @@ from django.utils import timezone
 from inventario.auditoria import registrar_auditoria
 from inventario.models import (
     Almacen,
+    Categoria,
     ConteoFisico,
     DevolucionPrestamo,
     Existencia,
@@ -611,9 +612,9 @@ def registrar_traslado_interno(
         except Existencia.DoesNotExist:
             raise ValidationError(f"No hay existencias de '{producto.nombre}' en {almacen.nombre}.")
 
-        # Actualiza las asignaciones físicas
-        ProductoUbicacion.objects.filter(producto=producto, ubicacion=ubicacion_origen).delete()
-        ProductoUbicacion.objects.get_or_create(producto=producto, ubicacion=ubicacion_destino)
+        # Actualiza las asignaciones físicas (un producto solo está en una única ubicación)
+        ProductoUbicacion.objects.filter(producto=producto).delete()
+        ProductoUbicacion.objects.create(producto=producto, ubicacion=ubicacion_destino)
 
         movimiento = Movimiento(
             clave_idempotencia=clave_idempotencia,
@@ -722,7 +723,8 @@ def registrar_traslado_entre_almacenes(
         existencia_destino.save()
 
         if ubicacion_destino:
-            ProductoUbicacion.objects.get_or_create(producto=producto, ubicacion=ubicacion_destino)
+            ProductoUbicacion.objects.filter(producto=producto).delete()
+            ProductoUbicacion.objects.create(producto=producto, ubicacion=ubicacion_destino)
 
         movimiento = Movimiento(
             clave_idempotencia=clave_idempotencia,

@@ -111,10 +111,11 @@
         <div style="flex: 2 1 200px; min-width: 170px; position: relative;">
             <input type="text" name="q" value="{{ q }}" class="form-control"
                    placeholder="Buscar automáticamente..."
-                   autocomplete="off" style="padding-left: 34px; height: 38px; font-size: 13px;">
+                   autocomplete="off" style="padding-left: 34px; padding-right: 32px; height: 38px; font-size: 13px;">
             <span style="position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text-faint); pointer-events: none; display: flex;">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             </span>
+            <kbd title="Presiona / o Ctrl+K para buscar" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-family: var(--font-mono, monospace); font-size: 11px; padding: 2px 6px; border-radius: 4px; background: rgba(255,255,255,0.06); color: var(--text-dim); border: 1px solid var(--border-soft); pointer-events: none; user-select: none;">/</kbd>
         </div>
 
         <!-- 2. Almacén -->
@@ -379,9 +380,9 @@
                     <div class="form-help">Almacén donde residirá el producto.</div>
                 </div>
                 <div class="form-group">
-                    <label for="id_ubicacion">Ubicación Física Única (opcional)</label>
+                    <label for="id_ubicacion">Ubicación Física Única *</label>
                     {{ producto_form.ubicacion }}
-                    <div class="form-help">Ubicación específica dentro del almacén.</div>
+                    <div class="form-help">Ubicación física obligatoria dentro del almacén.</div>
                 </div>
             </div>
 
@@ -402,7 +403,10 @@
                 <div class="form-group" id="grupoStockInicial">
                     <label for="id_stock_inicial">Stock Inicial (Unidades Base)</label>
                     {{ producto_form.stock_inicial }}
-                    <div class="form-help">Total de unidades que ingresan inicialmente. Inmutable.</div>
+                    <div class="form-help" id="ayudaStockInicialNuevo">Total de unidades que ingresan inicialmente. Inmutable.</div>
+                    <div class="form-help" id="ayudaStockInicialEdicion" style="display: none; margin-top: 6px; font-size: 0.82rem; color: #f59e0b; background: rgba(245, 158, 11, 0.1); padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(245, 158, 11, 0.25);">
+                        🔒 El stock inicial no se puede modificar desde el catálogo. Para aumentar existencias, registra una <a href="{% url 'inventario:movimiento-lista' %}?tab=ENTRADA" style="text-decoration: underline; font-weight: 600; color: #f59e0b;">Entrada de Stock</a> o un <a href="{% url 'inventario:movimiento-lista' %}?tab=CONTEOS" style="text-decoration: underline; font-weight: 600; color: #f59e0b;">Conteo Físico</a>.
+                    </div>
                 </div>
                 <div class="form-group">
                     <label for="id_stock_minimo">Stock Mínimo (Umbral Alerta)</label>
@@ -496,7 +500,7 @@ document.addEventListener("DOMContentLoaded", function() {
 
     function filtrarUbicacionesPorAlmacen(almId, ubicSeleccionada) {
         if (!selectUbic) return;
-        selectUbic.innerHTML = '<option value="">Sin ubicación física (opcional)</option>';
+        selectUbic.innerHTML = '<option value="">Selecciona una ubicación física obligatoria...</option>';
         todasUbicaciones.forEach(function(u) {
             if (!almId || String(u.almacen_id) === String(almId)) {
                 var opt = document.createElement("option");
@@ -582,6 +586,10 @@ document.addEventListener("DOMContentLoaded", function() {
                 inputStockIni.disabled = false;
                 inputStockIni.value = "0";
             }
+            var elAyudaNuevo = document.getElementById("ayudaStockInicialNuevo");
+            var elAyudaEdicion = document.getElementById("ayudaStockInicialEdicion");
+            if (elAyudaNuevo) elAyudaNuevo.style.display = "block";
+            if (elAyudaEdicion) elAyudaEdicion.style.display = "none";
             if (inputStockMin) inputStockMin.value = "0";
             if (selectAlmacen) selectAlmacen.value = "";
             filtrarCategoriasPorAlmacen("", "");
@@ -616,6 +624,10 @@ document.addEventListener("DOMContentLoaded", function() {
                 inputStockIni.value = btn.getAttribute("data-stock-inicial") || "0";
                 inputStockIni.disabled = true;
             }
+            var elAyudaNuevo = document.getElementById("ayudaStockInicialNuevo");
+            var elAyudaEdicion = document.getElementById("ayudaStockInicialEdicion");
+            if (elAyudaNuevo) elAyudaNuevo.style.display = "none";
+            if (elAyudaEdicion) elAyudaEdicion.style.display = "block";
             if (inputStockMin) inputStockMin.value = btn.getAttribute("data-stock-minimo") || "0";
             if (inputBarras) inputBarras.value = btn.getAttribute("data-codigo-barras") || "";
             if (inputEmpaque) inputEmpaque.value = btn.getAttribute("data-nombre-empaque") || "";

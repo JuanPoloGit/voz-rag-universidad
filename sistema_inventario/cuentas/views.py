@@ -7,11 +7,12 @@ from django.contrib import messages
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout, update_session_auth_hash
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.shortcuts import redirect, render
+from django.urls import reverse, reverse_lazy
 from django.views import View
 
 from inventario.auditoria import registrar_auditoria
 
-from .forms import CambiarPasswordForm, LoginForm, UsuarioForm
+from .forms import CambiarPasswordForm, LoginForm, UsuarioForm, PerfilUsuarioForm
 from .models import UsuarioAudacIA
 from .permisos import RolRequeridoMixin
 from .services import limpiar_intentos_fallidos, registrar_intento_fallido, verificar_bloqueo
@@ -50,6 +51,9 @@ class LoginView(View):
                 # Éxito: limpiar intentos fallidos y rotar sesión
                 limpiar_intentos_fallidos(user, ip)
                 auth_login(request, user)
+
+                rol_nombre = user.get_rol_display() if hasattr(user, "get_rol_display") else user.rol
+                messages.success(request, f"Hola, {user.username} ({rol_nombre}).")
 
                 # Configurar caducidad de la sesión
                 if recordar:
@@ -94,6 +98,7 @@ class CambiarPasswordView(LoginRequiredMixin, View):
 
     def post(self, request):
         form = CambiarPasswordForm(user=request.user, data=request.POST)
+        next_url = request.POST.get("next") or reverse("cuentas:perfil")
         if form.is_valid():
             nueva_password = form.cleaned_data["password_nueva"]
             request.user.set_password(nueva_password)
@@ -110,7 +115,15 @@ class CambiarPasswordView(LoginRequiredMixin, View):
             )
 
             messages.success(request, "Contraseña actualizada exitosamente.")
-            return redirect(settings.LOGIN_REDIRECT_URL)
+            if request.headers.get("x-requested-with") == "XMLHttpRequest":
+                return JsonResponse({"success": True, "redirect_url": next_url})
+            return redirect(next_url)
+
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            errores = {}
+            for field, err_list in form.errors.get_json_data().items():
+                errores[field] = [e["message"] for e in err_list]
+            return JsonResponse({"success": False, "errors": errores}, status=400)
 
         return render(request, self.template_name, {"form": form})
 
@@ -122,8 +135,15 @@ class UsuarioListView(RolRequeridoMixin, View):
     template_name = "cuentas/usuario_lista.html"
 
     def get(self, request):
-        usuarios = UsuarioAudacIA.objects.all().select_related("almacen_asignado")
-        return render(request, self.template_name, {"usuarios": usuarios})
+        qs = UsuarioAudacIA.objects.all().select_related("almacen_asignado").prefetch_related("almacenes_asignados")
+        # Excluir siempre al propio usuario logueado (que se gestiona desde Mi Perfil)
+        qs = qs.exclude(pk=request.user.pk)
+
+        # Si es Administrador: solo puede ver usuarios operativos (Rol.USUARIO) que él mismo haya creado
+        if not request.user.es_superusuario_inventario:
+            qs = qs.filter(rol=UsuarioAudacIA.Rol.USUARIO, creado_por=request.user)
+
+        return render(request, self.template_name, {"usuarios": qs})
 
 
 class UsuarioCreateView(RolRequeridoMixin, View):
@@ -139,6 +159,7 @@ class UsuarioCreateView(RolRequeridoMixin, View):
     def post(self, request):
         form = UsuarioForm(request.POST, request_user=request.user)
         if form.is_valid():
+            form.instance.creado_por = request.user
             nuevo_usuario = form.save()
 
             registrar_auditoria(
@@ -157,7 +178,15 @@ class UsuarioCreateView(RolRequeridoMixin, View):
             )
 
             messages.success(request, f"Usuario '{nuevo_usuario.username}' creado exitosamente.")
+            if request.headers.get("x-requested-with") == "XMLHttpRequest":
+                return JsonResponse({"success": True, "redirect_url": reverse("cuentas:usuario_lista")})
             return redirect("cuentas:usuario_lista")
+
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            errores = {}
+            for field, err_list in form.errors.get_json_data().items():
+                errores[field] = [e["message"] for e in err_list]
+            return JsonResponse({"success": False, "errors": errores}, status=400)
 
         return render(request, self.template_name, {"form": form, "accion": "Crear"})
 
@@ -173,12 +202,18 @@ class UsuarioUpdateView(RolRequeridoMixin, View):
         from django.core.exceptions import PermissionDenied
         self.target_user = get_object_or_404(UsuarioAudacIA, pk=pk)
 
-        # Restricción §6.2: Administradores no pueden editar al superusuario ni a otros administradores
+        # Restricción: No se puede editar al propio usuario aquí (debe ser desde Mi Perfil)
+        if self.target_user.pk == request.user.pk:
+            raise PermissionDenied("Para editar tu propia cuenta debes ingresar a Mi Perfil.")
+
+        # Restricción §6.2: Administradores solo pueden editar usuarios (rol USUARIO) creados por ellos
         if not request.user.es_superusuario_inventario:
             if self.target_user.es_superusuario_inventario:
                 raise PermissionDenied("Los administradores no pueden modificar al superusuario.")
-            if self.target_user.rol == UsuarioAudacIA.Rol.ADMINISTRADOR and self.target_user.pk != request.user.pk:
-                raise PermissionDenied("Los administradores no pueden modificar a otros administradores.")
+            if self.target_user.rol != UsuarioAudacIA.Rol.USUARIO:
+                raise PermissionDenied("Los administradores solo pueden gestionar usuarios con rol Usuario.")
+            if self.target_user.creado_por_id != request.user.id:
+                raise PermissionDenied("Los administradores solo pueden modificar los usuarios creados por ellos mismos.")
 
         return super().dispatch(request, pk, *args, **kwargs)
 
@@ -208,7 +243,15 @@ class UsuarioUpdateView(RolRequeridoMixin, View):
             )
 
             messages.success(request, f"Usuario '{usuario_actualizado.username}' actualizado.")
+            if request.headers.get("x-requested-with") == "XMLHttpRequest":
+                return JsonResponse({"success": True, "redirect_url": reverse("cuentas:usuario_lista")})
             return redirect("cuentas:usuario_lista")
+
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            errores = {}
+            for field, err_list in form.errors.get_json_data().items():
+                errores[field] = [e["message"] for e in err_list]
+            return JsonResponse({"success": False, "errors": errores}, status=400)
 
         return render(request, self.template_name, {"form": form, "accion": "Editar", "target_user": self.target_user})
 
@@ -246,4 +289,46 @@ class UsuarioEliminarLogicamenteView(RolRequeridoMixin, View):
 
         messages.success(request, f"Usuario '{target.username}' eliminado lógicamente.")
         return redirect("cuentas:usuario_lista")
+
+
+class PerfilView(LoginRequiredMixin, View):
+    """Página dedicada Mi Perfil (§6.2) con ficha de usuario y modales de acción."""
+
+    template_name = "cuentas/perfil.html"
+
+    def get(self, request):
+        password_form = CambiarPasswordForm(user=request.user)
+        return render(request, self.template_name, {"form": password_form, "user": request.user})
+
+    def post(self, request):
+        user = request.user
+        nombre = (request.POST.get("nombre_completo") or "").strip()
+        username = (request.POST.get("username") or "").strip()
+        actual = request.POST.get("password_actual")
+        nueva = request.POST.get("password_nueva")
+        confirmacion = request.POST.get("password_confirmacion")
+
+        fields = []
+        if nombre:
+            user.nombre_completo = nombre
+            fields.append("nombre_completo")
+        if username and username != user.username and user.es_superusuario_inventario:
+            user.username = username
+            fields.append("username")
+        if fields:
+            user.save(update_fields=fields)
+
+        if actual or nueva or confirmacion:
+            form = CambiarPasswordForm(user=user, data=request.POST)
+            if form.is_valid():
+                user.set_password(form.cleaned_data["password_nueva"])
+                user.save()
+                update_session_auth_hash(request, user)
+                messages.success(request, "Perfil y contraseña actualizados exitosamente.")
+            else:
+                return render(request, self.template_name, {"form": form, "user": user})
+        else:
+            messages.success(request, "Perfil actualizado exitosamente.")
+
+        return redirect("cuentas:perfil")
 

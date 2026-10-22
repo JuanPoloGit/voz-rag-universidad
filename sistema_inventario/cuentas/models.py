@@ -68,6 +68,15 @@ class UsuarioAudacIA(AbstractUser):
             "Almacenes a los que tiene acceso este usuario. Puede tener uno o varios asignados."
         ),
     )
+    creado_por = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="usuarios_creados",
+        verbose_name=_("creado por"),
+        help_text=_("Administrador o Superusuario que registró esta cuenta."),
+    )
 
     # --- Estados de cuenta (sección 6.3) ---
 

@@ -70,14 +70,14 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="{{ form.ubicacion.id_for_label }}">Ubicación física única (opcional)</label>
+                        <label for="{{ form.ubicacion.id_for_label }}">Ubicación Física Única *</label>
                         {{ form.ubicacion }}
                         {% if form.ubicacion.errors %}
                             <div class="form-error">
                                 {% for error in form.ubicacion.errors %}{{ error }}{% endfor %}
                             </div>
                         {% endif %}
-                        <div class="form-help">Ubicación física específica dentro del almacén.</div>
+                        <div class="form-help">Ubicación física obligatoria dentro del almacén.</div>
                     </div>
                 </div>
 
@@ -136,9 +136,11 @@
                         {% endif %}
                         <div class="form-help">
                             {% if object %}
-                                El stock inicial no se puede modificar tras la creación.
+                                <div style="margin-top: 4px; font-size: 0.82rem; color: #f59e0b; background: rgba(245, 158, 11, 0.1); padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(245, 158, 11, 0.25);">
+                                    🔒 El stock inicial no se puede modificar desde el catálogo. Para aumentar existencias, registra una <a href="{% url 'inventario:movimiento-lista' %}?tab=ENTRADA" style="text-decoration: underline; font-weight: 600; color: #f59e0b;">Entrada de Stock</a> o un <a href="{% url 'inventario:movimiento-lista' %}?tab=CONTEOS" style="text-decoration: underline; font-weight: 600; color: #f59e0b;">Conteo Físico</a>.
+                                </div>
                             {% else %}
-                                Genera el movimiento inicial de existencias en el almacén principal.
+                                Genera el movimiento inicial de existencias en el almacén principal. Inmutable tras la creación.
                             {% endif %}
                         </div>
                     </div>
@@ -298,7 +300,7 @@ document.addEventListener("DOMContentLoaded", function() {
     function filtrarUbicacionesPorAlmacen(almId, ubicSeleccionada) {
         if (!ubicSelect) return;
         var prevVal = ubicSeleccionada !== undefined ? ubicSeleccionada : ubicSelect.value;
-        ubicSelect.innerHTML = '<option value="">Sin ubicación física (opcional)</option>';
+        ubicSelect.innerHTML = '<option value="">Selecciona una ubicación física obligatoria...</option>';
         todasUbicaciones.forEach(function(u) {
             if (!almId || String(u.almacen_id) === String(almId)) {
                 var opt = document.createElement("option");

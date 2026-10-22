@@ -229,3 +229,25 @@ class TestCategoriaVistas(CategoriaBaseTestCase):
         # Debe re-renderizar el form con error o redirigir con mensaje
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, "requiere trasladar")
+
+    def test_recrear_categoria_eliminada_exitoso(self):
+        from inventario.servicios.datos_maestros import eliminar_categoria
+        cat_temp = crear_categoria(
+            nombre="Temporal Borrar",
+            almacen_principal=self.almacen_a,
+            usuario=self.admin,
+        )
+        eliminar_categoria(categoria=cat_temp, usuario=self.admin)
+        self.assertTrue(cat_temp.eliminado)
+
+        # Ahora intentar crearla nuevamente por POST en la vista
+        self.client.force_login(self.admin)
+        r = self.client.post(
+            reverse("inventario:categoria-crear"),
+            {"nombre": "Temporal Borrar", "almacen_principal": self.almacen_a.pk},
+        )
+        self.assertEqual(r.status_code, 302)
+        cat_temp.refresh_from_db()
+        self.assertFalse(cat_temp.eliminado)
+        self.assertTrue(cat_temp.activo)
+

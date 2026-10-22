@@ -81,20 +81,25 @@
     <!-- Botones de Filtro por Tipo de Visualización -->
     <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;">
         <div class="filter-pills" role="tablist" aria-label="Filtrar vista de movimientos">
-            <a href="{% url 'inventario:movimiento-lista' %}?vista=ENTRADA{% if q %}&q={{ q }}{% endif %}"
-               class="filter-pill {% if vista_actual == 'ENTRADA' %}active{% endif %}">
-                <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                Entradas
-            </a>
-            <a href="{% url 'inventario:movimiento-lista' %}?vista=SALIDA{% if q %}&q={{ q }}{% endif %}"
-               class="filter-pill {% if vista_actual == 'SALIDA' %}active{% endif %}">
-                <svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                Dotación
-            </a>
             <a href="{% url 'inventario:movimiento-lista' %}?vista=PRESTAMOS{% if q %}&q={{ q }}{% endif %}"
                class="filter-pill {% if vista_actual == 'PRESTAMOS' %}active{% endif %}">
                 <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                 Préstamos
+            </a>
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=DOTACION{% if q %}&q={{ q }}{% endif %}"
+               class="filter-pill {% if vista_actual == 'DOTACION' %}active{% endif %}">
+                <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                Dotación
+            </a>
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=SALIDA{% if q %}&q={{ q }}{% endif %}"
+               class="filter-pill {% if vista_actual == 'SALIDA' %}active{% endif %}">
+                <svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Salidas
+            </a>
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=ENTRADA{% if q %}&q={{ q }}{% endif %}"
+               class="filter-pill {% if vista_actual == 'ENTRADA' %}active{% endif %}">
+                <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Entradas
             </a>
             <a href="{% url 'inventario:movimiento-lista' %}?vista=TRASLADO{% if q %}&q={{ q }}{% endif %}"
                class="filter-pill {% if vista_actual == 'TRASLADO' %}active{% endif %}">
@@ -192,7 +197,7 @@
                             </td>
                             <td>
                                 {% if p.estado == 'CERRADO' %}
-                                    <span class="badge badge-ok">Cerrado ({{ p.dias_transcurridos }}d)</span>
+                                    <span class="badge badge-ok">{{ p.dias_transcurridos }}d</span>
                                 {% elif p.dias_transcurridos > 15 %}
                                     <span class="badge badge-crit">{{ p.dias_transcurridos }} días</span>
                                 {% elif p.dias_transcurridos > 7 %}
@@ -387,10 +392,11 @@
                         <th>Producto</th>
                         <th style="text-align: center;">Cant.</th>
                         <th>Almacén / Ruta</th>
-                        {% if vista_actual == 'SALIDA' %}
+                        {% if vista_actual == 'DOTACION' %}
+                            <th>Destinatario</th>
+                            <th>Motivo de Dotación</th>
+                        {% elif vista_actual == 'SALIDA' %}
                             <th>Destinatario / Motivo</th>
-                            <th>Fecha Entrega</th>
-                            <th>Fecha Devolución</th>
                         {% else %}
                             <th>Motivo / Detalle</th>
                         {% endif %}
@@ -407,7 +413,11 @@
                                 {% if mov.tipo == 'ENTRADA' %}
                                     <span class="badge badge-ok">{{ mov.get_tipo_display }}</span>
                                 {% elif mov.tipo == 'SALIDA' %}
-                                    <span class="badge badge-crit">{{ mov.get_tipo_display }}</span>
+                                    {% if vista_actual == 'DOTACION' %}
+                                        <span class="badge badge-accent">Dotación</span>
+                                    {% else %}
+                                        <span class="badge badge-crit">{{ mov.get_tipo_display }}</span>
+                                    {% endif %}
                                 {% elif mov.tipo == 'PRESTAMO' %}
                                     <span class="badge badge-purple">{{ mov.get_tipo_display }}</span>
                                 {% elif mov.tipo == 'DEVOLUCION' %}
@@ -439,26 +449,17 @@
                                     </div>
                                 {% endif %}
                             </td>
-                            {% if vista_actual == 'SALIDA' %}
+                            {% if vista_actual == 'DOTACION' %}
+                                <td style="font-size: 12px;">
+                                    <strong>{{ mov.destinatario|default:"—" }}</strong>
+                                </td>
+                                <td style="font-size: 12px;">
+                                    <span style="color: var(--text-dim);">{{ mov.motivo|default:"—"|truncatechars:40 }}</span>
+                                </td>
+                            {% elif vista_actual == 'SALIDA' %}
                                 <td style="font-size: 12px;">
                                     {% if mov.destinatario %}<strong>A: {{ mov.destinatario }}</strong><br>{% endif %}
                                     <span style="color: var(--text-dim);">{{ mov.motivo|default:"—"|truncatechars:36 }}</span>
-                                </td>
-                                <td style="white-space: nowrap; font-size: 12px;">
-                                    {% if mov.fecha_entrega_info %}
-                                        {{ mov.fecha_entrega_info|date:"d/m/Y H:i" }}
-                                    {% else %}
-                                        <span style="color: var(--text-faint);">—</span>
-                                    {% endif %}
-                                </td>
-                                <td style="white-space: nowrap; font-size: 12px;">
-                                    {% if mov.fecha_devolucion_info %}
-                                        <span style="color: var(--ok);">{{ mov.fecha_devolucion_info|date:"d/m/Y H:i" }}</span>
-                                    {% elif mov.tipo == 'PRESTAMO' %}
-                                        <span class="badge badge-warn">En curso</span>
-                                    {% else %}
-                                        <span style="color: var(--text-faint);">—</span>
-                                    {% endif %}
                                 </td>
                             {% else %}
                                 <td style="font-size: 12px;">
@@ -534,17 +535,17 @@
             1. Selecciona el tipo de operación
         </label>
         <div class="mov-type-selector">
-            <button type="button" class="mov-type-btn active" data-target-form="secFormEntrada">
-                <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                Entrada
+            <button type="button" class="mov-type-btn" data-target-form="secFormPrestamo">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                Préstamo
             </button>
             <button type="button" class="mov-type-btn" data-target-form="secFormSalida">
                 <svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 Dotación
             </button>
-            <button type="button" class="mov-type-btn" data-target-form="secFormPrestamo">
-                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                Préstamo
+            <button type="button" class="mov-type-btn active" data-target-form="secFormEntrada">
+                <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Entrada
             </button>
             <button type="button" class="mov-type-btn" data-target-form="secFormTraslado">
                 <svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
@@ -566,17 +567,14 @@
                 <label>Producto *</label>
                 {{ entrada_form.producto }}
             </div>
-            {% if not user.es_usuario_normal %}
             <div class="form-group">
-                <label>Almacén Destino *</label>
-                {{ entrada_form.almacen }}
-                <div id="helpAlmacenEntrada" class="form-help" style="display: none; color: var(--accent); margin-top: 4px;">
-                    Almacén fijo asignado al producto: <strong id="lblAlmacenEntrada"></strong>
+                <label>Almacén Destino</label>
+                <div id="dispAlmacenEntrada" class="form-control" style="background: rgba(255,255,255,0.03); opacity: 0.95; display: flex; align-items: center; gap: 7px; min-height: 40px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent); flex-shrink: 0;"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                    <span id="txtAlmacenEntrada" style="color: var(--text-muted); font-size: 13px;">{% if es_usuario_normal and usuario_almacenes_count == 1 %}<strong style="color: var(--text);">{{ usuario_almacen_unico_nombre }}</strong>{% else %}Selecciona un producto para cargar su almacén{% endif %}</span>
                 </div>
+                <div style="display: none;">{{ entrada_form.almacen }}</div>
             </div>
-            {% else %}
-                {{ entrada_form.almacen }}
-            {% endif %}
             <div class="form-grid-2">
                 <div class="form-group">
                     <label>Cantidad (Unidades Base) *</label>
@@ -591,19 +589,21 @@
                     <input type="hidden" name="ubicacion" id="inputUbicacionEntrada" value="">
                 </div>
             </div>
-            <div class="form-group">
+            <div class="form-group" id="containerEmpaqueEntrada">
                 <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer;">
                     {{ entrada_form.es_empaque }}
-                    <span>¿Ingresar por paquetes / empaques?</span>
+                    <span id="lblEmpaqueTexto">¿Ingresar por paquetes / empaques?</span>
                 </label>
+                <div id="ayudaEmpaqueTexto" class="form-help" style="display: none; margin-top: 4px; font-size: 12px; color: var(--text-dim);"></div>
             </div>
             <div class="form-group" id="boxEmpaquesModal" style="display: none;">
                 <label>Cantidad de Empaques</label>
                 {{ entrada_form.cantidad_empaques }}
+                <div id="dispTotalEmpaqueCalculado" class="form-help" style="margin-top: 4px; font-weight: 600; color: var(--ok);"></div>
             </div>
             <div class="form-grid-2">
                 <div class="form-group" style="margin-bottom: 0;">
-                    <label>Motivo de la Entrada</label>
+                    <label>Motivo de la Entrada *</label>
                     {{ entrada_form.motivo }}
                 </div>
                 <div class="form-group" style="margin-bottom: 0;">
@@ -620,54 +620,52 @@
         <!-- 2. FORMULARIO SALIDA (DOTACIÓN / CONSUMO) -->
         <form method="post" action="{% url 'inventario:movimiento-salida' %}" id="secFormSalida" class="mov-dynamic-form" style="display: none;">
             {% csrf_token %}
-            <input type="hidden" name="next" value="{% url 'inventario:movimiento-lista' %}?vista=SALIDA">
+            <input type="hidden" name="next" value="{% url 'inventario:movimiento-lista' %}?vista=DOTACION">
             <input type="hidden" name="clave_idempotencia" class="idem-token-input">
 
             <div class="form-group">
                 <label>Producto a Entregar en Dotación *</label>
                 {{ salida_form.producto }}
             </div>
-            {% if not user.es_usuario_normal %}
-            <div class="form-group">
-                <label>Almacén Origen *</label>
-                {{ salida_form.almacen }}
-                <div id="helpAlmacenSalida" class="form-help" style="display: none; color: var(--accent); margin-top: 4px;">
-                    Almacén de origen: <strong id="lblAlmacenSalida"></strong>
-                </div>
+            <div id="alertSinStockSalida" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid var(--accent-danger); color: #fca5a5; padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 14px;">
+                ⚠️ Este producto no tiene existencias disponibles (Stock: 0). No es posible realizar dotaciones.
             </div>
-            {% else %}
-                {{ salida_form.almacen }}
-            {% endif %}
-            <div class="form-grid-2">
+
+            <div id="bodyCamposSalida" style="transition: opacity 0.2s ease;">
                 <div class="form-group">
-                    <label>Cantidad a Entregar *</label>
-                    {{ salida_form.cantidad }}
-                    <div id="dispStockSalida" class="form-help" style="margin-top: 4px; font-weight: 500;">
-                        Stock disponible: <strong id="valStockSalida" style="color: var(--text);">—</strong>
+                    <label>Almacén Origen</label>
+                    <div id="dispAlmacenSalida" class="form-control" style="background: rgba(255,255,255,0.03); opacity: 0.95; display: flex; align-items: center; gap: 7px; min-height: 40px;">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent); flex-shrink: 0;"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                        <span id="txtAlmacenSalida" style="color: var(--text-muted); font-size: 13px;">{% if es_usuario_normal and usuario_almacenes_count == 1 %}<strong style="color: var(--text);">{{ usuario_almacen_unico_nombre }}</strong>{% else %}Selecciona un producto para cargar su almacén{% endif %}</span>
+                    </div>
+                    <div style="display: none;">{{ salida_form.almacen }}</div>
+                </div>
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label>Cantidad a Entregar *</label>
+                        {{ salida_form.cantidad }}
+                        <div id="dispStockSalida" class="form-help" style="margin-top: 4px; font-weight: 500;">
+                            Stock disponible: <strong id="valStockSalida" style="color: var(--text);">—</strong>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Destinatario / Receptor de la Dotación *</label>
+                        {{ salida_form.destinatario }}
                     </div>
                 </div>
-                <div class="form-group">
-                    <label>Destinatario / Receptor de la Dotación *</label>
-                    {{ salida_form.destinatario }}
-                </div>
-            </div>
-            <div class="form-grid-2">
                 <div class="form-group">
                     <label>Motivo de la Dotación *</label>
                     {{ salida_form.motivo }}
                 </div>
-                <div class="form-group">
-                    <label>Ubicación de Origen (opcional)</label>
-                    {{ salida_form.ubicacion }}
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label>Observación Adicional</label>
+                    {{ salida_form.observacion }}
                 </div>
             </div>
-            <div class="form-group" style="margin-bottom: 0;">
-                <label>Observación Adicional</label>
-                {{ salida_form.observacion }}
-            </div>
+
             <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-soft);">
                 <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalNuevoMovimiento')">Cancelar</button>
-                <button type="submit" class="btn btn-primary">Confirmar Dotación</button>
+                <button type="submit" class="btn btn-primary" id="btnSubmitSalida">Confirmar Dotación</button>
             </div>
         </form>
 
@@ -681,47 +679,45 @@
                 <label>Producto a Entregar en Préstamo *</label>
                 {{ prestamo_form.producto }}
             </div>
-            {% if not user.es_usuario_normal %}
-            <div class="form-group">
-                <label>Almacén Origen *</label>
-                {{ prestamo_form.almacen }}
-                <div id="helpAlmacenPrestamo" class="form-help" style="display: none; color: var(--accent); margin-top: 4px;">
-                    Almacén de origen: <strong id="lblAlmacenPrestamo"></strong>
-                </div>
+            <div id="alertSinStockPrestamo" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid var(--accent-danger); color: #fca5a5; padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 14px;">
+                ⚠️ Este producto no tiene existencias disponibles (Stock: 0). No es posible entregarlo en préstamo.
             </div>
-            {% else %}
-                {{ prestamo_form.almacen }}
-            {% endif %}
-            <div class="form-grid-2">
+
+            <div id="bodyCamposPrestamo" style="transition: opacity 0.2s ease;">
                 <div class="form-group">
-                    <label>Cantidad a Prestar *</label>
-                    {{ prestamo_form.cantidad }}
-                    <div id="dispStockPrestamo" class="form-help" style="margin-top: 4px; font-weight: 500;">
-                        Stock disponible: <strong id="valStockPrestamo" style="color: var(--text);">—</strong>
+                    <label>Almacén Origen</label>
+                    <div id="dispAlmacenPrestamo" class="form-control" style="background: rgba(255,255,255,0.03); opacity: 0.95; display: flex; align-items: center; gap: 7px; min-height: 40px;">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent); flex-shrink: 0;"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                        <span id="txtAlmacenPrestamo" style="color: var(--text-muted); font-size: 13px;">{% if es_usuario_normal and usuario_almacenes_count == 1 %}<strong style="color: var(--text);">{{ usuario_almacen_unico_nombre }}</strong>{% else %}Selecciona un producto para cargar su almacén{% endif %}</span>
+                    </div>
+                    <div style="display: none;">{{ prestamo_form.almacen }}</div>
+                </div>
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label>Cantidad a Prestar *</label>
+                        {{ prestamo_form.cantidad }}
+                        <div id="dispStockPrestamo" class="form-help" style="margin-top: 4px; font-weight: 500;">
+                            Stock disponible: <strong id="valStockPrestamo" style="color: var(--text);">—</strong>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Destinatario / Responsable *</label>
+                        {{ prestamo_form.destinatario }}
                     </div>
                 </div>
                 <div class="form-group">
-                    <label>Destinatario / Responsable *</label>
-                    {{ prestamo_form.destinatario }}
-                </div>
-            </div>
-            <div class="form-grid-2">
-                <div class="form-group">
-                    <label>Motivo del Préstamo</label>
+                    <label>Motivo del Préstamo *</label>
                     {{ prestamo_form.motivo }}
                 </div>
-                <div class="form-group">
-                    <label>Ubicación Origen (opcional)</label>
-                    {{ prestamo_form.ubicacion }}
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label>Observación</label>
+                    {{ prestamo_form.observacion }}
                 </div>
             </div>
-            <div class="form-group" style="margin-bottom: 0;">
-                <label>Observación</label>
-                {{ prestamo_form.observacion }}
-            </div>
+
             <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-soft);">
                 <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalNuevoMovimiento')">Cancelar</button>
-                <button type="submit" class="btn btn-primary">Entregar Préstamo</button>
+                <button type="submit" class="btn btn-primary" id="btnSubmitPrestamo">Entregar Préstamo</button>
             </div>
         </form>
 
@@ -735,43 +731,60 @@
                 <label>Producto a Trasladar *</label>
                 {{ traslado_form.producto }}
             </div>
-            <div class="form-grid-2">
-                {% if not user.es_usuario_normal %}
-                <div class="form-group">
-                    <label>Almacén Origen *</label>
-                    {{ traslado_form.almacen_origen }}
-                </div>
-                {% else %}
-                    {{ traslado_form.almacen_origen }}
-                {% endif %}
-                <div class="form-group">
-                    <label>Almacén Destino (opcional si es interno)</label>
-                    {{ traslado_form.almacen_destino }}
-                </div>
+            <div id="alertSinStockTraslado" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid var(--accent-danger); color: #fca5a5; padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 14px;">
+                ⚠️ Este producto no tiene existencias disponibles (Stock: 0). No es posible realizar traslados.
             </div>
-            <div class="form-grid-2">
-                <div class="form-group">
-                    <label>Ubicación Origen</label>
-                    {{ traslado_form.ubicacion_origen }}
-                </div>
-                <div class="form-group">
-                    <label>Ubicación Destino</label>
-                    {{ traslado_form.ubicacion_destino }}
-                </div>
+
+            {% if es_usuario_normal and usuario_almacenes_count <= 1 %}
+            <div style="background: rgba(59, 130, 246, 0.12); border: 1px solid var(--accent); color: var(--accent); padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 14px; display: flex; align-items: center; gap: 8px;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                <span>Solo tienes 1 almacén asignado (<strong>{{ usuario_almacen_unico_nombre }}</strong>). Puedes realizar traslados internos seleccionando una nueva ubicación de origen dentro de este almacén.</span>
             </div>
-            <div class="form-grid-2">
-                <div class="form-group" style="margin-bottom: 0;">
-                    <label>Cantidad *</label>
-                    {{ traslado_form.cantidad }}
+            {% endif %}
+
+            <div id="bodyCamposTraslado" style="transition: opacity 0.2s ease;">
+                <div class="form-grid-2">
+                    <div class="form-group" style="{% if es_usuario_normal and usuario_almacenes_count <= 1 %}grid-column: span 2;{% endif %}">
+                        <label>Almacén Origen</label>
+                        <div id="dispAlmacenTraslado" class="form-control" style="background: rgba(255,255,255,0.03); opacity: 0.95; display: flex; align-items: center; gap: 7px; min-height: 40px;">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent); flex-shrink: 0;"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                            <span id="txtAlmacenTraslado" style="color: var(--text-muted); font-size: 13px;">{% if es_usuario_normal and usuario_almacenes_count == 1 %}<strong style="color: var(--text);">{{ usuario_almacen_unico_nombre }}</strong>{% else %}Selecciona un producto primero{% endif %}</span>
+                        </div>
+                        <div style="display: none;">{{ traslado_form.almacen_origen }}</div>
+                    </div>
+                    {% if not es_usuario_normal or usuario_almacenes_count > 1 %}
+                    <div class="form-group" id="grpAlmDestinoTraslado">
+                        <label id="lblAlmDestinoTraslado">Almacén Destino *</label>
+                        {{ traslado_form.almacen_destino }}
+                        <div id="ayudaAlmDestino" class="form-help" style="font-size: 12px; margin-top: 4px;">Almacén hacia donde se trasladará el producto</div>
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="form-grid-2">
+                    <div class="form-group" id="grpUbOrigenTraslado" style="{% if es_usuario_normal and usuario_almacenes_count <= 1 %}grid-column: span 2;{% endif %}">
+                        <label id="lblUbOrigenTraslado">{% if es_usuario_normal and usuario_almacenes_count <= 1 %}Nueva Ubicación Física en Almacén *{% else %}Ubicación Origen (o nueva interna){% endif %}</label>
+                        {{ traslado_form.ubicacion_origen }}
+                        <div class="form-help" style="font-size: 12px; margin-top: 4px;">{% if es_usuario_normal and usuario_almacenes_count <= 1 %}Selecciona la nueva ubicación física de destino dentro de tu almacén.{% else %}Cambia este valor si solo deseas moverlo dentro del mismo almacén.{% endif %}</div>
+                    </div>
+                    {% if not es_usuario_normal or usuario_almacenes_count > 1 %}
+                    <div class="form-group" id="grpUbDestinoTraslado">
+                        <label id="lblUbDestinoTraslado">Ubicación Destino *</label>
+                        {{ traslado_form.ubicacion_destino }}
+                    </div>
+                    {% endif %}
                 </div>
                 <div class="form-group" style="margin-bottom: 0;">
-                    <label>Motivo</label>
+                    <label>Motivo del Traslado *</label>
                     {{ traslado_form.motivo }}
+                    <div id="dispStockTraslado" class="form-help" style="margin-top: 4px; font-weight: 500;">
+                        Stock a transferir: <strong id="valStockTraslado" style="color: var(--text);">—</strong> (se traslada el total disponible)
+                    </div>
                 </div>
             </div>
+
             <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-soft);">
                 <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalNuevoMovimiento')">Cancelar</button>
-                <button type="submit" class="btn btn-primary">Confirmar Traslado</button>
+                <button type="submit" class="btn btn-primary" id="btnSubmitTraslado" disabled>Confirmar Traslado</button>
             </div>
         </form>
 
@@ -784,27 +797,31 @@
                 <label>Producto Contado *</label>
                 {{ conteo_form.producto }}
             </div>
-            {% if not user.es_usuario_normal %}
             <div class="form-group">
-                <label>Almacén *</label>
-                {{ conteo_form.almacen }}
+                <label>Almacén</label>
+                <div id="dispAlmacenConteo" class="form-control" style="background: rgba(255,255,255,0.03); opacity: 0.95; display: flex; align-items: center; gap: 7px; min-height: 40px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent); flex-shrink: 0;"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                    <span id="txtAlmacenConteo" style="color: var(--text-muted); font-size: 13px;">{% if es_usuario_normal and usuario_almacenes_count == 1 %}<strong style="color: var(--text);">{{ usuario_almacen_unico_nombre }}</strong>{% else %}Selecciona un producto para cargar su almacén{% endif %}</span>
+                </div>
+                <div style="display: none;">{{ conteo_form.almacen }}</div>
             </div>
-            {% else %}
-                {{ conteo_form.almacen }}
-            {% endif %}
             <div class="form-grid-2">
-                <div class="form-group" style="margin-bottom: 0;">
+                <div class="form-group">
                     <label>Cantidad Física Contada *</label>
                     {{ conteo_form.cantidad_contada }}
                 </div>
-                <div class="form-group" style="margin-bottom: 0;">
-                    <label>Motivo / Observaciones</label>
+                <div class="form-group">
+                    <label>Motivo del Conteo *</label>
                     {{ conteo_form.motivo }}
                 </div>
             </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Observaciones (opcional)</label>
+                {{ conteo_form.observacion }}
+            </div>
             <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-soft);">
                 <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalNuevoMovimiento')">Cancelar</button>
-                <button type="submit" class="btn btn-primary">Registrar Conteo</button>
+                <button type="submit" class="btn btn-primary" id="btnSubmitConteo">Registrar Conteo</button>
             </div>
         </form>
     </div>
@@ -822,6 +839,7 @@
         </div>
         <div class="app-modal-body">
             <p id="infoPrestamoDevolver" style="font-size: 13px; color: var(--text-dim); margin-bottom: 14px;"></p>
+            <div id="warnMaxDevolucion" style="display: none; background: rgba(245, 158, 11, 0.15); border: 1px solid var(--accent-warning); color: #fcd34d; padding: 8px 12px; border-radius: 6px; font-size: 12px; margin-bottom: 12px;"></div>
             <div class="form-group">
                 <label>Cantidad a Devolver *</label>
                 <input type="number" name="cantidad" id="inputCantDevolver" class="form-control" min="1" required>
@@ -850,6 +868,7 @@
         </div>
         <div class="app-modal-body">
             <p id="infoPrestamoBaja" style="font-size: 13px; color: var(--crit); margin-bottom: 14px;"></p>
+            <div id="warnMaxBaja" style="display: none; background: rgba(245, 158, 11, 0.15); border: 1px solid var(--accent-warning); color: #fcd34d; padding: 8px 12px; border-radius: 6px; font-size: 12px; margin-bottom: 12px;"></div>
             <div class="form-group">
                 <label>Cantidad Dañada / Perdida *</label>
                 <input type="number" name="cantidad" id="inputCantBaja" class="form-control" min="1" required>
@@ -900,7 +919,7 @@ document.addEventListener("DOMContentLoaded", function() {
     var btnAbrir = document.getElementById("btnAbrirNuevoMovimiento");
     if (btnAbrir) {
         btnAbrir.addEventListener("click", function() {
-            if (vistaActual === "SALIDA") {
+            if (vistaActual === "SALIDA" || vistaActual === "DOTACION") {
                 activarFormularioTipo("secFormSalida");
             } else if (vistaActual === "PRESTAMOS") {
                 activarFormularioTipo("secFormPrestamo");
@@ -935,7 +954,26 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     });
 
-    // Modal Devolución de Préstamo
+    // Modal Devolución de Préstamo (Punto 17)
+    var inpCantDevolver = document.getElementById("inputCantDevolver");
+    var warnMaxDevolucion = document.getElementById("warnMaxDevolucion");
+
+    if (inpCantDevolver) {
+        inpCantDevolver.addEventListener("input", function() {
+            var maxPend = parseInt(inpCantDevolver.max, 10);
+            var val = parseInt(inpCantDevolver.value, 10);
+            if (!isNaN(maxPend) && !isNaN(val) && val > maxPend) {
+                inpCantDevolver.value = maxPend;
+                if (warnMaxDevolucion) {
+                    warnMaxDevolucion.textContent = "Se ajustó automáticamente al saldo máximo pendiente (" + maxPend + " unid.).";
+                    warnMaxDevolucion.style.display = "block";
+                }
+            } else {
+                if (warnMaxDevolucion) warnMaxDevolucion.style.display = "none";
+            }
+        });
+    }
+
     document.querySelectorAll(".btn-abrir-devolucion").forEach(function(btn) {
         btn.addEventListener("click", function() {
             var form = document.getElementById("formDevolucionModal");
@@ -944,23 +982,56 @@ document.addEventListener("DOMContentLoaded", function() {
             var pend = btn.getAttribute("data-pendiente");
             document.getElementById("infoPrestamoDevolver").textContent =
                 "Artículo: " + btn.getAttribute("data-producto") + " · Responsable: " + btn.getAttribute("data-destinatario") + " (Pendiente: " + pend + " unid.)";
-            var inpCant = document.getElementById("inputCantDevolver");
-            inpCant.max = pend;
-            inpCant.value = pend;
+            if (warnMaxDevolucion) warnMaxDevolucion.style.display = "none";
+            if (inpCantDevolver) {
+                inpCantDevolver.max = pend;
+                inpCantDevolver.value = pend;
+            }
             openAppModal("modalDevolucionPrestamo");
         });
     });
 
-    // Ubicación fija no editable y almacén sincronizado en entradas, salidas y préstamos
+    // Ubicación fija no editable y almacén sincronizado en entradas, salidas, préstamos y traslados
     var mapaUbicacionesStock = {{ mapa_ubicaciones_json|default:'{}'|safe }};
+    var almacenUbicacionesMap = {{ almacen_ubicaciones_json|default:'{}'|safe }};
+    var esUsuarioNormal = {{ es_usuario_normal|yesno:"true,false" }};
+    var usuarioAlmacenesCount = {{ usuario_almacenes_count|default:999 }};
+    var usuarioAlmacenUnicoId = "{{ usuario_almacen_unico_id|default:'' }}";
+    var usuarioAlmacenUnicoNombre = "{{ usuario_almacen_unico_nombre|default:'' }}";
 
     // 1. Sincronización Entrada
     var selectProductoEntrada = document.querySelector('#secFormEntrada select[name="producto"]');
     var txtUbicEntrada = document.getElementById("txtUbicacionEntrada");
     var inputUbicEntrada = document.getElementById("inputUbicacionEntrada");
-    var selectAlmEntrada = document.querySelector('#secFormEntrada select[name="almacen"]');
-    var helpAlmEntrada = document.getElementById("helpAlmacenEntrada");
-    var lblAlmEntrada = document.getElementById("lblAlmacenEntrada");
+    var inputAlmEntrada = document.querySelector('#secFormEntrada [name="almacen"]');
+    var txtAlmacenEntrada = document.getElementById("txtAlmacenEntrada");
+    var chkEmp = document.querySelector('#secFormEntrada [name="es_empaque"]');
+    var boxEmp = document.getElementById("boxEmpaquesModal");
+    var lblEmpaqueTexto = document.getElementById("lblEmpaqueTexto");
+    var ayudaEmpaqueTexto = document.getElementById("ayudaEmpaqueTexto");
+    var inpCantEmpaques = document.querySelector('#secFormEntrada [name="cantidad_empaques"]');
+    var dispTotalEmpaque = document.getElementById("dispTotalEmpaqueCalculado");
+
+    function calcularTotalEmpaques() {
+        if (!inpCantEmpaques || !dispTotalEmpaque || !selectProductoEntrada) return;
+        var info = mapaUbicacionesStock[String(selectProductoEntrada.value)];
+        if (info && info.unidades_por_empaque && info.unidades_por_empaque > 1) {
+            var factor = parseInt(info.unidades_por_empaque, 10);
+            var cant = parseInt(inpCantEmpaques.value, 10) || 0;
+            if (cant > 0) {
+                dispTotalEmpaque.textContent = "= " + (cant * factor) + " unidades base que ingresarán al stock.";
+                dispTotalEmpaque.style.display = "block";
+            } else {
+                dispTotalEmpaque.style.display = "none";
+            }
+        } else {
+            dispTotalEmpaque.style.display = "none";
+        }
+    }
+
+    if (inpCantEmpaques) {
+        inpCantEmpaques.addEventListener("input", calcularTotalEmpaques);
+    }
 
     function actualizarProductoEntrada(prodId) {
         if (!txtUbicEntrada || !inputUbicEntrada) return;
@@ -973,20 +1044,50 @@ document.addEventListener("DOMContentLoaded", function() {
             txtUbicEntrada.innerHTML = '<span style="color: var(--text-muted); font-style: italic;">Sin ubicación física asignada</span>';
         }
 
-        if (info && info.almacen_id && selectAlmEntrada) {
-            selectAlmEntrada.value = info.almacen_id;
-            selectAlmEntrada.style.pointerEvents = "none";
-            selectAlmEntrada.style.opacity = "0.85";
-            selectAlmEntrada.tabIndex = -1;
-            if (helpAlmEntrada && lblAlmEntrada) {
-                lblAlmEntrada.textContent = info.almacen_nombre;
-                helpAlmEntrada.style.display = "block";
+        if (info && info.almacen_id) {
+            if (inputAlmEntrada) inputAlmEntrada.value = info.almacen_id;
+            if (txtAlmacenEntrada) {
+                txtAlmacenEntrada.innerHTML = '<strong style="color: var(--text);">' + info.almacen_nombre + '</strong>';
             }
-        } else if (selectAlmEntrada) {
-            selectAlmEntrada.style.pointerEvents = "";
-            selectAlmEntrada.style.opacity = "";
-            selectAlmEntrada.tabIndex = 0;
-            if (helpAlmEntrada) helpAlmEntrada.style.display = "none";
+        } else if (usuarioAlmacenUnicoNombre) {
+            if (inputAlmEntrada && usuarioAlmacenUnicoId) inputAlmEntrada.value = usuarioAlmacenUnicoId;
+            if (txtAlmacenEntrada) {
+                txtAlmacenEntrada.innerHTML = '<strong style="color: var(--text);">' + usuarioAlmacenUnicoNombre + '</strong>';
+            }
+        } else {
+            if (txtAlmacenEntrada) txtAlmacenEntrada.textContent = "Selecciona un producto para cargar su almacén";
+        }
+
+        // Validación de empaque (Punto 10)
+        if (chkEmp) {
+            var containerEmp = document.getElementById("containerEmpaqueEntrada");
+            if (info && info.unidades_por_empaque && info.unidades_por_empaque > 1) {
+                chkEmp.disabled = false;
+                if (containerEmp) {
+                    containerEmp.style.opacity = "1";
+                    containerEmp.style.pointerEvents = "auto";
+                }
+                if (lblEmpaqueTexto) {
+                    lblEmpaqueTexto.textContent = "¿Ingresar por paquetes / empaques? (" + info.nombre_empaque + " x " + info.unidades_por_empaque + " unid.)";
+                }
+                if (ayudaEmpaqueTexto) ayudaEmpaqueTexto.style.display = "none";
+            } else {
+                chkEmp.checked = false;
+                chkEmp.disabled = true;
+                if (containerEmp) {
+                    containerEmp.style.opacity = "0.6";
+                    containerEmp.style.pointerEvents = "none";
+                }
+                if (lblEmpaqueTexto) {
+                    lblEmpaqueTexto.textContent = "¿Ingresar por paquetes / empaques?";
+                }
+                if (ayudaEmpaqueTexto) {
+                    ayudaEmpaqueTexto.textContent = "Este artículo no tiene empaques configurados en el catálogo.";
+                    ayudaEmpaqueTexto.style.display = "block";
+                }
+                if (boxEmp) boxEmp.style.display = "none";
+            }
+            calcularTotalEmpaques();
         }
     }
 
@@ -999,40 +1100,59 @@ document.addEventListener("DOMContentLoaded", function() {
         }
     }
 
-    // 2. Sincronización Salida (Dotación)
+    // 2. Sincronización Salida (Dotación) con validación de Stock 0 (Puntos 5 y 8)
     var selectProductoSalida = document.querySelector('#secFormSalida select[name="producto"]');
     var inputCantSalida = document.querySelector('#secFormSalida input[name="cantidad"]');
     var valStockSalida = document.getElementById("valStockSalida");
-    var selectAlmSalida = document.querySelector('#secFormSalida select[name="almacen"]');
-    var helpAlmSalida = document.getElementById("helpAlmacenSalida");
-    var lblAlmSalida = document.getElementById("lblAlmacenSalida");
+    var inputAlmSalida = document.querySelector('#secFormSalida [name="almacen"]');
+    var txtAlmacenSalida = document.getElementById("txtAlmacenSalida");
+    var alertSinStockSalida = document.getElementById("alertSinStockSalida");
+    var btnSubmitSalida = document.getElementById("btnSubmitSalida");
+    var bodyCamposSalida = document.getElementById("bodyCamposSalida");
 
     function actualizarProductoSalida(prodId) {
         var info = mapaUbicacionesStock[String(prodId)];
         if (info) {
-            if (info.almacen_id && selectAlmSalida) {
-                selectAlmSalida.value = info.almacen_id;
-                selectAlmSalida.style.pointerEvents = "none";
-                selectAlmSalida.style.opacity = "0.85";
-                selectAlmSalida.tabIndex = -1;
-                if (helpAlmSalida && lblAlmSalida) {
-                    lblAlmSalida.textContent = info.almacen_nombre;
-                    helpAlmSalida.style.display = "block";
-                }
+            var sinStock = info.stock_disponible <= 0;
+            if (alertSinStockSalida) alertSinStockSalida.style.display = sinStock ? "block" : "none";
+            if (btnSubmitSalida) btnSubmitSalida.disabled = sinStock;
+            if (bodyCamposSalida) {
+                bodyCamposSalida.style.opacity = sinStock ? "0.35" : "1";
+                bodyCamposSalida.style.pointerEvents = sinStock ? "none" : "auto";
+                bodyCamposSalida.style.filter = sinStock ? "grayscale(0.8)" : "none";
             }
             if (inputCantSalida) {
+                inputCantSalida.disabled = sinStock;
                 inputCantSalida.max = info.stock_disponible;
-                if (valStockSalida) {
-                    valStockSalida.textContent = info.stock_disponible + " unid.";
-                    valStockSalida.style.color = info.stock_disponible > 0 ? "var(--ok)" : "var(--crit)";
+                if (sinStock) inputCantSalida.value = 0;
+            }
+
+            if (info.almacen_id) {
+                if (inputAlmSalida) inputAlmSalida.value = info.almacen_id;
+                if (txtAlmacenSalida) {
+                    txtAlmacenSalida.innerHTML = '<strong style="color: var(--text);">' + info.almacen_nombre + '</strong>';
                 }
             }
+            if (valStockSalida) {
+                valStockSalida.textContent = info.stock_disponible + " unid.";
+                valStockSalida.style.color = info.stock_disponible > 0 ? "var(--ok)" : "var(--crit)";
+            }
         } else {
-            if (selectAlmSalida) {
-                selectAlmSalida.style.pointerEvents = "";
-                selectAlmSalida.style.opacity = "";
-                selectAlmSalida.tabIndex = 0;
-                if (helpAlmSalida) helpAlmSalida.style.display = "none";
+            if (alertSinStockSalida) alertSinStockSalida.style.display = "none";
+            if (btnSubmitSalida) btnSubmitSalida.disabled = false;
+            if (bodyCamposSalida) {
+                bodyCamposSalida.style.opacity = "1";
+                bodyCamposSalida.style.pointerEvents = "auto";
+                bodyCamposSalida.style.filter = "none";
+            }
+            if (inputCantSalida) inputCantSalida.disabled = false;
+            if (txtAlmacenSalida) {
+                if (usuarioAlmacenesCount === 1 && usuarioAlmacenUnicoNombre) {
+                    txtAlmacenSalida.innerHTML = '<strong style="color: var(--text);">' + usuarioAlmacenUnicoNombre + '</strong>';
+                    if (inputAlmSalida && usuarioAlmacenUnicoId) inputAlmSalida.value = usuarioAlmacenUnicoId;
+                } else {
+                    txtAlmacenSalida.textContent = "Selecciona un producto para cargar su almacén";
+                }
             }
             if (valStockSalida) {
                 valStockSalida.textContent = "—";
@@ -1050,40 +1170,59 @@ document.addEventListener("DOMContentLoaded", function() {
         }
     }
 
-    // 3. Sincronización Préstamo
+    // 3. Sincronización Préstamo con validación de Stock 0 (Puntos 5 y 8)
     var selectProductoPrestamo = document.querySelector('#secFormPrestamo select[name="producto"]');
     var inputCantPrestamo = document.querySelector('#secFormPrestamo input[name="cantidad"]');
     var valStockPrestamo = document.getElementById("valStockPrestamo");
-    var selectAlmPrestamo = document.querySelector('#secFormPrestamo select[name="almacen"]');
-    var helpAlmPrestamo = document.getElementById("helpAlmacenPrestamo");
-    var lblAlmPrestamo = document.getElementById("lblAlmacenPrestamo");
+    var inputAlmPrestamo = document.querySelector('#secFormPrestamo [name="almacen"]');
+    var txtAlmacenPrestamo = document.getElementById("txtAlmacenPrestamo");
+    var alertSinStockPrestamo = document.getElementById("alertSinStockPrestamo");
+    var btnSubmitPrestamo = document.getElementById("btnSubmitPrestamo");
+    var bodyCamposPrestamo = document.getElementById("bodyCamposPrestamo");
 
     function actualizarProductoPrestamo(prodId) {
         var info = mapaUbicacionesStock[String(prodId)];
         if (info) {
-            if (info.almacen_id && selectAlmPrestamo) {
-                selectAlmPrestamo.value = info.almacen_id;
-                selectAlmPrestamo.style.pointerEvents = "none";
-                selectAlmPrestamo.style.opacity = "0.85";
-                selectAlmPrestamo.tabIndex = -1;
-                if (helpAlmPrestamo && lblAlmPrestamo) {
-                    lblAlmPrestamo.textContent = info.almacen_nombre;
-                    helpAlmPrestamo.style.display = "block";
-                }
+            var sinStock = info.stock_disponible <= 0;
+            if (alertSinStockPrestamo) alertSinStockPrestamo.style.display = sinStock ? "block" : "none";
+            if (btnSubmitPrestamo) btnSubmitPrestamo.disabled = sinStock;
+            if (bodyCamposPrestamo) {
+                bodyCamposPrestamo.style.opacity = sinStock ? "0.35" : "1";
+                bodyCamposPrestamo.style.pointerEvents = sinStock ? "none" : "auto";
+                bodyCamposPrestamo.style.filter = sinStock ? "grayscale(0.8)" : "none";
             }
             if (inputCantPrestamo) {
+                inputCantPrestamo.disabled = sinStock;
                 inputCantPrestamo.max = info.stock_disponible;
-                if (valStockPrestamo) {
-                    valStockPrestamo.textContent = info.stock_disponible + " unid.";
-                    valStockPrestamo.style.color = info.stock_disponible > 0 ? "var(--ok)" : "var(--crit)";
+                if (sinStock) inputCantPrestamo.value = 0;
+            }
+
+            if (info.almacen_id) {
+                if (inputAlmPrestamo) inputAlmPrestamo.value = info.almacen_id;
+                if (txtAlmacenPrestamo) {
+                    txtAlmacenPrestamo.innerHTML = '<strong style="color: var(--text);">' + info.almacen_nombre + '</strong>';
                 }
             }
+            if (valStockPrestamo) {
+                valStockPrestamo.textContent = info.stock_disponible + " unid.";
+                valStockPrestamo.style.color = info.stock_disponible > 0 ? "var(--ok)" : "var(--crit)";
+            }
         } else {
-            if (selectAlmPrestamo) {
-                selectAlmPrestamo.style.pointerEvents = "";
-                selectAlmPrestamo.style.opacity = "";
-                selectAlmPrestamo.tabIndex = 0;
-                if (helpAlmPrestamo) helpAlmPrestamo.style.display = "none";
+            if (alertSinStockPrestamo) alertSinStockPrestamo.style.display = "none";
+            if (btnSubmitPrestamo) btnSubmitPrestamo.disabled = false;
+            if (bodyCamposPrestamo) {
+                bodyCamposPrestamo.style.opacity = "1";
+                bodyCamposPrestamo.style.pointerEvents = "auto";
+                bodyCamposPrestamo.style.filter = "none";
+            }
+            if (inputCantPrestamo) inputCantPrestamo.disabled = false;
+            if (txtAlmacenPrestamo) {
+                if (usuarioAlmacenesCount === 1 && usuarioAlmacenUnicoNombre) {
+                    txtAlmacenPrestamo.innerHTML = '<strong style="color: var(--text);">' + usuarioAlmacenUnicoNombre + '</strong>';
+                    if (inputAlmPrestamo && usuarioAlmacenUnicoId) inputAlmPrestamo.value = usuarioAlmacenUnicoId;
+                } else {
+                    txtAlmacenPrestamo.textContent = "Selecciona un producto para cargar su almacén";
+                }
             }
             if (valStockPrestamo) {
                 valStockPrestamo.textContent = "—";
@@ -1101,7 +1240,318 @@ document.addEventListener("DOMContentLoaded", function() {
         }
     }
 
-    // Modal Baja de Préstamo
+    // 4. Sincronización Traslado (Punto 3): Jerarquía estricta, origen fijo, motivo obligatorio
+    var selectProductoTraslado = document.querySelector('#secFormTraslado select[name="producto"]');
+    var inputAlmOrigenTraslado = document.querySelector('#secFormTraslado [name="almacen_origen"]');
+    var txtAlmacenTraslado = document.getElementById("txtAlmacenTraslado");
+    var selectAlmDestinoTraslado = document.querySelector('#secFormTraslado select[name="almacen_destino"]');
+    var grpAlmDestinoTraslado = document.getElementById("grpAlmDestinoTraslado");
+    var grpUbOrigenTraslado = document.getElementById("grpUbOrigenTraslado");
+    var selectUbOrigenTraslado = document.querySelector('#secFormTraslado select[name="ubicacion_origen"]');
+    var grpUbDestinoTraslado = document.getElementById("grpUbDestinoTraslado");
+    var selectUbDestinoTraslado = document.querySelector('#secFormTraslado select[name="ubicacion_destino"]');
+    var inputMotivoTraslado = document.querySelector('#secFormTraslado input[name="motivo"]');
+    var valStockTraslado = document.getElementById("valStockTraslado");
+    var alertSinStockTraslado = document.getElementById("alertSinStockTraslado");
+    var btnSubmitTraslado = document.getElementById("btnSubmitTraslado");
+    var bodyCamposTraslado = document.getElementById("bodyCamposTraslado");
+
+    var currentProductoUbicacionId = null;
+
+    function poblarOpcionesUbicacion(selectElem, almacenId, ubicacionSeleccionada) {
+        if (!selectElem) return;
+        var prevVal = ubicacionSeleccionada || selectElem.value;
+        var ubs = almacenUbicacionesMap[String(almacenId)] || [];
+        selectElem.innerHTML = '<option value="">Selecciona ubicación...</option>';
+        ubs.forEach(function(u) {
+            var opt = document.createElement("option");
+            opt.value = u.id;
+            opt.textContent = u.nombre;
+            if (prevVal && String(u.id) === String(prevVal)) {
+                opt.selected = true;
+            }
+            selectElem.appendChild(opt);
+        });
+    }
+
+    function evaluarJerarquiaTraslado() {
+        var prodId = selectProductoTraslado ? selectProductoTraslado.value : "";
+        if (!prodId) {
+            if (bodyCamposTraslado) {
+                bodyCamposTraslado.style.opacity = "0.35";
+                bodyCamposTraslado.style.pointerEvents = "none";
+            }
+            if (btnSubmitTraslado) btnSubmitTraslado.disabled = true;
+            return;
+        }
+
+        var info = mapaUbicacionesStock[String(prodId)];
+        if (!info || info.stock_disponible <= 0) {
+            if (btnSubmitTraslado) btnSubmitTraslado.disabled = true;
+            return;
+        }
+
+        var ubOrigenSeleccionada = selectUbOrigenTraslado ? String(selectUbOrigenTraslado.value || "") : "";
+
+        // Si es usuario normal con solo 1 almacén asignado: únicamente reubicación interna
+        if (esUsuarioNormal && usuarioAlmacenesCount <= 1) {
+            var cambioValido = ubOrigenSeleccionada && (!currentProductoUbicacionId || ubOrigenSeleccionada !== String(currentProductoUbicacionId));
+            if (cambioValido) {
+                var nombreNuevaUb = selectUbOrigenTraslado.options[selectUbOrigenTraslado.selectedIndex] ? selectUbOrigenTraslado.options[selectUbOrigenTraslado.selectedIndex].text : "nueva ubicación";
+                if (inputMotivoTraslado) {
+                    inputMotivoTraslado.value = "Traslado interno en " + info.almacen_nombre + ": reubicación física a " + nombreNuevaUb;
+                }
+                if (btnSubmitTraslado) btnSubmitTraslado.disabled = false;
+            } else {
+                if (btnSubmitTraslado) btnSubmitTraslado.disabled = true;
+                if (inputMotivoTraslado) inputMotivoTraslado.value = "";
+            }
+            return;
+        }
+
+        var esTrasladoInterno = currentProductoUbicacionId && ubOrigenSeleccionada && (ubOrigenSeleccionada !== String(currentProductoUbicacionId));
+
+        if (esTrasladoInterno) {
+            if (selectAlmDestinoTraslado) {
+                selectAlmDestinoTraslado.value = "";
+                selectAlmDestinoTraslado.disabled = true;
+            }
+            if (selectUbDestinoTraslado) {
+                selectUbDestinoTraslado.value = "";
+                selectUbDestinoTraslado.disabled = true;
+            }
+            if (grpAlmDestinoTraslado) {
+                grpAlmDestinoTraslado.style.opacity = "0.35";
+                grpAlmDestinoTraslado.style.pointerEvents = "none";
+            }
+            if (grpUbDestinoTraslado) {
+                grpUbDestinoTraslado.style.opacity = "0.35";
+                grpUbDestinoTraslado.style.pointerEvents = "none";
+            }
+            var nombreNuevaUb = selectUbOrigenTraslado.options[selectUbOrigenTraslado.selectedIndex] ? selectUbOrigenTraslado.options[selectUbOrigenTraslado.selectedIndex].text : "nueva ubicación";
+            if (inputMotivoTraslado) {
+                inputMotivoTraslado.value = "Traslado interno en " + info.almacen_nombre + ": reubicación física a " + nombreNuevaUb;
+            }
+            if (btnSubmitTraslado) btnSubmitTraslado.disabled = false;
+        } else {
+            if (grpAlmDestinoTraslado) {
+                grpAlmDestinoTraslado.style.opacity = "1";
+                grpAlmDestinoTraslado.style.pointerEvents = "auto";
+            }
+            if (selectAlmDestinoTraslado) {
+                selectAlmDestinoTraslado.disabled = false;
+            }
+
+            var almDestId = selectAlmDestinoTraslado ? selectAlmDestinoTraslado.value : "";
+            if (almDestId) {
+                if (grpUbDestinoTraslado) {
+                    grpUbDestinoTraslado.style.opacity = "1";
+                    grpUbDestinoTraslado.style.pointerEvents = "auto";
+                }
+                if (selectUbDestinoTraslado) {
+                    selectUbDestinoTraslado.disabled = false;
+                }
+                var selText = selectAlmDestinoTraslado.options[selectAlmDestinoTraslado.selectedIndex] ? selectAlmDestinoTraslado.options[selectAlmDestinoTraslado.selectedIndex].text : "destino";
+                if (inputMotivoTraslado) {
+                    inputMotivoTraslado.value = "Traslado de " + info.almacen_nombre + " a " + selText;
+                }
+                var ubDestId = selectUbDestinoTraslado ? selectUbDestinoTraslado.value : "";
+                if (btnSubmitTraslado) {
+                    btnSubmitTraslado.disabled = !ubDestId;
+                }
+            } else {
+                if (grpUbDestinoTraslado) {
+                    grpUbDestinoTraslado.style.opacity = "0.35";
+                    grpUbDestinoTraslado.style.pointerEvents = "none";
+                }
+                if (selectUbDestinoTraslado) {
+                    selectUbDestinoTraslado.value = "";
+                    selectUbDestinoTraslado.disabled = true;
+                }
+                if (inputMotivoTraslado) {
+                    inputMotivoTraslado.value = "";
+                }
+                if (btnSubmitTraslado) {
+                    btnSubmitTraslado.disabled = true;
+                }
+            }
+        }
+    }
+
+    function actualizarProductoTraslado(prodId) {
+        var info = mapaUbicacionesStock[String(prodId)];
+        if (info) {
+            var sinStock = info.stock_disponible <= 0;
+            if (alertSinStockTraslado) alertSinStockTraslado.style.display = sinStock ? "block" : "none";
+            if (btnSubmitTraslado) btnSubmitTraslado.disabled = true;
+
+            if (sinStock) {
+                if (bodyCamposTraslado) {
+                    bodyCamposTraslado.style.opacity = "0.35";
+                    bodyCamposTraslado.style.pointerEvents = "none";
+                    bodyCamposTraslado.style.filter = "grayscale(0.8)";
+                }
+                if (valStockTraslado) {
+                    valStockTraslado.textContent = "0 unid. (Sin existencias disponibles)";
+                    valStockTraslado.style.color = "var(--crit)";
+                }
+                return;
+            }
+
+            if (bodyCamposTraslado) {
+                bodyCamposTraslado.style.opacity = "1";
+                bodyCamposTraslado.style.pointerEvents = "auto";
+                bodyCamposTraslado.style.filter = "none";
+            }
+            if (valStockTraslado) {
+                valStockTraslado.textContent = info.stock_disponible + " unid.";
+                valStockTraslado.style.color = "var(--ok)";
+            }
+
+            if (info.almacen_id) {
+                if (inputAlmOrigenTraslado) inputAlmOrigenTraslado.value = info.almacen_id;
+                if (txtAlmacenTraslado) {
+                    txtAlmacenTraslado.innerHTML = '<strong style="color: var(--text);">' + info.almacen_nombre + '</strong>';
+                }
+            }
+
+            currentProductoUbicacionId = info.id || "";
+            poblarOpcionesUbicacion(selectUbOrigenTraslado, info.almacen_id, info.id);
+            if (selectUbOrigenTraslado) {
+                selectUbOrigenTraslado.disabled = false;
+            }
+
+            if (selectAlmDestinoTraslado) {
+                selectAlmDestinoTraslado.value = "";
+                selectAlmDestinoTraslado.disabled = false;
+            }
+            if (selectUbDestinoTraslado) {
+                selectUbDestinoTraslado.value = "";
+                selectUbDestinoTraslado.disabled = true;
+            }
+            evaluarJerarquiaTraslado();
+        } else {
+            if (alertSinStockTraslado) alertSinStockTraslado.style.display = "none";
+            if (btnSubmitTraslado) btnSubmitTraslado.disabled = true;
+            if (bodyCamposTraslado) {
+                bodyCamposTraslado.style.opacity = "0.35";
+                bodyCamposTraslado.style.pointerEvents = "none";
+            }
+            if (valStockTraslado) {
+                valStockTraslado.textContent = "—";
+                valStockTraslado.style.color = "var(--text)";
+            }
+            if (txtAlmacenTraslado) {
+                if (usuarioAlmacenesCount === 1 && usuarioAlmacenUnicoNombre) {
+                    txtAlmacenTraslado.innerHTML = '<strong style="color: var(--text);">' + usuarioAlmacenUnicoNombre + '</strong>';
+                    if (inputAlmOrigenTraslado && usuarioAlmacenUnicoId) inputAlmOrigenTraslado.value = usuarioAlmacenUnicoId;
+                } else {
+                    txtAlmacenTraslado.textContent = "Selecciona un producto primero";
+                }
+            }
+        }
+    }
+
+    if (selectProductoTraslado) {
+        selectProductoTraslado.addEventListener("change", function() {
+            actualizarProductoTraslado(selectProductoTraslado.value);
+        });
+        if (selectProductoTraslado.value) {
+            actualizarProductoTraslado(selectProductoTraslado.value);
+        } else {
+            actualizarProductoTraslado("");
+        }
+    }
+
+    if (selectUbOrigenTraslado) {
+        selectUbOrigenTraslado.addEventListener("change", function() {
+            evaluarJerarquiaTraslado();
+        });
+    }
+
+    if (selectAlmDestinoTraslado) {
+        selectAlmDestinoTraslado.addEventListener("change", function() {
+            var destId = selectAlmDestinoTraslado.value;
+            if (destId) {
+                poblarOpcionesUbicacion(selectUbDestinoTraslado, destId, "");
+            } else if (selectUbDestinoTraslado) {
+                selectUbDestinoTraslado.innerHTML = '<option value="">Selecciona primero un almacén destino</option>';
+            }
+            evaluarJerarquiaTraslado();
+        });
+    }
+
+    if (selectUbDestinoTraslado) {
+        selectUbDestinoTraslado.addEventListener("change", function() {
+            evaluarJerarquiaTraslado();
+        });
+    }
+
+    // 5. SINCRONIZACIÓN CONTEO FÍSICO (Puntos 4 y 8)
+    var selectProductoConteo = document.querySelector('#secFormConteo select[name="producto"]');
+    var inputAlmConteo = document.querySelector('#secFormConteo [name="almacen"]');
+    var txtAlmacenConteo = document.getElementById("txtAlmacenConteo");
+
+    function actualizarProductoConteo(prodId) {
+        var info = mapaUbicacionesStock[String(prodId)];
+        if (info && info.almacen_id) {
+            if (inputAlmConteo) inputAlmConteo.value = info.almacen_id;
+            if (txtAlmacenConteo) {
+                txtAlmacenConteo.innerHTML = '<strong style="color: var(--text);">' + info.almacen_nombre + '</strong>';
+            }
+        } else if (usuarioAlmacenUnicoNombre) {
+            if (inputAlmConteo && usuarioAlmacenUnicoId) inputAlmConteo.value = usuarioAlmacenUnicoId;
+            if (txtAlmacenConteo) {
+                txtAlmacenConteo.innerHTML = '<strong style="color: var(--text);">' + usuarioAlmacenUnicoNombre + '</strong>';
+            }
+        } else {
+            if (txtAlmacenConteo) txtAlmacenConteo.textContent = "Selecciona un producto para cargar su almacén";
+        }
+    }
+
+    if (selectProductoConteo) {
+        selectProductoConteo.addEventListener("change", function() {
+            actualizarProductoConteo(selectProductoConteo.value);
+        });
+        if (selectProductoConteo.value) {
+            actualizarProductoConteo(selectProductoConteo.value);
+        }
+    }
+
+    // Pre-cargar valores de almacén único si aplica
+    if (esUsuarioNormal && usuarioAlmacenesCount === 1 && usuarioAlmacenUnicoNombre) {
+        if (txtAlmacenEntrada) txtAlmacenEntrada.innerHTML = '<strong style="color: var(--text);">' + usuarioAlmacenUnicoNombre + '</strong>';
+        if (txtAlmacenSalida) txtAlmacenSalida.innerHTML = '<strong style="color: var(--text);">' + usuarioAlmacenUnicoNombre + '</strong>';
+        if (txtAlmacenPrestamo) txtAlmacenPrestamo.innerHTML = '<strong style="color: var(--text);">' + usuarioAlmacenUnicoNombre + '</strong>';
+        if (txtAlmacenConteo) txtAlmacenConteo.innerHTML = '<strong style="color: var(--text);">' + usuarioAlmacenUnicoNombre + '</strong>';
+        if (txtAlmacenTraslado) txtAlmacenTraslado.innerHTML = '<strong style="color: var(--text);">' + usuarioAlmacenUnicoNombre + '</strong>';
+        if (inputAlmEntrada && usuarioAlmacenUnicoId) inputAlmEntrada.value = usuarioAlmacenUnicoId;
+        if (inputAlmSalida && usuarioAlmacenUnicoId) inputAlmSalida.value = usuarioAlmacenUnicoId;
+        if (inputAlmPrestamo && usuarioAlmacenUnicoId) inputAlmPrestamo.value = usuarioAlmacenUnicoId;
+        if (inputAlmConteo && usuarioAlmacenUnicoId) inputAlmConteo.value = usuarioAlmacenUnicoId;
+        if (inputAlmOrigenTraslado && usuarioAlmacenUnicoId) inputAlmOrigenTraslado.value = usuarioAlmacenUnicoId;
+    }
+
+    // Modal Baja de Préstamo (Punto 17)
+    var inpCantBaja = document.getElementById("inputCantBaja");
+    var warnMaxBaja = document.getElementById("warnMaxBaja");
+
+    if (inpCantBaja) {
+        inpCantBaja.addEventListener("input", function() {
+            var maxPend = parseInt(inpCantBaja.max, 10);
+            var val = parseInt(inpCantBaja.value, 10);
+            if (!isNaN(maxPend) && !isNaN(val) && val > maxPend) {
+                inpCantBaja.value = maxPend;
+                if (warnMaxBaja) {
+                    warnMaxBaja.textContent = "Se ajustó automáticamente al saldo máximo pendiente (" + maxPend + " unid.).";
+                    warnMaxBaja.style.display = "block";
+                }
+            } else {
+                if (warnMaxBaja) warnMaxBaja.style.display = "none";
+            }
+        });
+    }
+
     document.querySelectorAll(".btn-abrir-baja").forEach(function(btn) {
         btn.addEventListener("click", function() {
             var form = document.getElementById("formBajaModal");
@@ -1111,9 +1561,11 @@ document.addEventListener("DOMContentLoaded", function() {
             document.getElementById("infoPrestamoBaja").textContent =
                 "Nota: Esta acción descontará del stock en préstamo sin devolverlo al disponible. Artículo: " +
                 btn.getAttribute("data-producto") + " (Pendiente: " + pend + " unid.)";
-            var inpCant = document.getElementById("inputCantBaja");
-            inpCant.max = pend;
-            inpCant.value = "1";
+            if (warnMaxBaja) warnMaxBaja.style.display = "none";
+            if (inpCantBaja) {
+                inpCantBaja.max = pend;
+                inpCantBaja.value = "1";
+            }
             openAppModal("modalBajaPrestamo");
         });
     });

@@ -1435,7 +1435,7 @@
 
             {% if user.is_authenticated %}
             <div class="sidebar-footer">
-                <a href="{% url 'cuentas:cambiar_password' %}" class="sidebar-user" style="text-decoration: none;" title="Mi Perfil — Cambiar nombre y contraseña">
+                <a href="{% url 'cuentas:perfil' %}" class="sidebar-user" style="text-decoration: none;" title="Mi Perfil — Datos personales y contraseña">
                     <div class="sidebar-user-avatar">{{ user.username|first|upper }}</div>
                     <div class="sidebar-user-info">
                         <div class="sidebar-user-name">{{ user.nombre_completo|default:user.username }}</div>
@@ -1578,7 +1578,7 @@
                         </div>
                     </div>
 
-                    <a href="{% url 'cuentas:cambiar_password' %}" class="topbar-user-pill" style="text-decoration: none;" title="Mi Perfil — Cambiar nombre y contraseña">
+                    <a href="{% url 'cuentas:perfil' %}" class="topbar-user-pill" style="text-decoration: none;" title="Mi Perfil — Datos personales y contraseña">
                         <strong>{{ user.nombre_completo|default:user.username }}</strong>
                         <span class="badge badge-accent">{{ user.rol }}</span>
                     </a>
@@ -1840,9 +1840,155 @@
                 });
             });
 
-            // 1. Auto-filtrado sin botón: formularios con data-auto-filter="true"
+            // Manejador global AJAX para formularios dentro de modales (<dialog class="app-modal">) (Punto 3)
+            document.addEventListener("submit", function(e) {
+                var form = e.target;
+                var dlg = form.closest("dialog.app-modal");
+                if (!dlg) return;
+                if (form.getAttribute("data-no-ajax") === "true") return;
+                if (e.defaultPrevented) return;
+
+                e.preventDefault();
+
+                var submitBtn = form.querySelector('button[type="submit"]');
+                var originalBtnHtml = submitBtn ? submitBtn.innerHTML : "";
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = '<span style="display: inline-flex; align-items: center; gap: 6px;">Procesando...</span>';
+                }
+
+                // Limpiar errores visuales previos dentro del modal
+                form.querySelectorAll(".is-invalid").forEach(function(el) {
+                    el.classList.remove("is-invalid");
+                    el.style.borderColor = "";
+                });
+                form.querySelectorAll(".js-modal-error-msg, .app-modal-alert-error").forEach(function(el) {
+                    el.remove();
+                });
+                var modalAlerts = dlg.querySelectorAll(".app-modal-alert-error");
+                modalAlerts.forEach(function(a) { a.remove(); });
+
+                var formData = new FormData(form);
+                var actionUrl = form.action || window.location.href;
+                var method = (form.method || "POST").toUpperCase();
+
+                fetch(actionUrl, {
+                    method: method,
+                    body: formData,
+                    headers: {
+                        "X-Requested-With": "XMLHttpRequest"
+                    },
+                    credentials: "same-origin"
+                })
+                .then(function(response) {
+                    var isJson = (response.headers.get("content-type") || "").indexOf("application/json") !== -1;
+                    if (!isJson) {
+                        if (response.redirected) {
+                            window.location.href = response.url;
+                            return;
+                        }
+                        if (response.ok) {
+                            window.location.reload();
+                            return;
+                        }
+                        return response.text().then(function(html) {
+                            throw new Error("Respuesta no JSON con código " + response.status);
+                        });
+                    }
+                    return response.json().then(function(data) {
+                        return { ok: response.ok, status: response.status, data: data };
+                    });
+                })
+                .then(function(res) {
+                    if (!res) return;
+                    if (res.ok && res.data && res.data.success !== false) {
+                        if (res.data.redirect_url) {
+                            window.location.href = res.data.redirect_url;
+                        } else {
+                            window.location.reload();
+                        }
+                        return;
+                    }
+
+                    // Hubo errores de validación (status 400 o success: false)
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = originalBtnHtml;
+                    }
+
+                    var errors = (res.data && res.data.errors) ? res.data.errors : {};
+                    var generalErrors = [];
+                    var modalBody = form.querySelector(".app-modal-body") || dlg.querySelector(".app-modal-body") || form;
+
+                    Object.keys(errors).forEach(function(field) {
+                        var fieldErrors = errors[field];
+                        if (!Array.isArray(fieldErrors)) fieldErrors = [fieldErrors];
+
+                        if (field === "__all__" || field === "non_field_errors") {
+                            generalErrors = generalErrors.concat(fieldErrors);
+                        } else {
+                            var input = form.querySelector('[name="' + field + '"]');
+                            if (input) {
+                                input.classList.add("is-invalid");
+                                input.style.borderColor = "var(--accent-danger)";
+                                var errSpan = document.createElement("div");
+                                errSpan.className = "js-modal-error-msg";
+                                errSpan.style.cssText = "color: #fca5a5; font-size: 12px; margin-top: 4px; display: block; font-weight: 500;";
+                                errSpan.innerHTML = fieldErrors.join("<br>");
+                                input.parentNode.appendChild(errSpan);
+                            } else {
+                                generalErrors = generalErrors.concat(fieldErrors);
+                            }
+                        }
+                    });
+
+                    if (generalErrors.length > 0) {
+                        var alertDiv = document.createElement("div");
+                        alertDiv.className = "app-modal-alert-error";
+                        alertDiv.style.cssText = "background: rgba(239, 68, 68, 0.15); border: 1px solid var(--accent-danger); color: #fca5a5; padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 14px; display: flex; align-items: flex-start; gap: 8px;";
+                        alertDiv.innerHTML = '<span style="font-size: 15px; line-height: 1;">⚠️</span><div>' + generalErrors.join("<br>") + '</div>';
+                        modalBody.insertBefore(alertDiv, modalBody.firstChild);
+                    }
+                })
+                .catch(function(err) {
+                    console.error("Error al procesar formulario modal:", err);
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = originalBtnHtml;
+                    }
+                    var modalBody = form.querySelector(".app-modal-body") || dlg.querySelector(".app-modal-body") || form;
+                    var alertDiv = document.createElement("div");
+                    alertDiv.className = "app-modal-alert-error";
+                    alertDiv.style.cssText = "background: rgba(239, 68, 68, 0.15); border: 1px solid var(--accent-danger); color: #fca5a5; padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 14px;";
+                    alertDiv.textContent = "Error al comunicarse con el servidor. Verifica los datos ingresados.";
+                    modalBody.insertBefore(alertDiv, modalBody.firstChild);
+                });
+            });
+
+            // 1. Auto-filtrado sin botón: formularios con data-auto-filter="true" (Punto 16)
+            var focusName = sessionStorage.getItem("search_auto_focus");
+            if (focusName) {
+                sessionStorage.removeItem("search_auto_focus");
+                var targetInput = document.querySelector('form[data-auto-filter="true"] input[name="' + focusName + '"]') ||
+                                  document.querySelector('input[name="' + focusName + '"]');
+                if (targetInput) {
+                    targetInput.focus();
+                    var pos = parseInt(sessionStorage.getItem("search_caret_pos") || targetInput.value.length, 10);
+                    if (!isNaN(pos) && pos >= 0) {
+                        try { targetInput.setSelectionRange(pos, pos); } catch (e) {}
+                    }
+                    sessionStorage.removeItem("search_caret_pos");
+                }
+            }
+
             document.querySelectorAll('form[data-auto-filter="true"]').forEach(function(form) {
-                function submitCleanForm() {
+                function submitCleanForm(sourceInput) {
+                    if (sourceInput && sourceInput.name) {
+                        sessionStorage.setItem("search_auto_focus", sourceInput.name);
+                        try {
+                            sessionStorage.setItem("search_caret_pos", String(sourceInput.selectionEnd || sourceInput.value.length));
+                        } catch (e) {}
+                    }
                     if ((form.method || "get").toLowerCase() === "get") {
                         var formData = new FormData(form);
                         var cleanParams = new URLSearchParams();
@@ -1869,14 +2015,28 @@
                     input.addEventListener("input", function() {
                         clearTimeout(timer);
                         timer = setTimeout(function() {
-                            submitCleanForm();
-                        }, 420);
+                            submitCleanForm(input);
+                        }, 550);
                     });
-                    if (input.value && document.activeElement === input) {
-                        var len = input.value.length;
-                        input.setSelectionRange(len, len);
-                    }
                 });
+            });
+
+            // Atajo de teclado para buscar: presionar '/' o 'Ctrl+K' (Punto 16)
+            document.addEventListener("keydown", function(e) {
+                var activeTag = (document.activeElement && document.activeElement.tagName) ? document.activeElement.tagName.toLowerCase() : "";
+                var isEditing = activeTag === "input" || activeTag === "textarea" || (document.activeElement && document.activeElement.isContentEditable);
+
+                if ((e.key === "/" && !isEditing) || ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K"))) {
+                    var searchInput = document.querySelector('#inputFiltroUsuarios') ||
+                                      document.querySelector('form[data-auto-filter="true"] input[name="q"]') ||
+                                      document.querySelector('input[name="q"]') ||
+                                      document.querySelector('input[type="search"]');
+                    if (searchInput) {
+                        e.preventDefault();
+                        searchInput.focus();
+                        searchInput.select();
+                    }
+                }
             });
 
             // 2. Un solo campo combobox para productos: al presionar permite escribir y despliega la lista abajo en tiempo real

@@ -106,9 +106,17 @@ class UsuarioForm(forms.ModelForm):
                 if self.instance.almacen_asignado_id:
                     ids_iniciales.add(self.instance.almacen_asignado_id)
                 self.fields["almacenes_asignados"].initial = list(ids_iniciales)
+                self.initial["almacenes_asignados"] = list(ids_iniciales)
 
         if not self.instance.pk:
             self.fields["password"].required = True
+        else:
+            self.fields["password"].label = _("Restablecer Contraseña (opcional)")
+            self.fields["password"].help_text = _("Mínimo 7 caracteres con al menos una letra y un número. Dejar en blanco para conservar la contraseña actual.")
+            # Restricción: El nombre de usuario solo puede ser modificado por el superusuario
+            if self.request_user and not self.request_user.es_superusuario_inventario:
+                self.fields["username"].disabled = True
+                self.fields["username"].help_text = _("El nombre de usuario solo puede ser modificado por el superusuario.")
 
         # Restricción: No se puede crear ni asignar el rol de SUPERUSUARIO desde la interfaz.
         # Solo existe un único superusuario en el sistema (definido por comando / consola).
@@ -127,6 +135,12 @@ class UsuarioForm(forms.ModelForm):
             self.fields["rol"].choices = [
                 (UsuarioAudacIA.Rol.USUARIO, _("Usuario")),
             ]
+
+    def clean_username(self):
+        username = self.cleaned_data.get("username")
+        if self.instance.pk and self.request_user and not self.request_user.es_superusuario_inventario:
+            return self.instance.username
+        return username
 
     def clean_rol(self):
         from .models import UsuarioAudacIA
@@ -161,6 +175,38 @@ class UsuarioForm(forms.ModelForm):
                 self.add_error("almacenes_asignados", _("Debes seleccionar obligatoriamente al menos un almacén para usuarios operativos."))
             else:
                 cleaned_data["almacen_asignado"] = almacenes[0]
+
+                # Validar que no se desasignen almacenes huérfanos con existencias o productos
+                if self.instance.pk:
+                    from inventario.models import Producto, Existencia
+                    alms_previos = set(self.instance.get_almacenes_asignados())
+                    alms_nuevos = set(almacenes)
+                    alms_removidos = alms_previos - alms_nuevos
+
+                    for alm in alms_removidos:
+                        from django.db.models import Q
+                        tiene_prods = (
+                            Producto.objects.filter(categoria__almacen_principal=alm, archivado=False).exists()
+                            or Existencia.objects.filter(almacen=alm).filter(Q(stock_disponible__gt=0) | Q(stock_en_prestamo__gt=0)).exists()
+                        )
+                        if tiene_prods:
+                            otros_con_acceso = (
+                                UsuarioAudacIA.objects.filter(
+                                    is_active=True,
+                                    rol=UsuarioAudacIA.Rol.USUARIO,
+                                    almacenes_asignados=alm,
+                                )
+                                .exclude(pk=self.instance.pk)
+                                .exists()
+                            )
+                            if not otros_con_acceso:
+                                self.add_error(
+                                    "almacenes_asignados",
+                                    _(
+                                        f"No puedes retirar el almacén '{alm.nombre}' porque no hay ningún otro usuario "
+                                        f"asignado a él y tiene productos registrados."
+                                    ),
+                                )
         else:
             cleaned_data["almacen_asignado"] = None
             cleaned_data["almacenes_asignados"] = []
@@ -191,4 +237,64 @@ class UsuarioForm(forms.ModelForm):
             else:
                 user.almacenes_asignados.clear()
         return user
+
+
+class PerfilUsuarioForm(forms.ModelForm):
+    """Formulario para que Administradores y Superusuarios gestionen su propio perfil."""
+
+    password_actual = forms.CharField(
+        label=_("Contraseña actual"),
+        widget=forms.PasswordInput(attrs={"class": "form-control"}),
+        required=False,
+        help_text=_("Requerida únicamente si deseas cambiar tu contraseña."),
+    )
+    password_nueva = forms.CharField(
+        label=_("Nueva contraseña"),
+        widget=forms.PasswordInput(attrs={"class": "form-control"}),
+        required=False,
+    )
+    password_confirmacion = forms.CharField(
+        label=_("Confirmar nueva contraseña"),
+        widget=forms.PasswordInput(attrs={"class": "form-control"}),
+        required=False,
+    )
+
+    class Meta:
+        from .models import UsuarioAudacIA
+        model = UsuarioAudacIA
+        fields = ["nombre_completo"]
+        widgets = {
+            "nombre_completo": forms.TextInput(attrs={"class": "form-control"}),
+        }
+
+    def clean(self):
+        cleaned_data = super().clean()
+        actual = cleaned_data.get("password_actual")
+        nueva = cleaned_data.get("password_nueva")
+        confirmacion = cleaned_data.get("password_confirmacion")
+
+        if nueva or confirmacion or actual:
+            if not actual:
+                self.add_error("password_actual", _("Debes ingresar tu contraseña actual para establecer una nueva."))
+            elif not self.instance.check_password(actual):
+                self.add_error("password_actual", _("La contraseña actual no es correcta."))
+
+            if not nueva:
+                self.add_error("password_nueva", _("Ingresa la nueva contraseña."))
+            elif nueva != confirmacion:
+                self.add_error("password_confirmacion", _("Las nuevas contraseñas no coinciden."))
+            else:
+                password_validation.validate_password(nueva, user=self.instance)
+
+        return cleaned_data
+
+    def save(self, commit=True):
+        user = super().save(commit=False)
+        nueva = self.cleaned_data.get("password_nueva")
+        if nueva:
+            user.set_password(nueva)
+        if commit:
+            user.save()
+        return user
+
 

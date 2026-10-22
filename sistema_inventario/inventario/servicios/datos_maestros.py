@@ -44,6 +44,30 @@ def crear_almacen(
     if not nombre:
         raise ValidationError({"nombre": "El nombre del almacén es obligatorio."})
 
+    alm_existente = Almacen.objects.filter(nombre__iexact=nombre).first()
+    if alm_existente:
+        if not alm_existente.eliminado:
+            raise ValidationError({"nombre": f"Ya existe un almacén activo con el nombre '{nombre}'."})
+        else:
+            with transaction.atomic():
+                alm_existente.eliminado = False
+                alm_existente.activo = True
+                alm_existente.descripcion = (descripcion or "").strip()
+                alm_existente.save()
+                registrar_auditoria(
+                    usuario=usuario,
+                    accion="CREAR_ALMACEN",
+                    tipo_entidad="Almacen",
+                    id_entidad=str(alm_existente.id),
+                    valores_anteriores={"eliminado": True, "activo": False},
+                    valores_nuevos={"eliminado": False, "activo": True, "nombre": alm_existente.nombre},
+                    motivo=f"Reactivación de almacén '{alm_existente.nombre}' previamente eliminado",
+                    resultado="OK",
+                    via_haku=False,
+                    ip_origen=ip_origen,
+                )
+            return alm_existente
+
     with transaction.atomic():
         almacen = Almacen(
             nombre=nombre,
@@ -210,6 +234,36 @@ def crear_ubicacion(
     if not nombre:
         raise ValidationError({"nombre": "El nombre de la ubicación es obligatorio."})
 
+    if Ubicacion.objects.filter(almacen=almacen, nombre__iexact=nombre, eliminado=False).exists():
+        raise ValidationError({"nombre": f"Ya existe una ubicación activa con el nombre '{nombre}' en este almacén."})
+
+    ubicacion_del = Ubicacion.objects.filter(almacen=almacen, nombre__iexact=nombre, eliminado=True).first()
+    if ubicacion_del:
+        with transaction.atomic():
+            ubicacion_del.eliminado = False
+            ubicacion_del.activo = True
+            ubicacion_del.descripcion = (descripcion or "").strip()
+            ubicacion_del.save(update_fields=["eliminado", "activo", "descripcion"])
+
+            registrar_auditoria(
+                usuario=usuario,
+                accion="CREAR_UBICACION",
+                tipo_entidad="Ubicacion",
+                id_entidad=str(ubicacion_del.id),
+                valores_anteriores={"eliminado": True, "activo": False},
+                valores_nuevos={
+                    "nombre": ubicacion_del.nombre,
+                    "almacen_id": almacen.id,
+                    "almacen_nombre": almacen.nombre,
+                    "descripcion": ubicacion_del.descripcion,
+                },
+                motivo=f"Recreación/reactivación de ubicación '{ubicacion_del.nombre}' en almacén '{almacen.nombre}'",
+                resultado="OK",
+                via_haku=False,
+                ip_origen=ip_origen,
+            )
+        return ubicacion_del
+
     with transaction.atomic():
         ubicacion = Ubicacion(
             nombre=nombre,
@@ -247,10 +301,14 @@ def actualizar_ubicacion(
     ubicacion: Ubicacion,
     nombre: str,
     descripcion: str,
+    almacen: Optional[Almacen] = None,
     usuario: Any,
     ip_origen: Optional[str] = None,
 ) -> Ubicacion:
-    """Actualiza una ubicación conservando el historial del nombre anterior en auditoría."""
+    """Actualiza una ubicación conservando el historial del nombre anterior en auditoría.
+    
+    Permite cambiar de almacén si la ubicación no tiene productos asignados.
+    """
     if not getattr(usuario, "is_authenticated", False):
         raise PermissionDenied("Se requiere autenticación.")
 
@@ -259,19 +317,37 @@ def actualizar_ubicacion(
     if getattr(usuario, "es_usuario_normal", False):
         if not usuario.tiene_acceso_almacen(ubicacion_db.almacen):
             raise PermissionDenied("No tienes permisos para modificar ubicaciones de otros almacenes.")
+        if almacen and not usuario.tiene_acceso_almacen(almacen):
+            raise PermissionDenied("No tienes permisos para asignar la ubicación al almacén seleccionado.")
 
     nombre = (nombre or "").strip()
     if not nombre:
         raise ValidationError({"nombre": "El nombre de la ubicación no puede estar vacío."})
 
+    almacen_efectivo = almacen or ubicacion_db.almacen
+    if almacen and almacen.id != ubicacion_db.almacen_id:
+        if ProductoUbicacion.objects.filter(ubicacion=ubicacion_db, producto__archivado=False).exists():
+            raise ValidationError({
+                "almacen": f"No se puede cambiar el almacén de la ubicación '{ubicacion_db.nombre}' porque tiene productos asignados. Reasigne o traslade los productos primero."
+            })
+
+    # Verificar unicidad en el almacén destino/efectivo
+    qs_unique = Ubicacion.objects.filter(almacen=almacen_efectivo, nombre__iexact=nombre, eliminado=False).exclude(pk=ubicacion_db.pk)
+    if qs_unique.exists():
+        raise ValidationError({"nombre": f"Ya existe una ubicación con el nombre '{nombre}' en el almacén '{almacen_efectivo.nombre}'."})
+
     valores_anteriores = {
         "nombre": ubicacion_db.nombre,
         "descripcion": ubicacion_db.descripcion,
+        "almacen_id": ubicacion_db.almacen_id,
+        "almacen_nombre": ubicacion_db.almacen.nombre,
     }
 
     with transaction.atomic():
         ubicacion_db.nombre = nombre
         ubicacion_db.descripcion = (descripcion or "").strip()
+        if almacen and almacen.id != ubicacion_db.almacen_id:
+            ubicacion_db.almacen = almacen
         ubicacion_db.full_clean()
         ubicacion_db.save()
 
@@ -284,6 +360,8 @@ def actualizar_ubicacion(
             valores_nuevos={
                 "nombre": ubicacion_db.nombre,
                 "descripcion": ubicacion_db.descripcion,
+                "almacen_id": ubicacion_db.almacen_id,
+                "almacen_nombre": ubicacion_db.almacen.nombre,
             },
             motivo=f"Actualización de ubicación '{ubicacion_db.nombre}' (almacén '{ubicacion_db.almacen.nombre}')",
             resultado="OK",
@@ -391,6 +469,36 @@ def crear_categoria(
     nombre = (nombre or "").strip()
     if not nombre:
         raise ValidationError({"nombre": "El nombre de la categoría es obligatorio."})
+
+    if Categoria.objects.filter(nombre__iexact=nombre, eliminado=False).exists():
+        raise ValidationError({"nombre": f"Ya existe una categoría activa con el nombre '{nombre}'."})
+
+    categoria_del = Categoria.objects.filter(nombre__iexact=nombre, eliminado=True).first()
+    if categoria_del:
+        with transaction.atomic():
+            categoria_del.eliminado = False
+            categoria_del.activo = True
+            categoria_del.almacen_principal = almacen_principal
+            categoria_del.save(update_fields=["eliminado", "activo", "almacen_principal"])
+
+            registrar_auditoria(
+                usuario=usuario,
+                accion="CREAR_CATEGORIA",
+                tipo_entidad="Categoria",
+                id_entidad=str(categoria_del.id),
+                valores_anteriores={"eliminado": True, "activo": False},
+                valores_nuevos={
+                    "nombre": categoria_del.nombre,
+                    "almacen_principal_id": almacen_principal.id,
+                    "almacen_principal_nombre": almacen_principal.nombre,
+                    "prefijo_codigo": categoria_del.prefijo_codigo,
+                },
+                motivo=f"Recreación/reactivación de categoría '{categoria_del.nombre}' con almacén '{almacen_principal.nombre}'",
+                resultado="OK",
+                via_haku=False,
+                ip_origen=ip_origen,
+            )
+        return categoria_del
 
     with transaction.atomic():
         categoria = Categoria(
@@ -513,8 +621,27 @@ def crear_tipo_categoria(
     if not nombre:
         raise ValidationError({"nombre": "El nombre del tipo es obligatorio."})
 
-    if TipoCategoria.objects.filter(categoria=categoria, nombre__iexact=nombre).exists():
-        raise ValidationError({"nombre": f"Ya existe el tipo '{nombre}' en la categoría '{categoria.nombre}'."})
+    tipo_existente = TipoCategoria.objects.filter(categoria=categoria, nombre__iexact=nombre).first()
+    if tipo_existente:
+        if tipo_existente.activo:
+            raise ValidationError({"nombre": f"Ya existe el tipo activo '{nombre}' en la categoría '{categoria.nombre}'."})
+        else:
+            with transaction.atomic():
+                tipo_existente.activo = True
+                tipo_existente.save(update_fields=["activo"])
+                registrar_auditoria(
+                    usuario=usuario,
+                    accion="CREAR_TIPO_CATEGORIA",
+                    tipo_entidad="TipoCategoria",
+                    id_entidad=str(tipo_existente.id),
+                    valores_anteriores={"activo": False},
+                    valores_nuevos={"activo": True, "nombre": tipo_existente.nombre},
+                    motivo=f"Reactivación de tipo '{tipo_existente.nombre}' en categoría '{categoria.nombre}'",
+                    resultado="OK",
+                    via_haku=False,
+                    ip_origen=ip_origen,
+                )
+            return tipo_existente
 
     with transaction.atomic():
         tipo = TipoCategoria(
@@ -782,8 +909,13 @@ def crear_producto(
 
     codigo_barras = (codigo_barras or "").strip() or None
     if codigo_barras:
-        if Producto.objects.filter(codigo_barras=codigo_barras).exists():
-            raise ValidationError({"codigo_barras": "Ya existe un producto registrado con este código de barras."})
+        prod_cb = Producto.objects.filter(codigo_barras=codigo_barras).first()
+        if prod_cb:
+            if not prod_cb.archivado:
+                raise ValidationError({"codigo_barras": "Ya existe un producto activo registrado con este código de barras."})
+            else:
+                prod_cb.codigo_barras = None
+                prod_cb.save(update_fields=["codigo_barras"])
 
     with transaction.atomic():
         producto = Producto(
@@ -890,8 +1022,13 @@ def actualizar_producto(
 
     codigo_barras = (codigo_barras or "").strip() or None
     if codigo_barras:
-        if Producto.objects.filter(codigo_barras=codigo_barras).exclude(id=producto_db.id).exists():
-            raise ValidationError({"codigo_barras": "Ya existe otro producto con este código de barras."})
+        prod_existente = Producto.objects.filter(codigo_barras=codigo_barras).exclude(id=producto_db.id).first()
+        if prod_existente:
+            if not prod_existente.archivado:
+                raise ValidationError({"codigo_barras": "Ya existe otro producto activo con este código de barras."})
+            else:
+                prod_existente.codigo_barras = None
+                prod_existente.save(update_fields=["codigo_barras"])
 
     valores_anteriores = {
         "nombre": producto_db.nombre,
@@ -903,6 +1040,10 @@ def actualizar_producto(
         "unidades_por_empaque": producto_db.unidades_por_empaque,
         "descripcion": producto_db.descripcion,
     }
+
+    ubicacion_ant = producto_db.ubicaciones.first()
+    almacen_ant = producto_db.categoria.almacen_principal
+    almacen_nuevo = categoria.almacen_principal if categoria is not None else almacen_ant
 
     with transaction.atomic():
         producto_db.nombre = nombre
@@ -923,10 +1064,47 @@ def actualizar_producto(
         producto_db.full_clean()
         producto_db.save()
 
+        ubicacion_nueva = None
         if ubicaciones is not None:
             ProductoUbicacion.objects.filter(producto=producto_db).exclude(ubicacion_id__in=ubicaciones).delete()
             for uid in ubicaciones:
                 ProductoUbicacion.objects.get_or_create(producto=producto_db, ubicacion_id=uid)
+            ubicacion_nueva = Ubicacion.objects.filter(id__in=ubicaciones).first()
+
+        # Registro automático de traslado en caso de cambio de almacén o ubicación (§Punto 12)
+        if almacen_nuevo.id != almacen_ant.id:
+            from inventario.servicios.operaciones import registrar_traslado_entre_almacenes
+            ex_origen = Existencia.objects.filter(producto=producto_db, almacen=almacen_ant).first()
+            cant_traslado = ex_origen.stock_disponible if ex_origen and ex_origen.stock_disponible > 0 else 0
+            if cant_traslado > 0:
+                registrar_traslado_entre_almacenes(
+                    producto=producto_db,
+                    almacen_origen=almacen_ant,
+                    almacen_destino=almacen_nuevo,
+                    cantidad=cant_traslado,
+                    usuario=usuario,
+                    ubicacion_origen=ubicacion_ant,
+                    ubicacion_destino=ubicacion_nueva,
+                    motivo="Traslado por cambio de categoría/almacén en edición de producto",
+                    ip_origen=ip_origen,
+                )
+            else:
+                Existencia.objects.get_or_create(
+                    producto=producto_db,
+                    almacen=almacen_nuevo,
+                    defaults={"stock_disponible": 0, "stock_en_prestamo": 0},
+                )
+        elif ubicaciones is not None and ubicacion_nueva and ubicacion_ant and ubicacion_nueva.id != ubicacion_ant.id:
+            from inventario.servicios.operaciones import registrar_traslado_interno
+            registrar_traslado_interno(
+                producto=producto_db,
+                almacen=almacen_ant,
+                ubicacion_origen=ubicacion_ant,
+                ubicacion_destino=ubicacion_nueva,
+                usuario=usuario,
+                motivo="Traslado interno por reubicación física en edición de producto",
+                ip_origen=ip_origen,
+            )
 
         registrar_auditoria(
             usuario=usuario,

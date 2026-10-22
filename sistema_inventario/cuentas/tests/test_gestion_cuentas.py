@@ -41,7 +41,9 @@ class GestionCuentasTest(TestCase):
             password="Password123",
             rol=UsuarioAudacIA.Rol.USUARIO,
             almacen_asignado=self.almacen,
+            creado_por=self.admin,
         )
+        self.usuario.almacenes_asignados.set([self.almacen])
 
     def test_usuario_normal_no_puede_acceder_a_lista_usuarios(self):
         self.client.login(username="operador_gestor", password="Password123")
@@ -157,3 +159,83 @@ class GestionCuentasTest(TestCase):
         self.assertEqual(resp.status_code, 403)
         self.superusuario.refresh_from_db()
         self.assertFalse(self.superusuario.eliminado_logicamente)
+
+    def test_login_muestra_mensaje_bienvenida(self):
+        resp = self.client.post(
+            "/cuentas/login/",
+            {"username": "admin_gestor", "password": "Password123"},
+            follow=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        messages_list = list(resp.context["messages"])
+        self.assertTrue(any("Hola, admin_gestor (Administrador)" in str(m) for m in messages_list))
+
+    def test_admin_solo_ve_usuarios_creados_por_el(self):
+        otro_admin = UsuarioAudacIA.objects.create_user(
+            username="admin_dos",
+            nombre_completo="Admin Dos",
+            password="Password123",
+            rol=UsuarioAudacIA.Rol.ADMINISTRADOR,
+        )
+        user_otro_admin = UsuarioAudacIA.objects.create_user(
+            username="operador_ajeno",
+            nombre_completo="Operador Ajeno",
+            password="Password123",
+            rol=UsuarioAudacIA.Rol.USUARIO,
+            almacen_asignado=self.almacen,
+            creado_por=otro_admin,
+        )
+        self.client.login(username="admin_gestor", password="Password123")
+        resp = self.client.get("/cuentas/usuarios/")
+        self.assertEqual(resp.status_code, 200)
+        # Debe ver al que él creó
+        self.assertContains(resp, "operador_gestor")
+        # No debe ver al que creó otro admin
+        self.assertNotContains(resp, "operador_ajeno")
+        # No debe verse a sí mismo
+        self.assertNotContains(resp, "admin_gestor")
+
+    def test_desasignar_almacen_huerfano_con_stock_falla(self):
+        from inventario.models import Categoria, Producto
+        cat = Categoria.objects.create(nombre="Cat Almacen", almacen_principal=self.almacen)
+        Producto.objects.create(
+            codigo_interno="CAT-0001",
+            nombre="Prod Almacen",
+            categoria=cat,
+            stock_inicial=10,
+        )
+        # self.usuario es el único usuario asignado a self.almacen
+        self.client.login(username="admin_gestor", password="Password123")
+        resp = self.client.post(
+            f"/cuentas/usuarios/{self.usuario.id}/editar/",
+            {
+                "username": self.usuario.username,
+                "nombre_completo": "Operador Modificado",
+                "rol": UsuarioAudacIA.Rol.USUARIO,
+                "almacenes_asignados": [],  # Intenta quitar el almacén
+            },
+        )
+        self.assertEqual(resp.status_code, 200)  # Form invalid re-renders
+        self.assertContains(resp, "Debes seleccionar obligatoriamente al menos un almacén")
+
+    def test_perfil_view_actualiza_nombre_y_password(self):
+        self.client.login(username="admin_gestor", password="Password123")
+        resp = self.client.get("/cuentas/perfil/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Mi Perfil")
+
+        resp_post = self.client.post(
+            "/cuentas/perfil/",
+            {
+                "nombre_completo": "Admin Renombrado",
+                "password_actual": "Password123",
+                "password_nueva": "NuevaPassword123",
+                "password_confirmacion": "NuevaPassword123",
+            },
+            follow=True,
+        )
+        self.assertEqual(resp_post.status_code, 200)
+        self.admin.refresh_from_db()
+        self.assertEqual(self.admin.nombre_completo, "Admin Renombrado")
+        self.assertTrue(self.admin.check_password("NuevaPassword123"))
+

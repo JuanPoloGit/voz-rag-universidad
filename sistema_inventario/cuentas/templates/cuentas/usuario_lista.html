@@ -23,10 +23,12 @@
         </div>
     </div>
 
-    <!-- Buscador automático en tiempo real -->
-    <div style="margin-bottom: 14px; max-width: 420px;">
-        <input type="text" id="inputFiltroUsuarios" class="form-control"
-               placeholder="Buscar usuario por nombre, rol o almacén..." autocomplete="off">
+    <!-- Buscador automático en tiempo real con atajo de teclado -->
+    <div style="margin-bottom: 14px; max-width: 420px; position: relative;">
+        <input type="text" id="inputFiltroUsuarios" name="q" class="form-control"
+               placeholder="Buscar usuario por nombre, rol o almacén..." autocomplete="off"
+               style="padding-right: 32px;">
+        <kbd title="Presiona / o Ctrl+K para buscar" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-family: var(--font-mono, monospace); font-size: 11px; padding: 2px 6px; border-radius: 4px; background: rgba(255,255,255,0.06); color: var(--text-dim); border: 1px solid var(--border-soft); pointer-events: none; user-select: none;">/</kbd>
     </div>
 
     <div class="table-responsive">
@@ -258,6 +260,20 @@ document.addEventListener("DOMContentLoaded", function() {
                 if (resp.redirected) {
                     window.location.reload();
                     return null;
+                }
+                if (!resp.ok) {
+                    if (btnSub) {
+                        btnSub.disabled = false;
+                        btnSub.textContent = "Guardar";
+                    }
+                    if (resp.status >= 500) {
+                        var errBox = document.createElement("div");
+                        errBox.className = "alert alert-error";
+                        errBox.style.cssText = "background: rgba(239, 68, 68, 0.15); border: 1px solid var(--accent-danger); color: #fca5a5; padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 14px;";
+                        errBox.textContent = "Ocurrió un error en el servidor al procesar la solicitud. Por favor verifica los datos o intenta de nuevo.";
+                        cuerpoModal.insertBefore(errBox, cuerpoModal.firstChild);
+                        return null;
+                    }
                 }
                 return resp.text();
             })
