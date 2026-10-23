@@ -5,7 +5,7 @@
 
 [CmdletBinding()]
 param (
-    [string]$HostName = "0.0.0.0",
+    [string]$HostName = "127.0.0.1",
     [int]$Port = 8000,
     [switch]$Reload,
     [switch]$SinMigraciones
@@ -59,23 +59,12 @@ Set-Location $ProjectDir
 Write-Host "[INFO] Verificando integridad de Django..." -ForegroundColor DarkGray
 & $VenvPython manage.py check --database default 2>&1 | Out-Null
 
-# 4. Detectar IP local para mostrar las URLs de acceso
-$LanIp = "127.0.0.1"
-try {
-    $LanIp = (Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias "Wi-Fi*" -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike "169.254*" } | Select-Object -ExpandProperty IPAddress -First 1)
-    if (-not $LanIp) {
-        $LanIp = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notlike "*Loopback*" -and $_.IPAddress -notlike "169.254*" } | Select-Object -ExpandProperty IPAddress -First 1)
-    }
-} catch {}
-
-# 5. Lanzar Uvicorn ASGI con terminacion TLS
+# 4. Lanzar Uvicorn ASGI con terminacion TLS
 Write-Host ""
 Write-Host "----------------------------------------------------------" -ForegroundColor Green
 Write-Host " [OK] Servidor HTTPS listo y disponible en:" -ForegroundColor Green
-Write-Host "      Equipo Local:  https://localhost:${Port}/" -ForegroundColor White
-if ($LanIp -and $LanIp -ne "127.0.0.1") {
-    Write-Host "      Red Local:     https://${LanIp}:${Port}/" -ForegroundColor White
-}
+Write-Host "      https://${HostName}:${Port}/" -ForegroundColor White
+Write-Host "      https://localhost:${Port}/" -ForegroundColor White
 Write-Host " [i] Para detener el servidor presione Ctrl + C" -ForegroundColor DarkGray
 Write-Host "----------------------------------------------------------" -ForegroundColor Green
 Write-Host ""
