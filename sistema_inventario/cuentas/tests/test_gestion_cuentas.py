@@ -168,7 +168,7 @@ class GestionCuentasTest(TestCase):
         )
         self.assertEqual(resp.status_code, 200)
         messages_list = list(resp.context["messages"])
-        self.assertTrue(any("Hola, admin_gestor (Administrador)" in str(m) for m in messages_list))
+        self.assertTrue(any("Hola, Admin Gestor (Administrador)" in str(m) for m in messages_list))
 
     def test_admin_solo_ve_usuarios_creados_por_el(self):
         otro_admin = UsuarioAudacIA.objects.create_user(

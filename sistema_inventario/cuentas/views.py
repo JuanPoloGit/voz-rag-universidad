@@ -53,7 +53,8 @@ class LoginView(View):
                 auth_login(request, user)
 
                 rol_nombre = user.get_rol_display() if hasattr(user, "get_rol_display") else user.rol
-                messages.success(request, f"Hola, {user.username} ({rol_nombre}).")
+                saludo_nombre = user.nombre_completo if user.nombre_completo else user.username
+                messages.success(request, f"Hola, {saludo_nombre} ({rol_nombre}).")
 
                 # Configurar caducidad de la sesión
                 if recordar:
