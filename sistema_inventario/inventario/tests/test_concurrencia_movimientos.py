@@ -95,19 +95,25 @@ class ConcurrenciaMovimientosTest(TransactionTestCase):
 
         def reintentar_entrada():
             connection.close()
-            try:
-                registrar_entrada(
-                    producto=self.producto,
-                    almacen=self.almacen,
-                    cantidad=5,
-                    usuario=self.user,
-                    clave_idempotencia=clave_unica,
-                )
-                return True
-            except Exception:
-                return False
-            finally:
-                connection.close()
+            for intento in range(5):
+                try:
+                    registrar_entrada(
+                        producto=self.producto,
+                        almacen=self.almacen,
+                        cantidad=5,
+                        usuario=self.user,
+                        clave_idempotencia=clave_unica,
+                    )
+                    return True
+                except Exception as e:
+                    if "locked" in str(e).lower() or "busy" in str(e).lower():
+                        import time
+                        time.sleep(0.05 * (intento + 1))
+                        continue
+                    return False
+                finally:
+                    connection.close()
+            return False
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
             futuros = [executor.submit(reintentar_entrada) for _ in range(5)]

@@ -27,11 +27,30 @@ def generar_certificados_desarrollo(certs_dir: str):
     )
 
     # Nombres alternativos del sujeto (SAN) obligatorios para TLS moderno
-    san = x509.SubjectAlternativeName([
+    import socket
+    san_list = [
         x509.DNSName("localhost"),
+        x509.DNSName("inventario-audacia.local"),
         x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
         x509.IPAddress(ipaddress.IPv6Address("::1")),
-    ])
+    ]
+    try:
+        host_actual = socket.gethostname()
+        if host_actual:
+            san_list.append(x509.DNSName(host_actual.lower()))
+            san_list.append(x509.DNSName(f"{host_actual.lower()}.local"))
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("8.8.8.8", 80))
+            ip_lan = s.getsockname()[0]
+            if ip_lan and ip_lan not in ("127.0.0.1", "::1"):
+                san_list.append(x509.IPAddress(ipaddress.IPv4Address(ip_lan)))
+        finally:
+            s.close()
+    except Exception:
+        pass
+
+    san = x509.SubjectAlternativeName(san_list)
 
     subject = issuer = x509.Name([
         x509.NameAttribute(NameOID.COUNTRY_NAME, "CO"),

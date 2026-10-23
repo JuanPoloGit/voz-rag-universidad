@@ -5,7 +5,7 @@
 
 [CmdletBinding()]
 param (
-    [string]$HostName = "127.0.0.1",
+    [string]$HostName = "0.0.0.0",
     [int]$Port = 8000,
     [switch]$Reload,
     [switch]$SinMigraciones
@@ -59,18 +59,37 @@ Set-Location $ProjectDir
 Write-Host "[INFO] Verificando integridad de Django..." -ForegroundColor DarkGray
 & $VenvPython manage.py check --database default 2>&1 | Out-Null
 
-# 4. Lanzar Uvicorn ASGI con terminacion TLS
+# 4. Iniciar servicio mDNS para publicar inventario-audacia.local en la LAN
+$MdnsScript = Join-Path $ScriptDir "anunciar_mdns.py"
+$MdnsProcess = $null
+if (Test-Path $MdnsScript) {
+    try {
+        $MdnsProcess = Start-Process -FilePath $VenvPython -ArgumentList @($MdnsScript, "--port", "$Port") -WindowStyle Hidden -PassThru
+        Write-Host " [OK] mDNS activo: anunciando 'https://inventario-audacia.local:$Port/' en la red local." -ForegroundColor Cyan
+    } catch {
+        Write-Host " [AVISO] No se pudo iniciar el servicio mDNS de fondo: $_" -ForegroundColor DarkGray
+    }
+}
+
+# 5. Lanzar Uvicorn ASGI con terminacion TLS
 Write-Host ""
 Write-Host "----------------------------------------------------------" -ForegroundColor Green
 Write-Host " [OK] Servidor HTTPS listo y disponible en:" -ForegroundColor Green
-Write-Host "      https://${HostName}:${Port}/" -ForegroundColor White
-Write-Host "      https://localhost:${Port}/" -ForegroundColor White
+Write-Host "      Red Local (mDNS): https://inventario-audacia.local:${Port}/" -ForegroundColor White
+Write-Host "      Equipo Local:     https://localhost:${Port}/" -ForegroundColor White
 Write-Host " [i] Para detener el servidor presione Ctrl + C" -ForegroundColor DarkGray
 Write-Host "----------------------------------------------------------" -ForegroundColor Green
 Write-Host ""
 
-if ($Reload) {
-    & $VenvPython -m uvicorn inventario_audacia.asgi:application --host $HostName --port $Port --ssl-certfile $CertFile --ssl-keyfile $KeyFile --reload
-} else {
-    & $VenvPython -m uvicorn inventario_audacia.asgi:application --host $HostName --port $Port --ssl-certfile $CertFile --ssl-keyfile $KeyFile
+try {
+    if ($Reload) {
+        & $VenvPython -m uvicorn inventario_audacia.asgi:application --host $HostName --port $Port --ssl-certfile $CertFile --ssl-keyfile $KeyFile --reload
+    } else {
+        & $VenvPython -m uvicorn inventario_audacia.asgi:application --host $HostName --port $Port --ssl-certfile $CertFile --ssl-keyfile $KeyFile
+    }
+} finally {
+    if ($MdnsProcess -and (-not $MdnsProcess.HasExited)) {
+        Write-Host "[INFO] Deteniendo servicio mDNS..." -ForegroundColor Yellow
+        Stop-Process -Id $MdnsProcess.Id -Force -ErrorAction SilentlyContinue
+    }
 }
