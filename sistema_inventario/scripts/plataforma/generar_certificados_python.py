@@ -30,7 +30,6 @@ def generar_certificados_desarrollo(certs_dir: str):
     import socket
     san_list = [
         x509.DNSName("localhost"),
-        x509.DNSName("inventario-audacia.local"),
         x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
         x509.IPAddress(ipaddress.IPv6Address("::1")),
     ]

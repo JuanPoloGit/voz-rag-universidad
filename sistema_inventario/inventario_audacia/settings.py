@@ -25,7 +25,7 @@ ALLOWED_HOSTS = [
     h.strip()
     for h in os.getenv(
         "DJANGO_ALLOWED_HOSTS",
-        "localhost,127.0.0.1,inventario-audacia.local,.local,0.0.0.0",
+        "localhost,127.0.0.1,0.0.0.0",
     ).split(",")
     if h.strip()
 ]
@@ -35,7 +35,7 @@ try:
     import socket
 
     _hostname = socket.gethostname().lower()
-    for _extra in (_hostname, f"{_hostname}.local", "inventario-audacia.local"):
+    for _extra in (_hostname, f"{_hostname}.local"):
         if _extra not in ALLOWED_HOSTS:
             ALLOWED_HOSTS.append(_extra)
     _s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
