@@ -322,7 +322,6 @@ class UbicacionListaView(LoginRequiredMixin, ListView):
         context = super().get_context_data(**kwargs)
         user = self.request.user
         alms_disponibles = user.get_almacenes_asignados() if getattr(user, "es_usuario_normal", False) else Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
-        context["agrupar_por_almacen"] = (getattr(user, "es_administrador", False) or alms_disponibles.count() > 1) and not self.request.GET.get("almacen_id")
         if not getattr(user, "es_usuario_normal", False) or alms_disponibles.count() > 1:
             context["almacenes"] = alms_disponibles
             context["almacen_seleccionado"] = self.request.GET.get("almacen_id")
@@ -334,6 +333,13 @@ class UbicacionListaView(LoginRequiredMixin, ListView):
 
 class UbicacionReactivarView(LoginRequiredMixin, View):
     """Reactivación de ubicación física inhabilitada."""
+
+    def dispatch(self, request, *args, **kwargs):
+        ubicacion = get_object_or_404(Ubicacion, pk=kwargs.get("pk"), eliminado=False)
+        if getattr(request.user, "es_usuario_normal", False):
+            if not request.user.tiene_acceso_almacen(ubicacion.almacen):
+                raise PermissionDenied("No tienes permisos para modificar ubicaciones de otro almacén.")
+        return super().dispatch(request, *args, **kwargs)
 
     def post(self, request, pk):
         ubicacion = get_object_or_404(Ubicacion, pk=pk, eliminado=False)
@@ -347,6 +353,13 @@ class UbicacionReactivarView(LoginRequiredMixin, View):
 
 class UbicacionEliminarView(LoginRequiredMixin, View):
     """Eliminación lógica de ubicación física (o redirección a traslado si tiene productos)."""
+
+    def dispatch(self, request, *args, **kwargs):
+        ubicacion = get_object_or_404(Ubicacion, pk=kwargs.get("pk"), eliminado=False)
+        if getattr(request.user, "es_usuario_normal", False):
+            if not request.user.tiene_acceso_almacen(ubicacion.almacen):
+                raise PermissionDenied("No tienes permisos para eliminar ubicaciones de otro almacén.")
+        return super().dispatch(request, *args, **kwargs)
 
     def post(self, request, pk):
         ubicacion = get_object_or_404(Ubicacion, pk=pk, eliminado=False)
@@ -418,29 +431,32 @@ class UbicacionEditarView(LoginRequiredMixin, AjaxModalFormMixin, UpdateView):
         return kwargs
 
     def form_valid(self, form):
+        almacen_nuevo = form.cleaned_data.get("almacen")
         try:
             ubicacion = actualizar_ubicacion(
                 ubicacion=self.object,
                 nombre=form.cleaned_data["nombre"],
                 descripcion=form.cleaned_data.get("descripcion", ""),
-                almacen=form.cleaned_data.get("almacen"),
+                almacen=almacen_nuevo,
                 usuario=self.request.user,
                 ip_origen=_obtener_ip(self.request),
             )
             messages.success(self.request, f"Ubicación '{ubicacion.nombre}' actualizada exitosamente.")
             return self.responder_exito(self.success_url)
+        except NecesitaTraslado as exc:
+            url_asistido = reverse("inventario:trasladar-ubicacion", kwargs={"pk": self.object.pk})
+            if almacen_nuevo:
+                url_asistido += f"?almacen_destino={almacen_nuevo.id}"
+            mensaje_html = (
+                f"La ubicación '{self.object.nombre}' tiene productos asignados. "
+                f"Cambiar el almacén requiere trasladar los productos. "
+                f"Para trasladarla a '{almacen_nuevo.nombre if almacen_nuevo else 'el nuevo almacén'}' junto con sus existencias y reasignar categorías, use el "
+                f"<a href='{url_asistido}' style='color: var(--accent-2); font-weight: 700; text-decoration: underline;'>Asistente de Traslado de Ubicación</a>."
+            )
+            form.add_error("almacen", mark_safe(mensaje_html))
+            return self.form_invalid(form)
         except Exception as exc:
             _procesar_error_formulario(form, exc)
-            almacen_nuevo = form.cleaned_data.get("almacen")
-            if almacen_nuevo and almacen_nuevo.id != self.object.almacen_id:
-                if self.object.producto_ubicaciones.filter(producto__archivado=False).exists():
-                    url_asistido = reverse("inventario:trasladar-ubicacion", kwargs={"pk": self.object.pk}) + f"?almacen_destino={almacen_nuevo.id}"
-                    mensaje_html = (
-                        f"La ubicación '{self.object.nombre}' tiene productos asignados. "
-                        f"Para trasladarla a '{almacen_nuevo.nombre}' junto con sus existencias y reasignar categorías, use el "
-                        f"<a href='{url_asistido}' style='color: var(--accent-2); font-weight: 700; text-decoration: underline;'>Asistente de Traslado de Ubicación</a>."
-                    )
-                    form.add_error("almacen", mark_safe(mensaje_html))
             return self.form_invalid(form)
 
 
@@ -484,7 +500,6 @@ class CategoriaListaView(LoginRequiredMixin, ListView):
         context = super().get_context_data(**kwargs)
         user = self.request.user
         alms_disponibles = user.get_almacenes_asignados() if getattr(user, "es_usuario_normal", False) else Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
-        context["agrupar_por_almacen"] = (getattr(user, "es_administrador", False) or alms_disponibles.count() > 1) and not self.request.GET.get("almacen_id")
         if not getattr(user, "es_usuario_normal", False) or alms_disponibles.count() > 1:
             context["almacenes"] = alms_disponibles
             context["almacen_seleccionado"] = self.request.GET.get("almacen_id")
@@ -498,6 +513,13 @@ class CategoriaListaView(LoginRequiredMixin, ListView):
 class CategoriaReactivarView(LoginRequiredMixin, View):
     """Reactivación de categoría previamente inhabilitada."""
 
+    def dispatch(self, request, *args, **kwargs):
+        categoria = get_object_or_404(Categoria, pk=kwargs.get("pk"), eliminado=False)
+        if getattr(request.user, "es_usuario_normal", False):
+            if not request.user.tiene_acceso_almacen(categoria.almacen_principal):
+                raise PermissionDenied("No tienes permisos para modificar categorías de otro almacén.")
+        return super().dispatch(request, *args, **kwargs)
+
     def post(self, request, pk):
         categoria = get_object_or_404(Categoria, pk=pk, eliminado=False)
         try:
@@ -510,6 +532,13 @@ class CategoriaReactivarView(LoginRequiredMixin, View):
 
 class CategoriaEliminarView(LoginRequiredMixin, View):
     """Eliminación lógica de una categoría sin productos activos."""
+
+    def dispatch(self, request, *args, **kwargs):
+        categoria = get_object_or_404(Categoria, pk=kwargs.get("pk"), eliminado=False)
+        if getattr(request.user, "es_usuario_normal", False):
+            if not request.user.tiene_acceso_almacen(categoria.almacen_principal):
+                raise PermissionDenied("No tienes permisos para eliminar categorías de otro almacén.")
+        return super().dispatch(request, *args, **kwargs)
 
     def post(self, request, pk):
         categoria = get_object_or_404(Categoria, pk=pk, eliminado=False)
@@ -649,6 +678,9 @@ class TipoCategoriaCrearView(LoginRequiredMixin, View):
             return redirect(next_url)
 
         categoria = get_object_or_404(Categoria, pk=int(categoria_id), eliminado=False)
+        if getattr(request.user, "es_usuario_normal", False):
+            if not request.user.tiene_acceso_almacen(categoria.almacen_principal):
+                raise PermissionDenied("No tienes permisos para modificar categorías de otro almacén.")
         try:
             tipo = crear_tipo_categoria(
                 nombre=nombre,
@@ -669,6 +701,13 @@ class TipoCategoriaCrearView(LoginRequiredMixin, View):
 
 class TipoCategoriaEditarView(LoginRequiredMixin, View):
     """Renombra un tipo de categoría conservando los productos e historial."""
+
+    def dispatch(self, request, *args, **kwargs):
+        tipo = get_object_or_404(TipoCategoria, pk=kwargs.get("pk"))
+        if getattr(request.user, "es_usuario_normal", False):
+            if not request.user.tiene_acceso_almacen(tipo.categoria.almacen_principal):
+                raise PermissionDenied("No tienes permisos para modificar categorías de otro almacén.")
+        return super().dispatch(request, *args, **kwargs)
 
     def post(self, request, pk):
         tipo = get_object_or_404(TipoCategoria, pk=pk)
@@ -695,6 +734,13 @@ class TipoCategoriaEditarView(LoginRequiredMixin, View):
 
 class TipoCategoriaEliminarView(LoginRequiredMixin, View):
     """Elimina un tipo de categoría opcional (los productos quedan sin tipo)."""
+
+    def dispatch(self, request, *args, **kwargs):
+        tipo = get_object_or_404(TipoCategoria, pk=kwargs.get("pk"))
+        if getattr(request.user, "es_usuario_normal", False):
+            if not request.user.tiene_acceso_almacen(tipo.categoria.almacen_principal):
+                raise PermissionDenied("No tienes permisos para eliminar categorías de otro almacén.")
+        return super().dispatch(request, *args, **kwargs)
 
     def post(self, request, pk):
         tipo = get_object_or_404(TipoCategoria, pk=pk)
@@ -1135,6 +1181,15 @@ class ProductoToggleActivoView(LoginRequiredMixin, View):
 
     def post(self, request, pk):
         producto = get_object_or_404(Producto, pk=pk, archivado=False)
+        if getattr(request.user, "es_usuario_normal", False):
+            user_alms = request.user.get_almacenes_asignados()
+            tiene_acceso = (
+                user_alms.filter(id=producto.categoria.almacen_principal_id).exists()
+                or producto.existencias.filter(almacen__in=user_alms).exists()
+                or producto.ubicaciones.filter(almacen__in=user_alms).exists()
+            )
+            if not tiene_acceso:
+                raise PermissionDenied("No tienes permisos para modificar productos de otro almacén.")
         try:
             actualizado = toggle_activo_producto(
                 producto=producto,
@@ -1848,6 +1903,8 @@ class MovimientoListaView(LoginRequiredMixin, ListView):
                 return qs.none()
 
         vista = self.request.GET.get("vista", "").upper()
+        if vista == "TRASLADO" and getattr(user, "es_usuario_normal", False):
+            raise PermissionDenied("Los usuarios estándar no tienen acceso a la vista de traslados.")
         tipo = self.request.GET.get("tipo", "")
 
         if not vista or vista == "TODOS":
@@ -2337,11 +2394,15 @@ class PrestamoCrearView(LoginRequiredMixin, View):
 class PrestamoDevolucionView(LoginRequiredMixin, View):
     """Registro de devolución total o parcial de un préstamo."""
 
-    def get(self, request, pk):
-        prestamo = get_object_or_404(Prestamo, pk=pk)
+    def dispatch(self, request, *args, **kwargs):
+        prestamo = get_object_or_404(Prestamo, pk=kwargs.get("pk"))
         if getattr(request.user, "es_usuario_normal", False):
             if not request.user.tiene_acceso_almacen(prestamo.almacen):
-                raise PermissionDenied("No tienes permisos para acceder a préstamos de otro almacén.")
+                raise PermissionDenied("No tienes permisos para gestionar préstamos de otro almacén.")
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request, pk):
+        prestamo = get_object_or_404(Prestamo, pk=pk)
         form = DevolucionPrestamoForm(initial={"cantidad": prestamo.cantidad_pendiente_devolucion})
         return render(request, "inventario/prestamo_devolucion.html", {"prestamo": prestamo, "form": form})
 
@@ -2385,11 +2446,15 @@ class PrestamoDevolucionView(LoginRequiredMixin, View):
 class PrestamoBajaView(LoginRequiredMixin, View):
     """Registro de baja por daño o pérdida de un préstamo (§9.4)."""
 
-    def get(self, request, pk):
-        prestamo = get_object_or_404(Prestamo, pk=pk)
+    def dispatch(self, request, *args, **kwargs):
+        prestamo = get_object_or_404(Prestamo, pk=kwargs.get("pk"))
         if getattr(request.user, "es_usuario_normal", False):
             if not request.user.tiene_acceso_almacen(prestamo.almacen):
                 raise PermissionDenied("No tienes permisos para dar de baja préstamos de otro almacén.")
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request, pk):
+        prestamo = get_object_or_404(Prestamo, pk=pk)
         form = BajaPrestamoForm(initial={"cantidad": 1})
         return render(request, "inventario/prestamo_baja.html", {"prestamo": prestamo, "form": form})
 
@@ -2434,8 +2499,10 @@ class PrestamoBajaView(LoginRequiredMixin, View):
 # 10. TRASLADOS OPERATIVOS
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TrasladoCrearView(LoginRequiredMixin, View):
-    """Registro de traslado operativo (interno o entre almacenes)."""
+class TrasladoCrearView(LoginRequiredMixin, RolRequeridoMixin, View):
+    """Registro de traslado operativo (interno o entre almacenes). Exclusivo de Administrador y Superusuario."""
+
+    roles_permitidos = (UsuarioAudacIA.Rol.ADMINISTRADOR, UsuarioAudacIA.Rol.SUPERUSUARIO)
 
     def get(self, request):
         form = TrasladoForm(usuario=request.user)
@@ -2621,12 +2688,18 @@ class ConteoFisicoConfirmarView(LoginRequiredMixin, RolRequeridoMixin, View):
 class MovimientoRevertirView(LoginRequiredMixin, View):
     """Reversión de un movimiento previo con verificación estricta de no negatividad (§9.6)."""
 
-    def get(self, request, pk):
-        movimiento = get_object_or_404(Movimiento, pk=pk)
+    def dispatch(self, request, *args, **kwargs):
+        movimiento = get_object_or_404(Movimiento, pk=kwargs.get("pk"))
         if getattr(request.user, "es_usuario_normal", False):
+            if "TRASLADO" in movimiento.tipo:
+                raise PermissionDenied("Los usuarios estándar no tienen permisos para revertir traslados.")
             alm_mov = movimiento.almacen_origen or movimiento.almacen_destino
             if alm_mov and not request.user.tiene_acceso_almacen(alm_mov):
                 raise PermissionDenied("No tienes permisos para revertir movimientos de otro almacén.")
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request, pk):
+        movimiento = get_object_or_404(Movimiento, pk=pk)
         form = ReversionForm()
         return render(request, "inventario/movimiento_revertir.html", {"movimiento": movimiento, "form": form})
 

@@ -84,132 +84,8 @@
         {% endif %}
     </form>
 
-    {% if agrupar_por_almacen %}
-        {% regroup categorias by almacen_principal as almacenes_grupos %}
-        {% for grupo in almacenes_grupos %}
-            <div style="margin-top: 22px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; background: rgba(30, 41, 59, 0.7); border-radius: 8px; border-left: 4px solid var(--accent);">
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 14.5px; font-weight: 700; color: var(--text);">🏛️ {{ grupo.grouper.nombre }}</span>
-                    <span class="badge badge-accent" style="font-size: 11.5px;">{{ grupo.list|length }} categoría{{ grupo.list|length|pluralize:"s" }}</span>
-                </div>
-            </div>
-            <div class="table-responsive" style="margin-bottom: 24px;">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Categoría</th>
-                            <th>Prefijo</th>
-                            <th>Tipos Asociados</th>
-                            <th>Estado</th>
-                            <th style="text-align: right;">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for cat in grupo.list %}
-                            <tr {% if not cat.activo %}style="opacity: 0.62;"{% endif %}>
-                                <td>
-                                    <strong>{{ cat.nombre }}</strong>
-                                    <div style="font-size: 11px; color: var(--text-faint);">
-                                        {{ cat.productos.count }} artículo(s)
-                                    </div>
-                                </td>
-                                <td><code>{{ cat.prefijo_codigo }}-XXXX</code></td>
-                                <td>
-                                    {% with tipos_activos=cat.tipos.all %}
-                                        {% if tipos_activos %}
-                                            <div class="type-list">
-                                                {% for t in tipos_activos %}
-                                                    <span class="type-chip">
-                                                        <span>{{ t.nombre }}</span>
-                                                        <button type="button"
-                                                                class="type-chip-btn btn-editar-tipo-chip"
-                                                                data-id="{{ t.id }}"
-                                                                data-nombre="{{ t.nombre }}"
-                                                                data-cat-id="{{ cat.id }}"
-                                                                data-action-url="{% url 'inventario:tipo-categoria-editar' t.id %}"
-                                                                title="Renombrar tipo"
-                                                                aria-label="Renombrar tipo">
-                                                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                                                        </button>
-                                                        <form method="post" action="{% url 'inventario:tipo-categoria-eliminar' t.id %}" style="display: inline; margin: 0;">
-                                                            {% csrf_token %}
-                                                            <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                                                            <button type="submit" class="type-chip-btn danger"
-                                                                    title="Eliminar tipo"
-                                                                    onclick="return confirm('¿Eliminar el tipo «{{ t.nombre }}»?');">&times;</button>
-                                                        </form>
-                                                    </span>
-                                                {% endfor %}
-                                            </div>
-                                        {% else %}
-                                            <span style="color: var(--text-faint); font-size: 12px; font-style: italic;">Sin tipos</span>
-                                        {% endif %}
-                                    {% endwith %}
-                                </td>
-                                <td>
-                                    {% if cat.activo %}
-                                        <span class="badge badge-ok">Activa</span>
-                                    {% else %}
-                                        <span class="badge badge-warn">Inhabilitada</span>
-                                    {% endif %}
-                                </td>
-                                <td style="text-align: right; white-space: nowrap;">
-                                    <div class="action-group">
-                                        <button type="button"
-                                                class="btn btn-sm btn-secondary btn-preseleccionar-cat"
-                                                data-cat-id="{{ cat.id }}"
-                                                data-cat-nombre="{{ cat.nombre }}">
-                                            + Tipo
-                                        </button>
-                                        <button type="button"
-                                                class="btn btn-sm btn-secondary btn-editar-cat-modal"
-                                                data-url="{% url 'inventario:categoria-editar' cat.id %}"
-                                                data-nombre="{{ cat.nombre }}"
-                                                data-almacen="{{ cat.almacen_principal_id }}"
-                                                data-tipos="{% for t in cat.tipos.all %}{{ t.nombre }}{% if not forloop.last %}, {% endif %}{% endfor %}">
-                                            Editar
-                                        </button>
-                                        {% if cat.activo %}
-                                            {% if user.es_administrador %}
-                                                <form method="post" action="{% url 'inventario:categoria-desactivar' cat.id %}" style="display: inline; margin: 0;">
-                                                    {% csrf_token %}
-                                                    <button type="submit" class="btn btn-sm btn-secondary" style="color: var(--warn);">
-                                                        Inhabilitar
-                                                    </button>
-                                                </form>
-                                            {% endif %}
-                                        {% else %}
-                                            <form method="post" action="{% url 'inventario:categoria-reactivar' cat.id %}" style="display: inline; margin: 0;">
-                                                {% csrf_token %}
-                                                <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                                                <button type="submit" class="btn btn-sm btn-secondary" style="color: var(--ok);">
-                                                    Habilitar
-                                                </button>
-                                            </form>
-                                        {% endif %}
-                                        <form method="post" action="{% url 'inventario:categoria-eliminar' cat.id %}" style="display: inline; margin: 0;"
-                                              onsubmit="return confirm('¿Eliminar la categoría «{{ cat.nombre }}»?');">
-                                            {% csrf_token %}
-                                            <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                                            <button type="submit" class="btn btn-sm btn-danger">
-                                                Eliminar
-                                            </button>
-                                        </form>
-                                    </div>
-                                </td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        {% empty %}
-            <div style="text-align: center; padding: 2.5rem; color: var(--text-muted);">
-                No se encontraron categorías con los criterios actuales.
-            </div>
-        {% endfor %}
-    {% else %}
-        <!-- Tabla de Categorías Plana -->
-        <div class="table-responsive">
+    <!-- Tabla de Categorías Plana -->
+    <div class="table-responsive">
             <table class="data-table">
                 <thead>
                     <tr>
@@ -328,7 +204,6 @@
                 </tbody>
             </table>
         </div>
-    {% endif %}
 </div>
 
 <!-- ═══ MODAL NUEVA / EDITAR CATEGORÍA ═══ -->

@@ -142,6 +142,8 @@
                                 data-almacen-id="{{ ex.almacen_id }}"
                                 data-producto-nombre="{{ ex.producto.codigo_interno }} — {{ ex.producto.nombre }}"
                                 data-almacen-nombre="{{ ex.almacen.nombre }}"
+                                data-nombre-empaque="{{ ex.producto.nombre_empaque|default:'' }}"
+                                data-unidades-empaque="{{ ex.producto.unidades_por_empaque|default:1 }}"
                                 data-ubicacion-id="{% with ub=ex.producto.ubicaciones.first %}{{ ub.id|default:'' }}{% endwith %}"
                                 data-ubicacion-nombre="{% with ub=ex.producto.ubicaciones.first %}{{ ub.nombre|default:'' }}{% endwith %}">
                             + Entrada
@@ -180,8 +182,8 @@
             </div>
 
             <div class="form-grid-2">
-                <div class="form-group">
-                    <label>Cantidad (Unidades Base) *</label>
+                <div class="form-group" id="grupoCantidadAlerta">
+                    <label id="lblCantidadAlerta" style="transition: color 0.2s ease;">Cantidad (Unidades Base) *</label>
                     {{ entrada_form.cantidad }}
                 </div>
                 <div class="form-group">
@@ -194,16 +196,18 @@
                 </div>
             </div>
 
-            <div class="form-group">
+            <div class="form-group" id="containerEmpaqueAlerta">
                 <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer;">
                     {{ entrada_form.es_empaque }}
-                    <span>Ingresar por paquetes / empaques</span>
+                    <span id="lblEmpaqueAlertaTexto">¿Ingresar por paquetes / empaques?</span>
                 </label>
+                <div id="ayudaEmpaqueAlertaTexto" class="form-help" style="margin-top: 4px; font-size: 12px; color: var(--text-dim); display: none;"></div>
             </div>
 
-            <div class="form-group" id="grupoEmpaquesAlerta" style="display: none;">
-                <label>Cantidad de Empaques</label>
+            <div class="form-group" id="grupoEmpaquesAlerta" style="display: none; background: rgba(59, 111, 240, 0.08); border: 1px solid rgba(59, 111, 240, 0.25); border-radius: 8px; padding: 12px 14px; margin-bottom: 1rem;">
+                <label style="font-weight: 700; color: var(--text); display: block; margin-bottom: 4px;">Cantidad de Empaques *</label>
                 {{ entrada_form.cantidad_empaques }}
+                <div id="dispTotalEmpaqueAlertaCalculado" class="form-help" style="margin-top: 6px; font-weight: 600; color: var(--ok); display: none;"></div>
             </div>
 
             <div class="form-group" style="margin-bottom: 0;">
@@ -237,11 +241,88 @@ document.addEventListener("DOMContentLoaded", function() {
         return "ENT-ALERTA-" + Date.now() + "-" + Math.random().toString(36).substring(2, 8);
     }
 
-    if (chkEmpaque) {
-        chkEmpaque.addEventListener("change", function() {
-            grupoEmpaque.style.display = chkEmpaque.checked ? "block" : "none";
-        });
+    var inputCantAlerta = form.querySelector('[name="cantidad"]');
+    var inpCantEmpaquesAlerta = form.querySelector('[name="cantidad_empaques"]');
+    var lblEmpaqueAlertaTexto = document.getElementById("lblEmpaqueAlertaTexto");
+    var ayudaEmpaqueAlertaTexto = document.getElementById("ayudaEmpaqueAlertaTexto");
+    var dispTotalEmpaqueAlerta = document.getElementById("dispTotalEmpaqueAlertaCalculado");
+    var containerEmpaqueAlerta = document.getElementById("containerEmpaqueAlerta");
+    var lblCantidadAlerta = document.getElementById("lblCantidadAlerta");
+
+    var currentFactorEmpaque = 1;
+    var currentNombreEmpaque = "Empaque";
+
+    function calcularTotalEmpaqueAlerta() {
+        if (!inpCantEmpaquesAlerta || !dispTotalEmpaqueAlerta) return;
+        var cant = parseInt(inpCantEmpaquesAlerta.value, 10) || 0;
+        if (cant > 0 && currentFactorEmpaque > 1) {
+            var total = cant * currentFactorEmpaque;
+            dispTotalEmpaqueAlerta.innerHTML = "✓ <strong>" + cant + "</strong> " + currentNombreEmpaque + " × <strong>" + currentFactorEmpaque + "</strong> unid. = <strong style='color: var(--accent-2);'>" + total + " unidades base</strong> que ingresarán al stock.";
+            dispTotalEmpaqueAlerta.style.display = "block";
+            if (inputCantAlerta && chkEmpaque && chkEmpaque.checked) {
+                inputCantAlerta.value = total;
+            }
+        } else {
+            dispTotalEmpaqueAlerta.style.display = "none";
+            if (inputCantAlerta && chkEmpaque && chkEmpaque.checked) {
+                inputCantAlerta.value = "";
+            }
+        }
     }
+
+    function toggleModoEmpaqueAlerta() {
+        if (!chkEmpaque) return;
+        var esEmp = chkEmpaque.checked && !chkEmpaque.disabled;
+        if (esEmp) {
+            if (grupoEmpaque) grupoEmpaque.style.display = "block";
+            if (inpCantEmpaquesAlerta) {
+                inpCantEmpaquesAlerta.disabled = false;
+                inpCantEmpaquesAlerta.required = true;
+            }
+            if (inputCantAlerta) {
+                inputCantAlerta.disabled = true;
+                inputCantAlerta.required = false;
+                inputCantAlerta.style.opacity = "0.5";
+                inputCantAlerta.style.cursor = "not-allowed";
+                inputCantAlerta.style.backgroundColor = "rgba(255, 255, 255, 0.04)";
+            }
+            if (lblCantidadAlerta) {
+                lblCantidadAlerta.innerHTML = 'Cantidad (Unidades Base) <small style="color: var(--accent-2); font-weight: 500;">(calculada automáticamente por empaques)</small>';
+            }
+            calcularTotalEmpaqueAlerta();
+        } else {
+            if (grupoEmpaque) grupoEmpaque.style.display = "none";
+            if (inpCantEmpaquesAlerta) {
+                inpCantEmpaquesAlerta.disabled = true;
+                inpCantEmpaquesAlerta.required = false;
+                inpCantEmpaquesAlerta.value = "";
+            }
+            if (inputCantAlerta) {
+                inputCantAlerta.disabled = false;
+                inputCantAlerta.required = true;
+                inputCantAlerta.style.opacity = "1";
+                inputCantAlerta.style.cursor = "";
+                inputCantAlerta.style.backgroundColor = "";
+            }
+            if (lblCantidadAlerta) {
+                lblCantidadAlerta.innerHTML = 'Cantidad (Unidades Base) *';
+            }
+            if (dispTotalEmpaqueAlerta) dispTotalEmpaqueAlerta.style.display = "none";
+        }
+    }
+
+    if (chkEmpaque) {
+        chkEmpaque.addEventListener("change", toggleModoEmpaqueAlerta);
+    }
+    if (inpCantEmpaquesAlerta) {
+        inpCantEmpaquesAlerta.addEventListener("input", calcularTotalEmpaqueAlerta);
+    }
+
+    form.addEventListener("submit", function() {
+        if (chkEmpaque && chkEmpaque.checked && inputCantAlerta) {
+            inputCantAlerta.disabled = false;
+        }
+    });
 
     document.querySelectorAll(".btn-abastecer-item").forEach(function(btn) {
         btn.addEventListener("click", function() {
@@ -251,6 +332,11 @@ document.addEventListener("DOMContentLoaded", function() {
             var aid = btn.getAttribute("data-almacen-id");
             var pnom = btn.getAttribute("data-producto-nombre");
             var anom = btn.getAttribute("data-almacen-nombre");
+            var nomEmp = btn.getAttribute("data-nombre-empaque") || "Empaque";
+            var unidEmp = parseInt(btn.getAttribute("data-unidades-empaque"), 10) || 1;
+
+            currentFactorEmpaque = unidEmp;
+            currentNombreEmpaque = nomEmp;
 
             inputProdId.value = pid || "";
             inputAlmId.value = aid || "";
@@ -268,6 +354,36 @@ document.addEventListener("DOMContentLoaded", function() {
                 } else {
                     txtModalUbic.innerHTML = '<span style="color: var(--text-muted); font-style: italic;">Sin ubicación física asignada en catálogo</span>';
                 }
+            }
+
+            // Habilitación o inhabilitación de empaques según catálogo
+            if (chkEmpaque) {
+                if (unidEmp > 1) {
+                    chkEmpaque.disabled = false;
+                    if (containerEmpaqueAlerta) {
+                        containerEmpaqueAlerta.style.opacity = "1";
+                        containerEmpaqueAlerta.style.pointerEvents = "auto";
+                    }
+                    if (lblEmpaqueAlertaTexto) {
+                        lblEmpaqueAlertaTexto.innerHTML = '<strong>¿Ingresar por paquetes / empaques?</strong> <span class="badge badge-accent" style="font-size: 11px; margin-left: 6px;">' + nomEmp + ' x ' + unidEmp + ' unid.</span>';
+                    }
+                    if (ayudaEmpaqueAlertaTexto) ayudaEmpaqueAlertaTexto.style.display = "none";
+                } else {
+                    chkEmpaque.checked = false;
+                    chkEmpaque.disabled = true;
+                    if (containerEmpaqueAlerta) {
+                        containerEmpaqueAlerta.style.opacity = "0.65";
+                        containerEmpaqueAlerta.style.pointerEvents = "none";
+                    }
+                    if (lblEmpaqueAlertaTexto) {
+                        lblEmpaqueAlertaTexto.textContent = "¿Ingresar por paquetes / empaques?";
+                    }
+                    if (ayudaEmpaqueAlertaTexto) {
+                        ayudaEmpaqueAlertaTexto.textContent = "Este artículo no tiene empaques configurados en el catálogo (se gestiona por 1 unid. base).";
+                        ayudaEmpaqueAlertaTexto.style.display = "block";
+                    }
+                }
+                toggleModoEmpaqueAlerta();
             }
 
             if (inputMotivo) inputMotivo.value = "Reposición por alerta de stock";

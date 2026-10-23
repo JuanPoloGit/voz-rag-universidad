@@ -48,86 +48,7 @@
         {% endif %}
     </form>
 
-    {% if agrupar_por_almacen %}
-        {% regroup ubicaciones by almacen as almacenes_grupos %}
-        {% for grupo in almacenes_grupos %}
-            <div style="margin-top: 22px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; background: rgba(30, 41, 59, 0.7); border-radius: 8px; border-left: 4px solid var(--accent);">
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 14.5px; font-weight: 700; color: var(--text);">🏛️ {{ grupo.grouper.nombre }}</span>
-                    <span class="badge badge-accent" style="font-size: 11.5px;">{{ grupo.list|length }} ubicación{{ grupo.list|length|pluralize:"es" }}</span>
-                </div>
-            </div>
-            <div class="table-responsive" style="margin-bottom: 24px;">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Nombre de Ubicación</th>
-                            <th>Descripción</th>
-                            <th>Estado</th>
-                            <th style="text-align: right;">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for ubic in grupo.list %}
-                            <tr {% if not ubic.activo %}style="opacity: 0.62;"{% endif %}>
-                                <td><strong>{{ ubic.nombre }}</strong></td>
-                                <td>{{ ubic.descripcion|default:"—" }}</td>
-                                <td>
-                                    {% if ubic.activo %}
-                                        <span class="badge badge-ok">Activa</span>
-                                    {% else %}
-                                        <span class="badge badge-warn">Inhabilitada</span>
-                                    {% endif %}
-                                </td>
-                                <td style="text-align: right; white-space: nowrap;">
-                                    <div class="action-group">
-                                        <button type="button"
-                                                class="btn btn-sm btn-secondary btn-editar-ubic-modal"
-                                                data-url="{% url 'inventario:ubicacion-editar' ubic.id %}"
-                                                data-nombre="{{ ubic.nombre }}"
-                                                data-almacen="{{ ubic.almacen_id }}"
-                                                data-descripcion="{{ ubic.descripcion|default:'' }}">
-                                            Editar
-                                        </button>
-
-                                        {% if ubic.activo %}
-                                            {% if user.es_administrador %}
-                                                <a href="{% url 'inventario:ubicacion-desactivar' ubic.id %}" class="btn btn-sm btn-secondary" style="color: var(--warn);">
-                                                    Inhabilitar
-                                                </a>
-                                            {% endif %}
-                                        {% else %}
-                                            <form method="post" action="{% url 'inventario:ubicacion-reactivar' ubic.id %}" style="display: inline; margin: 0;">
-                                                {% csrf_token %}
-                                                <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                                                <button type="submit" class="btn btn-sm btn-secondary" style="color: var(--ok);">
-                                                    Habilitar
-                                                </button>
-                                            </form>
-                                        {% endif %}
-
-                                        <form method="post" action="{% url 'inventario:ubicacion-eliminar' ubic.id %}" style="display: inline; margin: 0;"
-                                              onsubmit="return confirm('¿Eliminar la ubicación «{{ ubic.nombre }}»?');">
-                                            {% csrf_token %}
-                                            <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                                            <button type="submit" class="btn btn-sm btn-danger">
-                                                Eliminar
-                                            </button>
-                                        </form>
-                                    </div>
-                                </td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        {% empty %}
-            <div style="text-align: center; padding: 2rem; color: var(--text-muted);">
-                No hay ubicaciones registradas con los criterios actuales.
-            </div>
-        {% endfor %}
-    {% else %}
-        <div class="table-responsive">
+    <div class="table-responsive">
             <table class="data-table">
                 <thead>
                     <tr>
@@ -199,7 +120,6 @@
                 </tbody>
             </table>
         </div>
-    {% endif %}
     </div>
 </div>
 

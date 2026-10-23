@@ -56,6 +56,14 @@
             </div>
         </div>
 
+        {% if form.categoria_destino %}
+            <div class="form-group" style="margin-bottom: 1.25rem;">
+                <label><strong>{{ form.categoria_destino.label }}</strong></label>
+                {{ form.categoria_destino }}
+                {{ form.categoria_destino.errors }}
+            </div>
+        {% endif %}
+
         <div class="form-group" style="margin-bottom: 1.25rem;">
             <label><strong>{{ form.cantidad.label }}</strong> *</label>
             {{ form.cantidad }}

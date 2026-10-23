@@ -6,9 +6,9 @@ from django.urls import reverse
 
 from cuentas.forms import UsuarioForm
 from inventario.forms import ConteoFisicoForm, ProductoForm, TrasladoForm
-from inventario.models import Almacen, Categoria, Existencia, Producto, ProductoUbicacion, Ubicacion
+from inventario.models import Almacen, Categoria, Existencia, Prestamo, Producto, ProductoUbicacion, Ubicacion
 from inventario.servicios.datos_maestros import crear_almacen, crear_categoria, crear_producto, crear_ubicacion
-from inventario.servicios.operaciones import registrar_traslado_entre_almacenes, registrar_traslado_interno
+from inventario.servicios.operaciones import registrar_prestamo, registrar_traslado_entre_almacenes, registrar_traslado_interno
 
 Usuario = get_user_model()
 
@@ -359,3 +359,73 @@ class MejorasV2TestCase(TestCase):
         self.assertEqual(resp.context["fecha_desde"], hoy)
         self.assertEqual(resp.context["fecha_hasta"], hoy)
         self.assertEqual(resp.context["almacen_id"], str(self.almacen_a.id))
+
+    def test_editar_ubicacion_con_productos_captura_necesita_traslado_y_muestra_enlace_asistente(self):
+        """Al editar una ubicación con productos y cambiar de almacén, debe responder con el enlace al Asistente de Traslado."""
+        self.client.force_login(self.superadmin)
+        url = reverse("inventario:ubicacion-editar", args=[self.ubicacion_a1.pk])
+        resp = self.client.post(
+            url,
+            {
+                "nombre": self.ubicacion_a1.nombre,
+                "descripcion": self.ubicacion_a1.descripcion,
+                "almacen": self.almacen_b.pk,
+            },
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(resp.status_code, 400)
+        data = resp.json()
+        self.assertFalse(data["success"])
+        self.assertIn("almacen", data["errors"])
+        error_msg = data["errors"]["almacen"][0]
+        self.assertIn("Asistente de Traslado de Ubicación", error_msg)
+        self.assertIn(f"/inventario/ubicaciones/{self.ubicacion_a1.pk}/trasladar/", error_msg)
+
+    def test_usuario_normal_bloqueado_en_traslado_y_vista_traslado(self):
+        """Los usuarios estándar no deben tener acceso a realizar traslados ni ver la pestaña de traslados."""
+        self.client.force_login(self.usuario)
+        # GET a endpoint de traslado -> 403
+        resp_get = self.client.get(reverse("inventario:movimiento-traslado"))
+        self.assertEqual(resp_get.status_code, 403)
+
+        # POST a endpoint de traslado -> 403
+        resp_post = self.client.post(
+            reverse("inventario:movimiento-traslado"),
+            data={"producto": self.producto.id, "motivo": "Intento no autorizado"},
+        )
+        self.assertEqual(resp_post.status_code, 403)
+
+        # GET a vista=TRASLADO en movimientos -> 403
+        resp_vista = self.client.get(reverse("inventario:movimiento-lista") + "?vista=TRASLADO")
+        self.assertEqual(resp_vista.status_code, 403)
+
+    def test_administrador_autorizado_en_traslado(self):
+        """Los administradores y superusuarios pueden acceder al registro y vista de traslados."""
+        self.client.force_login(self.admin)
+        resp_get = self.client.get(reverse("inventario:movimiento-traslado"))
+        self.assertEqual(resp_get.status_code, 200)
+
+        resp_vista = self.client.get(reverse("inventario:movimiento-lista") + "?vista=TRASLADO")
+        self.assertEqual(resp_vista.status_code, 200)
+
+    def test_prestamo_abierto_muestra_badge_en_prestamo_no_cerrado(self):
+        """Un préstamo en estado ABIERTO debe mostrar la etiqueta 'En Préstamo' y las acciones de Devolver y Baja."""
+        p_obj, mov, _ = registrar_prestamo(
+            producto=self.producto,
+            almacen=self.almacen_a,
+            cantidad=3,
+            destinatario="Prof. Carlos Gómez",
+            motivo="Práctica de robótica",
+            usuario=self.superadmin,
+        )
+        self.assertEqual(p_obj.estado, Prestamo.Estado.ABIERTO)
+        self.assertEqual(p_obj.cantidad_pendiente_devolucion, 3)
+
+        self.client.force_login(self.admin)
+        resp = self.client.get(reverse("inventario:movimiento-lista") + "?vista=PRESTAMOS")
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "En Préstamo")
+        self.assertContains(resp, "Devolver")
+        self.assertContains(resp, "Baja daño")
+        # No debe figurar como Cerrado en la columna de estado
+        self.assertNotContains(resp, '<span class="badge badge-ok">Cerrado</span>')

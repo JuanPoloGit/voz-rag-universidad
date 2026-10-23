@@ -340,9 +340,10 @@ def actualizar_ubicacion(
     almacen_efectivo = almacen or ubicacion_db.almacen
     if almacen and almacen.id != ubicacion_db.almacen_id:
         if ProductoUbicacion.objects.filter(ubicacion=ubicacion_db, producto__archivado=False).exists():
-            raise ValidationError({
-                "almacen": f"No se puede cambiar el almacén de la ubicación '{ubicacion_db.nombre}' porque tiene productos asignados. Reasigne o traslade los productos primero."
-            })
+            raise NecesitaTraslado(
+                f"No se puede cambiar el almacén de la ubicación '{ubicacion_db.nombre}' porque tiene productos asignados. "
+                f"Reasigne o traslade los productos primero."
+            )
 
     # Verificar unicidad en el almacén destino/efectivo
     qs_unique = Ubicacion.objects.filter(almacen=almacen_efectivo, nombre__iexact=nombre, eliminado=False).exclude(pk=ubicacion_db.pk)
