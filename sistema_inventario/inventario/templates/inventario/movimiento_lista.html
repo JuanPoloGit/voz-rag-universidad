@@ -79,68 +79,101 @@
     </div>
 
     <!-- Botones de Filtro por Tipo de Visualización -->
-    <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;">
-        <div class="filter-pills" role="tablist" aria-label="Filtrar vista de movimientos">
-            <a href="{% url 'inventario:movimiento-lista' %}?vista=PRESTAMOS{% if q %}&q={{ q }}{% endif %}"
+    <div style="display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px;">
+        <div class="filter-pills" role="tablist" aria-label="Filtrar vista de movimientos" style="flex-wrap: wrap;">
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=PRESTAMOS{% if q %}&q={{ q }}{% endif %}{% if fecha_desde %}&fecha_desde={{ fecha_desde }}{% endif %}{% if fecha_hasta %}&fecha_hasta={{ fecha_hasta }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
                class="filter-pill {% if vista_actual == 'PRESTAMOS' %}active{% endif %}">
                 <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                 Préstamos
             </a>
-            <a href="{% url 'inventario:movimiento-lista' %}?vista=DOTACION{% if q %}&q={{ q }}{% endif %}"
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=DOTACION{% if q %}&q={{ q }}{% endif %}{% if fecha_desde %}&fecha_desde={{ fecha_desde }}{% endif %}{% if fecha_hasta %}&fecha_hasta={{ fecha_hasta }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
                class="filter-pill {% if vista_actual == 'DOTACION' %}active{% endif %}">
                 <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                 Dotación
             </a>
-            <a href="{% url 'inventario:movimiento-lista' %}?vista=SALIDA{% if q %}&q={{ q }}{% endif %}"
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=SALIDA{% if q %}&q={{ q }}{% endif %}{% if fecha_desde %}&fecha_desde={{ fecha_desde }}{% endif %}{% if fecha_hasta %}&fecha_hasta={{ fecha_hasta }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
                class="filter-pill {% if vista_actual == 'SALIDA' %}active{% endif %}">
                 <svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 Salidas
             </a>
-            <a href="{% url 'inventario:movimiento-lista' %}?vista=ENTRADA{% if q %}&q={{ q }}{% endif %}"
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=ENTRADA{% if q %}&q={{ q }}{% endif %}{% if fecha_desde %}&fecha_desde={{ fecha_desde }}{% endif %}{% if fecha_hasta %}&fecha_hasta={{ fecha_hasta }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
                class="filter-pill {% if vista_actual == 'ENTRADA' %}active{% endif %}">
                 <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 Entradas
             </a>
-            <a href="{% url 'inventario:movimiento-lista' %}?vista=TRASLADO{% if q %}&q={{ q }}{% endif %}"
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=TRASLADO{% if q %}&q={{ q }}{% endif %}{% if fecha_desde %}&fecha_desde={{ fecha_desde }}{% endif %}{% if fecha_hasta %}&fecha_hasta={{ fecha_hasta }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
                class="filter-pill {% if vista_actual == 'TRASLADO' %}active{% endif %}">
                 <svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
                 Traslados
             </a>
-            <a href="{% url 'inventario:movimiento-lista' %}?vista=CONTEOS{% if q %}&q={{ q }}{% endif %}"
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=CONTEOS{% if q %}&q={{ q }}{% endif %}{% if fecha_desde %}&fecha_desde={{ fecha_desde }}{% endif %}{% if fecha_hasta %}&fecha_hasta={{ fecha_hasta }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
                class="filter-pill {% if vista_actual == 'CONTEOS' %}active{% endif %}">
                 <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
                 Conteos Físicos
             </a>
-            <a href="{% url 'inventario:movimiento-lista' %}?vista=SIN_ROTACION{% if q %}&q={{ q }}{% endif %}"
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=SIN_ROTACION{% if q %}&q={{ q }}{% endif %}{% if fecha_desde %}&fecha_desde={{ fecha_desde }}{% endif %}{% if fecha_hasta %}&fecha_hasta={{ fecha_hasta }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
                class="filter-pill {% if vista_actual == 'SIN_ROTACION' %}active{% endif %}">
                 <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                 Sin Rotación
             </a>
         </div>
 
-        <!-- Buscador y filtro automático -->
+        <!-- Barra de Filtros Completa y Responsiva -->
         <form method="get" action="{% url 'inventario:movimiento-lista' %}" data-auto-filter="true"
-              style="display: flex; gap: 8px; flex: 1; min-width: 240px; max-width: 520px; align-items: center;">
+              style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; background: var(--bg-panel); border: 1px solid var(--border); padding: 10px 14px; border-radius: 8px;">
             <input type="hidden" name="vista" value="{{ vista_actual }}">
-            <input type="text" name="q" value="{{ q }}" class="form-control"
-                   placeholder="Buscar producto, código, destinatario..." autocomplete="off">
+
+            <div style="flex: 2; min-width: 200px;">
+                <input type="text" name="q" value="{{ q }}" class="form-control"
+                       placeholder="Buscar por código, producto, motivo, destinatario..." autocomplete="off">
+            </div>
+
+            {% if almacenes_filtro and almacenes_filtro.count > 1 or not es_usuario_normal %}
+            <div style="flex: 1; min-width: 160px;">
+                <select name="almacen_id" class="form-control" title="Filtrar por Almacén">
+                    <option value="">Todos los almacenes</option>
+                    {% for alm in almacenes_filtro %}
+                        <option value="{{ alm.id }}" {% if almacen_id == alm.id %}selected{% endif %}>{{ alm.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+
+            <div style="display: flex; gap: 8px; align-items: center; flex: 1.5; min-width: 250px;">
+                <div style="display: flex; align-items: center; gap: 4px; flex: 1;">
+                    <span style="font-size: 11px; color: var(--text-faint); white-space: nowrap;">Desde:</span>
+                    <input type="date" name="fecha_desde" value="{{ fecha_desde }}" class="form-control" style="font-size: 12px; padding: 4px 8px;">
+                </div>
+                <div style="display: flex; align-items: center; gap: 4px; flex: 1;">
+                    <span style="font-size: 11px; color: var(--text-faint); white-space: nowrap;">Hasta:</span>
+                    <input type="date" name="fecha_hasta" value="{{ fecha_hasta }}" class="form-control" style="font-size: 12px; padding: 4px 8px;">
+                </div>
+            </div>
+
             {% if vista_actual == 'PRESTAMOS' %}
-                <select name="estado_prestamo" class="form-control" style="max-width: 170px;">
+            <div style="flex: 1; min-width: 140px;">
+                <select name="estado_prestamo" class="form-control">
                     <option value="">Todos los estados</option>
                     {% for val, etiq in estados_prestamo %}
                         <option value="{{ val }}" {% if estado_prestamo == val %}selected{% endif %}>{{ etiq }}</option>
                     {% endfor %}
                 </select>
+            </div>
             {% elif vista_actual == 'SIN_ROTACION' %}
-                <select name="dias" class="form-control" style="max-width: 175px;" title="Inactividad mínima">
+            <div style="flex: 1; min-width: 140px;">
+                <select name="dias" class="form-control" title="Inactividad mínima">
                     <option value="15" {% if dias_estancados == 15 %}selected{% endif %}>Sin mov. &ge; 15 días</option>
                     <option value="30" {% if dias_estancados == 30 %}selected{% endif %}>Sin mov. &ge; 30 días</option>
                     <option value="60" {% if dias_estancados == 60 %}selected{% endif %}>Sin mov. &ge; 60 días</option>
                     <option value="90" {% if dias_estancados == 90 %}selected{% endif %}>Sin mov. &ge; 90 días</option>
                 </select>
+            </div>
             {% endif %}
-            {% if q or estado_prestamo or tipo_seleccionado %}
-                <a href="{% url 'inventario:movimiento-lista' %}?vista={{ vista_actual }}" class="btn btn-sm btn-secondary">Limpiar</a>
+
+            {% if q or fecha_desde or fecha_hasta or almacen_id or estado_prestamo or tipo_seleccionado %}
+            <div>
+                <a href="{% url 'inventario:movimiento-lista' %}?vista={{ vista_actual }}" class="btn btn-sm btn-secondary" style="white-space: nowrap;">Limpiar</a>
+            </div>
             {% endif %}
         </form>
     </div>
@@ -773,6 +806,13 @@
                     </div>
                     {% endif %}
                 </div>
+                {% if not es_usuario_normal or usuario_almacenes_count > 1 %}
+                <div class="form-group" id="grpCatDestinoTraslado">
+                    <label id="lblCatDestinoTraslado">Categoría en Almacén Destino *</label>
+                    {{ traslado_form.categoria_destino }}
+                    <div class="form-help" style="font-size: 12px; margin-top: 4px;">Categoría obligatoria a la que pertenecerá el producto en el nuevo almacén.</div>
+                </div>
+                {% endif %}
                 <div class="form-group" style="margin-bottom: 0;">
                     <label>Motivo del Traslado *</label>
                     {{ traslado_form.motivo }}
@@ -1001,6 +1041,7 @@ document.addEventListener("DOMContentLoaded", function() {
     // Ubicación fija no editable y almacén sincronizado en entradas, salidas, préstamos y traslados
     var mapaUbicacionesStock = {{ mapa_ubicaciones_json|default:'{}'|safe }};
     var almacenUbicacionesMap = {{ almacen_ubicaciones_json|default:'{}'|safe }};
+    var almacenCategoriasMap = {{ almacen_categorias_json|default:'{}'|safe }};
     var esUsuarioNormal = {{ es_usuario_normal|yesno:"true,false" }};
     var usuarioAlmacenesCount = {{ usuario_almacenes_count|default:999 }};
     var usuarioAlmacenUnicoId = "{{ usuario_almacen_unico_id|default:'' }}";
@@ -1257,6 +1298,8 @@ document.addEventListener("DOMContentLoaded", function() {
     var selectUbOrigenTraslado = document.querySelector('#secFormTraslado select[name="ubicacion_origen"]');
     var grpUbDestinoTraslado = document.getElementById("grpUbDestinoTraslado");
     var selectUbDestinoTraslado = document.querySelector('#secFormTraslado select[name="ubicacion_destino"]');
+    var grpCatDestinoTraslado = document.getElementById("grpCatDestinoTraslado");
+    var selectCatDestinoTraslado = document.querySelector('#secFormTraslado select[name="categoria_destino"]');
     var inputMotivoTraslado = document.querySelector('#secFormTraslado input[name="motivo"]');
     var valStockTraslado = document.getElementById("valStockTraslado");
     var alertSinStockTraslado = document.getElementById("alertSinStockTraslado");
@@ -1281,6 +1324,25 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     }
 
+    function poblarOpcionesCategoria(selectElem, almacenId, categoriaSeleccionada) {
+        if (!selectElem) return;
+        var prevVal = categoriaSeleccionada || selectElem.value;
+        var cats = almacenCategoriasMap[String(almacenId)] || [];
+        selectElem.innerHTML = '<option value="">Selecciona categoría destino...</option>';
+        cats.forEach(function(c) {
+            var opt = document.createElement("option");
+            opt.value = c.id;
+            opt.textContent = c.nombre;
+            if (prevVal && String(c.id) === String(prevVal)) {
+                opt.selected = true;
+            }
+            selectElem.appendChild(opt);
+        });
+        if (cats.length === 1 && !selectElem.value) {
+            selectElem.value = cats[0].id;
+        }
+    }
+
     function mostrarFeedbackTraslado(mensaje, campoTarget) {
         var fb = document.getElementById("feedbackTraslado");
         var fbTxt = document.getElementById("feedbackTrasladoTxt");
@@ -1297,7 +1359,7 @@ document.addEventListener("DOMContentLoaded", function() {
     function ocultarFeedbackTraslado() {
         var fb = document.getElementById("feedbackTraslado");
         if (fb) fb.style.display = "none";
-        [selectProductoTraslado, selectUbOrigenTraslado, selectAlmDestinoTraslado, selectUbDestinoTraslado, inputMotivoTraslado].forEach(function(el) {
+        [selectProductoTraslado, selectUbOrigenTraslado, selectAlmDestinoTraslado, selectUbDestinoTraslado, selectCatDestinoTraslado, inputMotivoTraslado].forEach(function(el) {
             if (el) el.style.borderColor = "";
         });
     }
@@ -1341,6 +1403,11 @@ document.addEventListener("DOMContentLoaded", function() {
                 var ubDestId = selectUbDestinoTraslado ? selectUbDestinoTraslado.value : "";
                 if (!ubDestId) {
                     mostrarFeedbackTraslado("Debes seleccionar la ubicación física en el almacén de destino.", selectUbDestinoTraslado);
+                    return false;
+                }
+                var catDestId = selectCatDestinoTraslado ? selectCatDestinoTraslado.value : "";
+                if (!catDestId) {
+                    mostrarFeedbackTraslado("Debes seleccionar la categoría del producto en el almacén de destino.", selectCatDestinoTraslado);
                     return false;
                 }
             }
@@ -1399,6 +1466,10 @@ document.addEventListener("DOMContentLoaded", function() {
                 selectUbDestinoTraslado.value = "";
                 selectUbDestinoTraslado.disabled = true;
             }
+            if (selectCatDestinoTraslado) {
+                selectCatDestinoTraslado.value = "";
+                selectCatDestinoTraslado.disabled = true;
+            }
             if (grpAlmDestinoTraslado) {
                 grpAlmDestinoTraslado.style.opacity = "0.35";
                 grpAlmDestinoTraslado.style.pointerEvents = "none";
@@ -1406,6 +1477,10 @@ document.addEventListener("DOMContentLoaded", function() {
             if (grpUbDestinoTraslado) {
                 grpUbDestinoTraslado.style.opacity = "0.35";
                 grpUbDestinoTraslado.style.pointerEvents = "none";
+            }
+            if (grpCatDestinoTraslado) {
+                grpCatDestinoTraslado.style.opacity = "0.35";
+                grpCatDestinoTraslado.style.pointerEvents = "none";
             }
             var nombreNuevaUb = selectUbOrigenTraslado.options[selectUbOrigenTraslado.selectedIndex] ? selectUbOrigenTraslado.options[selectUbOrigenTraslado.selectedIndex].text : "nueva ubicación";
             if (inputMotivoTraslado) {
@@ -1422,12 +1497,22 @@ document.addEventListener("DOMContentLoaded", function() {
 
             var almDestId = selectAlmDestinoTraslado ? selectAlmDestinoTraslado.value : "";
             if (almDestId) {
+                poblarOpcionesUbicacion(selectUbDestinoTraslado, almDestId);
+                poblarOpcionesCategoria(selectCatDestinoTraslado, almDestId);
+
                 if (grpUbDestinoTraslado) {
                     grpUbDestinoTraslado.style.opacity = "1";
                     grpUbDestinoTraslado.style.pointerEvents = "auto";
                 }
                 if (selectUbDestinoTraslado) {
                     selectUbDestinoTraslado.disabled = false;
+                }
+                if (grpCatDestinoTraslado) {
+                    grpCatDestinoTraslado.style.opacity = "1";
+                    grpCatDestinoTraslado.style.pointerEvents = "auto";
+                }
+                if (selectCatDestinoTraslado) {
+                    selectCatDestinoTraslado.disabled = false;
                 }
                 var selText = selectAlmDestinoTraslado.options[selectAlmDestinoTraslado.selectedIndex] ? selectAlmDestinoTraslado.options[selectAlmDestinoTraslado.selectedIndex].text : "destino";
                 if (inputMotivoTraslado) {
@@ -1441,6 +1526,14 @@ document.addEventListener("DOMContentLoaded", function() {
                 if (selectUbDestinoTraslado) {
                     selectUbDestinoTraslado.value = "";
                     selectUbDestinoTraslado.disabled = true;
+                }
+                if (grpCatDestinoTraslado) {
+                    grpCatDestinoTraslado.style.opacity = "0.35";
+                    grpCatDestinoTraslado.style.pointerEvents = "none";
+                }
+                if (selectCatDestinoTraslado) {
+                    selectCatDestinoTraslado.value = "";
+                    selectCatDestinoTraslado.disabled = true;
                 }
                 if (inputMotivoTraslado) {
                     inputMotivoTraslado.value = "";
@@ -1500,6 +1593,10 @@ document.addEventListener("DOMContentLoaded", function() {
                 selectUbDestinoTraslado.value = "";
                 selectUbDestinoTraslado.disabled = true;
             }
+            if (selectCatDestinoTraslado) {
+                selectCatDestinoTraslado.value = "";
+                selectCatDestinoTraslado.disabled = true;
+            }
             evaluarJerarquiaTraslado();
         } else {
             if (alertSinStockTraslado) alertSinStockTraslado.style.display = "none";
@@ -1546,10 +1643,18 @@ document.addEventListener("DOMContentLoaded", function() {
             var destId = selectAlmDestinoTraslado.value;
             if (destId) {
                 poblarOpcionesUbicacion(selectUbDestinoTraslado, destId, "");
-            } else if (selectUbDestinoTraslado) {
-                selectUbDestinoTraslado.innerHTML = '<option value="">Selecciona primero un almacén destino</option>';
+                poblarOpcionesCategoria(selectCatDestinoTraslado, destId, "");
+            } else {
+                if (selectUbDestinoTraslado) selectUbDestinoTraslado.innerHTML = '<option value="">Selecciona primero un almacén destino</option>';
+                if (selectCatDestinoTraslado) selectCatDestinoTraslado.innerHTML = '<option value="">Selecciona primero un almacén destino</option>';
             }
             evaluarJerarquiaTraslado();
+        });
+    }
+
+    if (selectCatDestinoTraslado) {
+        selectCatDestinoTraslado.addEventListener("change", function() {
+            ocultarFeedbackTraslado();
         });
     }
 

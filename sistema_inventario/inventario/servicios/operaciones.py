@@ -658,6 +658,7 @@ def registrar_traslado_entre_almacenes(
     usuario: Any,
     ubicacion_origen: Optional[Ubicacion] = None,
     ubicacion_destino: Optional[Ubicacion] = None,
+    categoria_destino: Optional[Categoria] = None,
     motivo: str = "",
     observacion: str = "",
     clave_idempotencia: Optional[str] = None,
@@ -713,8 +714,28 @@ def registrar_traslado_entre_almacenes(
         stock_ant_origen = existencia_origen.stock_disponible
         stock_post_origen = stock_ant_origen - cantidad
 
+        if categoria_destino:
+            if categoria_destino.almacen_principal_id != almacen_destino.id:
+                raise ValidationError(f"La categoría '{categoria_destino.nombre}' no pertenece al almacén destino '{almacen_destino.nombre}'.")
+            producto.categoria = categoria_destino
+            producto.save(update_fields=["categoria"])
+        elif producto.categoria and producto.categoria.almacen_principal_id != almacen_destino.id:
+            cat_dest = Categoria.objects.filter(almacen_principal=almacen_destino, activo=True, eliminado=False).first()
+            if cat_dest:
+                producto.categoria = cat_dest
+                producto.save(update_fields=["categoria"])
+
+        if ubicacion_destino:
+            ProductoUbicacion.objects.filter(producto=producto).delete()
+            ProductoUbicacion.objects.create(producto=producto, ubicacion=ubicacion_destino)
+
+        # Mantenimiento del invariante de almacén único (§5):
+        # Si el stock en origen queda en 0 sin préstamos, se retira la existencia residual
         existencia_origen.stock_disponible = stock_post_origen
-        existencia_origen.save()
+        if stock_post_origen == 0 and existencia_origen.stock_en_prestamo == 0:
+            existencia_origen.delete()
+        else:
+            existencia_origen.save()
 
         stock_ant_destino = existencia_destino.stock_disponible
         stock_post_destino = stock_ant_destino + cantidad
@@ -722,9 +743,10 @@ def registrar_traslado_entre_almacenes(
         existencia_destino.stock_disponible = stock_post_destino
         existencia_destino.save()
 
-        if ubicacion_destino:
-            ProductoUbicacion.objects.filter(producto=producto).delete()
-            ProductoUbicacion.objects.create(producto=producto, ubicacion=ubicacion_destino)
+        # Limpiar cualquier otra existencia huérfana en 0 para este producto en otros almacenes
+        Existencia.objects.filter(
+            producto=producto, stock_disponible=0, stock_en_prestamo=0
+        ).exclude(id=existencia_destino.id).delete()
 
         movimiento = Movimiento(
             clave_idempotencia=clave_idempotencia,

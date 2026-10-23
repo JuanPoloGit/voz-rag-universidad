@@ -255,15 +255,13 @@ class QAOperacionesFase4AdversarialTest(TestCase):
         self.assertGreaterEqual(ex_orig.stock_disponible, 0, "El stock de origen no debe ser negativo")
         self.assertEqual(ex_dest.stock_disponible, 4)
 
-        # 3. Verificación de alerta crítica sobre el almacén de origen
-        alerta_origen = verificar_estado_alerta(ex_orig)
-        self.assertEqual(alerta_origen["nivel"], "CRITICO")
-        self.assertIn("AGOTADO", alerta_origen["mensaje"])
-
-        # 4. Verificación en el motor de alertas globales para el almacén principal
+        # 3. Verificación de que la existencia en origen se retira para evitar alertas fantasma (§5)
+        self.assertFalse(
+            Existencia.objects.filter(producto=self.producto_a, almacen=self.almacen_principal).exists(),
+            "La existencia residual en origen en 0 debe retirarse para mantener el invariante de almacén único",
+        )
         alertas_principal = obtener_alertas_stock(almacen=self.almacen_principal)
-        self.assertGreaterEqual(alertas_principal["total_criticas"], 1)
-        self.assertIn(ex_orig.id, [e.id for e in alertas_principal["criticas"]])
+        self.assertNotIn(self.producto_a.id, [e.producto_id for e in alertas_principal["criticas"]])
 
         # 5. Intento ADVERSARIAL de trasladar 1 unidad adicional desde el almacén agotado
         with self.assertRaises(ValidationError) as ctx_insuf:
@@ -275,11 +273,12 @@ class QAOperacionesFase4AdversarialTest(TestCase):
                 usuario=self.operador_principal,
                 motivo="Intento de traslado cuando stock es 0",
             )
-        self.assertIn("stock insuficiente", str(ctx_insuf.exception).lower())
+        self.assertTrue(
+            "no hay existencias" in str(ctx_insuf.exception).lower() or "stock insuficiente" in str(ctx_insuf.exception).lower()
+        )
 
-        # El stock continúa exactamente en 0
-        ex_orig.refresh_from_db()
-        self.assertEqual(ex_orig.stock_disponible, 0)
+        # El producto ya no tiene existencia en origen
+        self.assertFalse(Existencia.objects.filter(producto=self.producto_a, almacen=self.almacen_principal).exists())
 
     # =========================================================================
     # ESCENARIO 4: Intento de usuario normal de confirmar conteo vía POST (403 Forbidden)

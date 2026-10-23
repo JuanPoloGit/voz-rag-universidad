@@ -12,7 +12,7 @@
         <div><strong>Fecha:</strong> {{ movimiento.fecha_hora|date:"Y-m-d H:i" }}</div>
         <div><strong>Producto:</strong> {{ movimiento.producto.codigo_interno }} — {{ movimiento.producto.nombre }}</div>
         <div><strong>Cantidad:</strong> {{ movimiento.cantidad }} unidades</div>
-        <div><strong>Almacén:</strong> {{ movimiento.almacen_origen.nombre|default:movimiento.almacen_destino.nombre }}</div>
+        <div><strong>Almacén:</strong> {% if movimiento.almacen_origen %}{{ movimiento.almacen_origen.nombre }}{% elif movimiento.almacen_destino %}{{ movimiento.almacen_destino.nombre }}{% else %}—{% endif %}</div>
         {% if movimiento.destinatario %}
             <div><strong>Destinatario:</strong> {{ movimiento.destinatario }}</div>
         {% endif %}

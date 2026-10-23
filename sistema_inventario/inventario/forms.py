@@ -791,6 +791,13 @@ class TrasladoForm(forms.Form):
         widget=forms.Select(attrs={"class": "form-control"}),
         label="Ubicación física de destino",
     )
+    categoria_destino = forms.ModelChoiceField(
+        queryset=Categoria.objects.filter(activo=True, eliminado=False),
+        required=False,
+        widget=forms.Select(attrs={"class": "form-control"}),
+        label="Categoría en almacén destino *",
+        help_text="Categoría obligatoria a la que se integrará el producto en el nuevo almacén.",
+    )
     cantidad = forms.IntegerField(
         required=False,
         min_value=1,
@@ -819,11 +826,17 @@ class TrasladoForm(forms.Form):
                 self.fields["ubicacion_destino"].queryset = Ubicacion.objects.none()
                 self.fields["ubicacion_destino"].widget = forms.HiddenInput()
                 self.fields["ubicacion_destino"].required = False
+                self.fields["categoria_destino"].queryset = Categoria.objects.none()
+                self.fields["categoria_destino"].widget = forms.HiddenInput()
+                self.fields["categoria_destino"].required = False
             else:
                 self.fields["almacen_destino"].queryset = user_alms.order_by("nombre")
                 self.fields["ubicacion_destino"].queryset = Ubicacion.objects.filter(
                     activo=True, eliminado=False, almacen__in=user_alms
                 )
+                self.fields["categoria_destino"].queryset = Categoria.objects.filter(
+                    activo=True, eliminado=False, almacen_principal__in=user_alms
+                ).order_by("almacen_principal__nombre", "nombre")
             self.fields["producto"].queryset = Producto.objects.filter(
                 archivado=False, activo=True
             ).filter(
@@ -834,6 +847,10 @@ class TrasladoForm(forms.Form):
             self.fields["ubicacion_origen"].queryset = Ubicacion.objects.filter(
                 activo=True, eliminado=False, almacen__in=user_alms
             )
+        else:
+            self.fields["categoria_destino"].queryset = Categoria.objects.filter(
+                activo=True, eliminado=False
+            ).order_by("almacen_principal__nombre", "nombre")
 
     def clean(self):
         cleaned_data = super().clean()
@@ -886,9 +903,11 @@ class TrasladoForm(forms.Form):
                     self.add_error("ubicacion_origen", "Debes seleccionar una ubicación diferente a la actual para realizar un traslado interno.")
                 cleaned_data["almacen_destino"] = None
                 cleaned_data["ubicacion_destino"] = None
+                cleaned_data["categoria_destino"] = None
             elif es_cambio_ubicacion_interna and not alm_dest:
                 cleaned_data["almacen_destino"] = None
                 cleaned_data["ubicacion_destino"] = None
+                cleaned_data["categoria_destino"] = None
             else:
                 if not alm_dest:
                     self.add_error("almacen_destino", "Debe seleccionar el almacén de destino.")
@@ -902,6 +921,12 @@ class TrasladoForm(forms.Form):
                         self.add_error("ubicacion_destino", "Debe seleccionar la ubicación física en el almacén de destino.")
                     elif ub_dest.almacen_id != getattr(alm_dest, "id", None):
                         self.add_error("ubicacion_destino", "La ubicación física seleccionada no pertenece al almacén destino.")
+
+                    cat_dest = cleaned_data.get("categoria_destino")
+                    if not cat_dest:
+                        self.add_error("categoria_destino", "Debe seleccionar la categoría para el producto en el almacén destino.")
+                    elif cat_dest.almacen_principal_id != getattr(alm_dest, "id", None):
+                        self.add_error("categoria_destino", f"La categoría seleccionada no pertenece al almacén destino '{alm_dest.nombre}'.")
 
         if not motivo:
             self.add_error("motivo", "El motivo del traslado es obligatorio.")

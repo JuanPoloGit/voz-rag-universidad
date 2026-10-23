@@ -78,6 +78,19 @@ def crear_almacen(
         almacen.full_clean()
         almacen.save()
 
+        # §5.2 Creación automática de categoría por defecto para el nuevo almacén
+        nombre_cat_defecto = f"General - {almacen.nombre}"
+        if not Categoria.objects.filter(almacen_principal=almacen, eliminado=False).exists():
+            if not Categoria.objects.filter(nombre=nombre_cat_defecto, eliminado=False).exists():
+                cat_defecto = Categoria(
+                    nombre=nombre_cat_defecto,
+                    almacen_principal=almacen,
+                    activo=True,
+                    eliminado=False,
+                )
+                cat_defecto.full_clean()
+                cat_defecto.save()
+
         registrar_auditoria(
             usuario=usuario,
             accion="CREAR_ALMACEN",

@@ -127,50 +127,71 @@
         {% endif %}
     </div>
 
-    <!-- Existencias y Ubicaciones -->
+    <!-- Estado de Ubicación y Almacén Actual -->
     <div class="detail-two-col">
-        <div class="card" style="margin-bottom: 0; padding: 14px 16px;">
-            <h2 class="card-title" style="margin-bottom: 10px; font-size: 13.5px;">Existencias por Almacén</h2>
-            <div class="table-responsive">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Almacén</th>
-                            <th style="text-align: right;">Disponible</th>
-                            <th style="text-align: right;">Préstamo</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for ex in existencias %}
-                            <tr>
-                                <td><strong>{{ ex.almacen.nombre }}</strong></td>
-                                <td style="text-align: right; font-weight: 600;">{{ ex.stock_disponible }}</td>
-                                <td style="text-align: right; color: var(--text-muted);">{{ ex.stock_en_prestamo }}</td>
-                            </tr>
-                        {% empty %}
-                            <tr>
-                                <td colspan="3" style="text-align: center; color: var(--text-muted);">Sin existencias registradas.</td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+        <div class="card" style="margin-bottom: 0; padding: 16px;">
+            <h2 class="card-title" style="margin-bottom: 12px; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent);"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="12" r="3"/></svg>
+                Almacén y Ubicación Actual
+            </h2>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div style="background: var(--bg-panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px;">
+                    <div style="font-size: 11px; color: var(--text-faint); text-transform: uppercase; font-weight: 600;">Sede / Almacén</div>
+                    <div style="font-size: 14px; font-weight: 700; color: var(--text); margin-top: 2px;">
+                        {% if existencias.0.almacen %}
+                            {{ existencias.0.almacen.nombre }}
+                        {% elif ubicaciones.0.almacen %}
+                            {{ ubicaciones.0.almacen.nombre }}
+                        {% else %}
+                            {{ producto.categoria.almacen_principal.nombre }}
+                        {% endif %}
+                    </div>
+                </div>
+                <div style="background: var(--bg-panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px;">
+                    <div style="font-size: 11px; color: var(--text-faint); text-transform: uppercase; font-weight: 600;">Ubicación Física</div>
+                    <div style="font-size: 14px; font-weight: 700; color: var(--accent-2); margin-top: 2px;">
+                        {% if ubicaciones.0 %}
+                            {{ ubicaciones.0.nombre }}
+                        {% else %}
+                            <span style="color: var(--text-muted); font-weight: normal;">Sin asignar</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div style="background: var(--bg-panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; grid-column: span 2;">
+                    <div style="font-size: 11px; color: var(--text-faint); text-transform: uppercase; font-weight: 600;">Categoría y Clasificación</div>
+                    <div style="font-size: 13.5px; font-weight: 600; color: var(--text); margin-top: 2px;">
+                        {{ producto.categoria.nombre }}
+                        {% if producto.tipo %}
+                            <span style="color: var(--text-muted); font-size: 12px; font-weight: 400;"> · Tipo: {{ producto.tipo.nombre }}</span>
+                        {% endif %}
+                    </div>
+                </div>
             </div>
         </div>
 
-        <div class="card" style="margin-bottom: 0; padding: 14px 16px;">
-            <h2 class="card-title" style="margin-bottom: 10px; font-size: 13.5px;">Ubicaciones Físicas</h2>
-            <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px;">
-                {% for ub in ubicaciones %}
-                    <li style="padding: 7px 10px; background: var(--bg-panel-2); border-radius: 6px; border: 1px solid var(--border); display: flex; justify-content: space-between; font-size: 12.5px;">
-                        <span><strong>{{ ub.nombre }}</strong></span>
-                        <span style="color: var(--text-faint);">{{ ub.almacen.nombre }}</span>
-                    </li>
-                {% empty %}
-                    <li style="color: var(--text-muted); font-size: 12.5px; padding: 8px 0;">
-                        No tiene ubicaciones físicas asignadas.
-                    </li>
-                {% endfor %}
-            </ul>
+        <div class="card" style="margin-bottom: 0; padding: 16px;">
+            <h2 class="card-title" style="margin-bottom: 12px; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--ok);"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+                Balance de Existencias
+            </h2>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <div style="padding: 8px 12px; background: var(--bg-panel-2); border-radius: 6px; border: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; font-size: 13px;">
+                    <span>Stock Disponible para Uso / Entrega</span>
+                    <strong style="color: var(--ok); font-size: 15px;">{{ existencias.0.stock_disponible|default:0 }} unid.</strong>
+                </div>
+                <div style="padding: 8px 12px; background: var(--bg-panel-2); border-radius: 6px; border: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; font-size: 13px;">
+                    <span>Stock en Préstamo Activo</span>
+                    <strong style="color: var(--warn); font-size: 15px;">{{ existencias.0.stock_en_prestamo|default:0 }} unid.</strong>
+                </div>
+                <div style="padding: 8px 12px; background: rgba(59, 130, 246, 0.08); border-radius: 6px; border: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; font-size: 13px;">
+                    <span><strong>Total en Custodia</strong></span>
+                    <strong style="color: var(--accent); font-size: 16px;">
+                        {% with disp=existencias.0.stock_disponible|default:0 prest=existencias.0.stock_en_prestamo|default:0 %}
+                            {{ disp|add:prest }} unid.
+                        {% endwith %}
+                    </strong>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -195,10 +216,18 @@
                         <tr>
                             <td style="font-size: 12px; white-space: nowrap;">{{ mov.fecha_hora|date:"d/m/Y H:i" }}</td>
                             <td><span class="badge badge-accent">{{ mov.get_tipo_display }}</span></td>
-                            <td>{% if mov.almacen_destino %}{{ mov.almacen_destino.nombre }}{% elif mov.almacen_origen %}{{ mov.almacen_origen.nombre }}{% else %}—{% endif %}</td>
+                            <td>
+                                {% if mov.almacen_origen and mov.almacen_destino and mov.almacen_origen != mov.almacen_destino %}
+                                    {{ mov.almacen_origen.nombre }} &rarr; {{ mov.almacen_destino.nombre }}
+                                {% elif mov.almacen_destino %}
+                                    {{ mov.almacen_destino.nombre }}
+                                {% else %}
+                                    {{ mov.almacen_origen.nombre|default:'—' }}
+                                {% endif %}
+                            </td>
                             <td style="text-align: right; font-weight: 600;">{{ mov.cantidad }}</td>
                             <td style="text-align: right;">{{ mov.stock_disponible_posterior }}</td>
-                            <td style="font-size: 12px;">{{ mov.usuario.username }}</td>
+                            <td style="font-size: 12px;">{{ mov.usuario.nombre_completo|default:mov.usuario.username }}</td>
                             <td style="font-size: 12px; color: var(--text-muted);">{{ mov.motivo|default:"—" }}</td>
                         </tr>
                     {% empty %}

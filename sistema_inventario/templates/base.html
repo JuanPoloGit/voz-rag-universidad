@@ -1684,16 +1684,33 @@
         }
 
         /* ─── Helpers globales para Modales (<dialog>) ─── */
+        function limpiarErroresModal(dlg) {
+            if (!dlg) return;
+            dlg.querySelectorAll(".is-invalid").forEach(function(el) {
+                el.classList.remove("is-invalid");
+                el.style.borderColor = "";
+            });
+            dlg.querySelectorAll(".js-modal-error-msg, .app-modal-alert-error, .alert").forEach(function(el) {
+                el.remove();
+            });
+        }
+
         function openAppModal(id) {
             var dlg = document.getElementById(id);
-            if (dlg && typeof dlg.showModal === 'function') {
-                dlg.showModal();
+            if (dlg) {
+                limpiarErroresModal(dlg);
+                if (typeof dlg.showModal === 'function') {
+                    dlg.showModal();
+                }
             }
         }
         function closeAppModal(id) {
             var dlg = document.getElementById(id);
-            if (dlg && typeof dlg.close === 'function') {
-                dlg.close();
+            if (dlg) {
+                limpiarErroresModal(dlg);
+                if (typeof dlg.close === 'function') {
+                    dlg.close();
+                }
             }
         }
 
@@ -1710,6 +1727,13 @@
         }
 
         document.addEventListener("DOMContentLoaded", function() {
+            // Limpieza automática de errores en diálogos y modales al cerrarse
+            document.querySelectorAll("dialog").forEach(function(dlg) {
+                dlg.addEventListener("close", function() {
+                    limpiarErroresModal(dlg);
+                });
+            });
+
             // 0. Dropdown de Notificaciones bajo la campana (sin cerrar al marcar como leída)
             var bellWrapper = document.getElementById("notifBellWrapper");
             var btnBell = document.getElementById("btnToggleNotifDropdown");

@@ -149,17 +149,18 @@ def obtener_datos_grafico_categorias(usuario: Any, almacen: Optional[Almacen] = 
 def obtener_datos_grafico_balance_movimientos(
     usuario: Any, dias: int = 7, almacen: Optional[Almacen] = None
 ) -> Dict[str, Any]:
-    """Genera serie de tiempo con balance de Entradas vs. Dotación (Salidas) en los últimos N días."""
+    """Genera serie de tiempo con balance de Entradas vs. Dotación (Salidas) y Préstamos en los últimos N días."""
     hoy = timezone.now().date()
     labels = []
     entradas = []
     salidas = []
+    prestamos = []
 
     alm_especifico, alms_permitidos = _resolver_almacenes_usuario(usuario, almacen)
     es_normal = getattr(usuario, "es_usuario_normal", False)
 
     if es_normal and not alms_permitidos.exists():
-        return {"labels": [], "entradas": [], "salidas": []}
+        return {"labels": [], "entradas": [], "salidas": [], "prestamos": []}
 
     base_qs = Movimiento.objects.all()
     if alm_especifico:
@@ -182,13 +183,20 @@ def obtener_datos_grafico_balance_movimientos(
             fecha_hora__date=dia,
         ).aggregate(total=Sum("cantidad"))["total"] or 0
 
+        total_pres = base_qs.filter(
+            tipo=Movimiento.Tipo.PRESTAMO,
+            fecha_hora__date=dia,
+        ).aggregate(total=Sum("cantidad"))["total"] or 0
+
         entradas.append(total_ent)
         salidas.append(total_sal)
+        prestamos.append(total_pres)
 
     return {
         "labels": labels,
         "entradas": entradas,
         "salidas": salidas,
+        "prestamos": prestamos,
     }
 
 
@@ -289,7 +297,11 @@ def obtener_reporte_prestamos_activos(usuario: Any, estado: Optional[str] = None
     return prestamos
 
 
-def obtener_reporte_productos_estancados(usuario: Any, dias_inactividad: int = 30) -> List[Any]:
+def obtener_reporte_productos_estancados(
+    usuario: Any,
+    dias_inactividad: int = 30,
+    almacen: Optional[Any] = None,
+) -> List[Any]:
     """Identifica productos que no han tenido ningún movimiento en los últimos N días."""
     es_normal = getattr(usuario, "es_usuario_normal", False)
     alms_permitidos = usuario.get_almacenes_asignados() if es_normal else None
@@ -302,6 +314,13 @@ def obtener_reporte_productos_estancados(usuario: Any, dias_inactividad: int = 3
             Q(categoria__almacen_principal__in=alms_permitidos)
             | Q(existencias__almacen__in=alms_permitidos)
             | Q(ubicaciones__almacen__in=alms_permitidos)
+        ).distinct()
+
+    if almacen:
+        prods = prods.filter(
+            Q(categoria__almacen_principal=almacen)
+            | Q(existencias__almacen=almacen)
+            | Q(ubicaciones__almacen=almacen)
         ).distinct()
 
     limite = timezone.now() - timedelta(days=dias_inactividad)

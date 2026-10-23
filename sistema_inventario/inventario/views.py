@@ -7,7 +7,9 @@ from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
+from datetime import datetime
 from django.utils import timezone
+from django.utils.safestring import mark_safe
 from django.views.generic import CreateView, DetailView, ListView, UpdateView, View
 
 from cuentas.models import UsuarioAudacIA
@@ -96,6 +98,48 @@ def _obtener_ip(request) -> str:
     if x_forwarded:
         return x_forwarded.split(",")[0].strip()
     return request.META.get("REMOTE_ADDR", "127.0.0.1")
+
+
+
+def _procesar_error_formulario(form, exc):
+    """Extrae y formatea limpiamente excepciones y ValidationError en campos del formulario sin volcar JSON crudo."""
+    if isinstance(exc, ValidationError):
+        if hasattr(exc, "message_dict"):
+            for campo, msgs in exc.message_dict.items():
+                for msg in msgs:
+                    if campo in form.fields:
+                        form.add_error(campo, msg)
+                    else:
+                        form.add_error(None, msg)
+            return
+        if hasattr(exc, "messages"):
+            for msg in exc.messages:
+                form.add_error(None, msg)
+            return
+
+    msg_str = str(exc).strip()
+    if msg_str.startswith("{") and msg_str.endswith("}"):
+        import ast
+        try:
+            parsed = ast.literal_eval(msg_str)
+            if isinstance(parsed, dict):
+                for campo, msgs in parsed.items():
+                    if isinstance(msgs, list):
+                        for m in msgs:
+                            if campo in form.fields:
+                                form.add_error(campo, m)
+                            else:
+                                form.add_error(None, m)
+                    else:
+                        if campo in form.fields:
+                            form.add_error(campo, str(msgs))
+                        else:
+                            form.add_error(None, str(msgs))
+                return
+        except Exception:
+            pass
+
+    form.add_error(None, msg_str)
 
 
 class AjaxModalFormMixin:
@@ -278,6 +322,7 @@ class UbicacionListaView(LoginRequiredMixin, ListView):
         context = super().get_context_data(**kwargs)
         user = self.request.user
         alms_disponibles = user.get_almacenes_asignados() if getattr(user, "es_usuario_normal", False) else Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
+        context["agrupar_por_almacen"] = (getattr(user, "es_administrador", False) or alms_disponibles.count() > 1) and not self.request.GET.get("almacen_id")
         if not getattr(user, "es_usuario_normal", False) or alms_disponibles.count() > 1:
             context["almacenes"] = alms_disponibles
             context["almacen_seleccionado"] = self.request.GET.get("almacen_id")
@@ -385,7 +430,17 @@ class UbicacionEditarView(LoginRequiredMixin, AjaxModalFormMixin, UpdateView):
             messages.success(self.request, f"Ubicación '{ubicacion.nombre}' actualizada exitosamente.")
             return self.responder_exito(self.success_url)
         except Exception as exc:
-            form.add_error(None, str(exc))
+            _procesar_error_formulario(form, exc)
+            almacen_nuevo = form.cleaned_data.get("almacen")
+            if almacen_nuevo and almacen_nuevo.id != self.object.almacen_id:
+                if self.object.producto_ubicaciones.filter(producto__archivado=False).exists():
+                    url_asistido = reverse("inventario:trasladar-ubicacion", kwargs={"pk": self.object.pk}) + f"?almacen_destino={almacen_nuevo.id}"
+                    mensaje_html = (
+                        f"La ubicación '{self.object.nombre}' tiene productos asignados. "
+                        f"Para trasladarla a '{almacen_nuevo.nombre}' junto con sus existencias y reasignar categorías, use el "
+                        f"<a href='{url_asistido}' style='color: var(--accent-2); font-weight: 700; text-decoration: underline;'>Asistente de Traslado de Ubicación</a>."
+                    )
+                    form.add_error("almacen", mark_safe(mensaje_html))
             return self.form_invalid(form)
 
 
@@ -429,6 +484,7 @@ class CategoriaListaView(LoginRequiredMixin, ListView):
         context = super().get_context_data(**kwargs)
         user = self.request.user
         alms_disponibles = user.get_almacenes_asignados() if getattr(user, "es_usuario_normal", False) else Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
+        context["agrupar_por_almacen"] = (getattr(user, "es_administrador", False) or alms_disponibles.count() > 1) and not self.request.GET.get("almacen_id")
         if not getattr(user, "es_usuario_normal", False) or alms_disponibles.count() > 1:
             context["almacenes"] = alms_disponibles
             context["almacen_seleccionado"] = self.request.GET.get("almacen_id")
@@ -562,10 +618,19 @@ class CategoriaEditarView(LoginRequiredMixin, AjaxModalFormMixin, UpdateView):
             messages.success(self.request, f"Categoría '{categoria.nombre}' actualizada exitosamente.")
             return self.responder_exito(self.success_url)
         except NecesitaTraslado as exc:
-            form.add_error(None, str(exc))
+            url_asistido = reverse("inventario:categoria-trasladar", kwargs={"pk": self.object.pk})
+            if almacen_principal:
+                url_asistido += f"?almacen_destino={almacen_principal.id}"
+            mensaje_html = (
+                f"La categoría '{self.object.nombre}' tiene productos asociados. "
+                f"Cambiar el almacén principal requiere trasladar los productos. "
+                f"Para realizar este traslado y definir la ubicación física de cada producto en destino, use el "
+                f"<a href='{url_asistido}' style='color: var(--accent-2); font-weight: 700; text-decoration: underline;'>Asistente de Traslado de Categoría</a>."
+            )
+            form.add_error("almacen_principal", mark_safe(mensaje_html))
             return self.form_invalid(form)
         except Exception as exc:
-            form.add_error(None, str(exc))
+            _procesar_error_formulario(form, exc)
             return self.form_invalid(form)
 
 
@@ -1171,7 +1236,7 @@ class UbicacionDesactivarView(LoginRequiredMixin, RolRequeridoMixin, View):
         ).exclude(id=ubicacion.id)
         return render(
             request,
-            "inventario/trasladar_ubicacion.html",
+            "inventario/desactivar_ubicacion.html",
             {
                 "ubicacion": ubicacion,
                 "productos": productos,
@@ -1199,42 +1264,320 @@ class UbicacionDesactivarView(LoginRequiredMixin, RolRequeridoMixin, View):
             return self.get(request, pk)
 
 
-class CategoriaTrasladarView(LoginRequiredMixin, RolRequeridoMixin, View):
-    """Traslado de existencias de categoría a un nuevo almacén principal (§7.3)."""
+class UbicacionTrasladarView(LoginRequiredMixin, RolRequeridoMixin, View):
+    """Traslado de una ubicación física y todos sus productos a otro almacén (§Punto 6)."""
 
     roles_permitidos = (UsuarioAudacIA.Rol.ADMINISTRADOR, UsuarioAudacIA.Rol.SUPERUSUARIO)
 
     def get(self, request, pk):
-        categoria = get_object_or_404(Categoria, pk=pk)
-        productos = categoria.productos.filter(archivado=False)
-        almacenes_destino = Almacen.objects.filter(activo=True, eliminado=False).exclude(id=categoria.almacen_principal_id)
+        ubicacion = get_object_or_404(Ubicacion, pk=pk, eliminado=False)
+        user = request.user
+        alms_permitidos = user.get_almacenes_asignados() if getattr(user, "es_usuario_normal", False) else Almacen.objects.filter(activo=True, eliminado=False)
+        almacenes_destino = alms_permitidos.exclude(id=ubicacion.almacen_id).order_by("nombre")
+
+        destino_id = request.GET.get("almacen_destino")
+        if destino_id and destino_id.isdigit():
+            almacen_destino_sel = almacenes_destino.filter(id=int(destino_id)).first()
+        else:
+            almacen_destino_sel = almacenes_destino.first()
+
+        productos_qs = list(
+            Producto.objects.filter(ubicaciones=ubicacion, archivado=False)
+            .select_related("categoria")
+            .distinct()
+        )
+        for p in productos_qs:
+            ex = Existencia.objects.filter(producto=p, almacen=ubicacion.almacen).first()
+            p.stock_actual = ex.stock_disponible if ex else 0
+
+        # Construir mapa de categorías por almacén para JS
+        import json
+        categorias_por_almacen = {}
+        for alm in almacenes_destino:
+            categorias_por_almacen[str(alm.id)] = list(
+                Categoria.objects.filter(almacen_principal=alm, activo=True, eliminado=False)
+                .order_by("nombre")
+                .values("id", "nombre")
+            )
+
+        categorias_destino_actuales = []
+        if almacen_destino_sel:
+            categorias_destino_actuales = Categoria.objects.filter(
+                almacen_principal=almacen_destino_sel, activo=True, eliminado=False
+            ).order_by("nombre")
+
+        return render(
+            request,
+            "inventario/trasladar_ubicacion.html",
+            {
+                "ubicacion": ubicacion,
+                "almacenes_destino": almacenes_destino,
+                "almacen_destino_seleccionado": almacen_destino_sel,
+                "productos": productos_qs,
+                "categorias_destino_actuales": categorias_destino_actuales,
+                "categorias_por_almacen_json": json.dumps(categorias_por_almacen),
+            },
+        )
+
+    def post(self, request, pk):
+        ubicacion = get_object_or_404(Ubicacion, pk=pk, eliminado=False)
+        user = request.user
+        destino_id = request.POST.get("almacen_destino")
+        if not destino_id or not destino_id.isdigit():
+            messages.error(request, "Debe seleccionar un almacén de destino válido.")
+            return self.get(request, pk)
+
+        almacen_destino = get_object_or_404(Almacen, pk=int(destino_id), activo=True, eliminado=False)
+        if getattr(user, "es_usuario_normal", False) and not user.tiene_acceso_almacen(almacen_destino):
+            messages.error(request, "No tienes permisos para trasladar a este almacén.")
+            return self.get(request, pk)
+
+        # Validar nombre único en almacén destino
+        if Ubicacion.objects.filter(almacen=almacen_destino, nombre__iexact=ubicacion.nombre, eliminado=False).exclude(pk=ubicacion.pk).exists():
+            messages.error(request, f"Ya existe una ubicación con el nombre '{ubicacion.nombre}' en '{almacen_destino.nombre}'. Renómbrela antes de trasladar.")
+            return self.get(request, pk)
+
+        productos_qs = list(
+            Producto.objects.filter(ubicaciones=ubicacion, archivado=False)
+            .distinct()
+        )
+
+        categorias_mapeadas = {}
+        for p in productos_qs:
+            cat_id = request.POST.get(f"categoria_producto_{p.id}")
+            if not cat_id or not str(cat_id).isdigit():
+                messages.error(request, f"Debe seleccionar una categoría en destino para el producto '{p.nombre}'.")
+                return self.get(request, pk)
+            cat_dest = Categoria.objects.filter(
+                id=int(cat_id), almacen_principal=almacen_destino, activo=True, eliminado=False
+            ).first()
+            if not cat_dest:
+                messages.error(request, f"Categoría destino inválida para '{p.nombre}'.")
+                return self.get(request, pk)
+            categorias_mapeadas[p.id] = cat_dest
+
+        almacen_anterior = ubicacion.almacen
+        total_trasladados = 0
+        from django.db import transaction
+        import uuid
+        from inventario.auditoria import registrar_auditoria
+
+        with transaction.atomic():
+            ubicacion.almacen = almacen_destino
+            ubicacion.save(update_fields=["almacen", "fecha_modificacion"])
+
+            for p in productos_qs:
+                cat_dest = categorias_mapeadas[p.id]
+                p.categoria = cat_dest
+                p.save(update_fields=["categoria"])
+
+                ex_ori = Existencia.objects.select_for_update().filter(producto=p, almacen=almacen_anterior).first()
+                cant = ex_ori.stock_disponible if ex_ori else 0
+
+                if ex_ori:
+                    ex_ori.stock_disponible = 0
+                    if ex_ori.stock_en_prestamo == 0:
+                        ex_ori.delete()
+                    else:
+                        ex_ori.save()
+
+                ex_dest, _ = Existencia.objects.select_for_update().get_or_create(
+                    producto=p,
+                    almacen=almacen_destino,
+                    defaults={"stock_disponible": 0, "stock_en_prestamo": 0},
+                )
+                stock_ant = ex_dest.stock_disponible
+                stock_post = stock_ant + cant
+                ex_dest.stock_disponible = stock_post
+                ex_dest.save()
+
+                Existencia.objects.filter(
+                    producto=p, stock_disponible=0, stock_en_prestamo=0
+                ).exclude(id=ex_dest.id).delete()
+
+                if cant > 0:
+                    Movimiento.objects.create(
+                        clave_idempotencia=f"TRAS-UBIC-{p.id}-{almacen_anterior.id}-{almacen_destino.id}-{uuid.uuid4().hex[:8]}",
+                        producto=p,
+                        tipo=Movimiento.Tipo.TRASLADO_ENTRE,
+                        almacen_origen=almacen_anterior,
+                        almacen_destino=almacen_destino,
+                        ubicacion_origen=ubicacion,
+                        ubicacion_destino=ubicacion,
+                        cantidad=cant,
+                        stock_disponible_anterior=stock_ant,
+                        stock_disponible_posterior=stock_post,
+                        usuario=user,
+                        motivo=f"Traslado por cambio de almacén de ubicación '{ubicacion.nombre}'",
+                    )
+                total_trasladados += 1
+
+            registrar_auditoria(
+                usuario=user,
+                accion="TRASLADO_UBICACION",
+                tipo_entidad="Ubicacion",
+                id_entidad=str(ubicacion.id),
+                valores_anteriores={"almacen_id": almacen_anterior.id, "almacen_nombre": almacen_anterior.nombre},
+                valores_nuevos={"almacen_id": almacen_destino.id, "almacen_nombre": almacen_destino.nombre, "productos_trasladados": total_trasladados},
+                motivo=f"Traslado de ubicación '{ubicacion.nombre}' a '{almacen_destino.nombre}' con reasignación de categorías",
+                resultado="OK",
+                ip_origen=_obtener_ip(request),
+            )
+
+        messages.success(
+            request,
+            f"Se trasladó la ubicación '{ubicacion.nombre}' y {total_trasladados} producto(s) a '{almacen_destino.nombre}' exitosamente."
+        )
+        return redirect("inventario:ubicacion-lista")
+
+
+class CategoriaTrasladarView(LoginRequiredMixin, RolRequeridoMixin, View):
+    """Traslado de existencias de categoría a un nuevo almacén principal reasignando ubicación física (§Punto 6)."""
+
+    roles_permitidos = (UsuarioAudacIA.Rol.ADMINISTRADOR, UsuarioAudacIA.Rol.SUPERUSUARIO)
+
+    def get(self, request, pk):
+        categoria = get_object_or_404(Categoria, pk=pk, eliminado=False)
+        user = request.user
+        alms_permitidos = user.get_almacenes_asignados() if getattr(user, "es_usuario_normal", False) else Almacen.objects.filter(activo=True, eliminado=False)
+        almacenes_destino = alms_permitidos.exclude(id=categoria.almacen_principal_id).order_by("nombre")
+
+        destino_id = request.GET.get("almacen_destino")
+        if destino_id and destino_id.isdigit():
+            almacen_destino_sel = almacenes_destino.filter(id=int(destino_id)).first()
+        else:
+            almacen_destino_sel = almacenes_destino.first()
+
+        productos_qs = list(
+            categoria.productos.filter(archivado=False)
+            .prefetch_related("ubicaciones")
+            .distinct()
+        )
+        for p in productos_qs:
+            ex = Existencia.objects.filter(producto=p, almacen=categoria.almacen_principal).first()
+            p.stock_actual = ex.stock_disponible if ex else 0
+
+        # Construir mapa de ubicaciones por almacén para JS
+        import json
+        ubicaciones_por_almacen = {}
+        for alm in almacenes_destino:
+            ubicaciones_por_almacen[str(alm.id)] = list(
+                Ubicacion.objects.filter(almacen=alm, activo=True, eliminado=False)
+                .order_by("nombre")
+                .values("id", "nombre")
+            )
+
+        ubicaciones_destino_actuales = []
+        if almacen_destino_sel:
+            ubicaciones_destino_actuales = Ubicacion.objects.filter(
+                almacen=almacen_destino_sel, activo=True, eliminado=False
+            ).order_by("nombre")
+
         return render(
             request,
             "inventario/trasladar_categoria.html",
             {
                 "categoria": categoria,
-                "productos": productos,
                 "almacenes_destino": almacenes_destino,
+                "almacen_destino_seleccionado": almacen_destino_sel,
+                "productos": productos_qs,
+                "ubicaciones_destino_actuales": ubicaciones_destino_actuales,
+                "ubicaciones_por_almacen_json": json.dumps(ubicaciones_por_almacen),
             },
         )
 
     def post(self, request, pk):
-        categoria = get_object_or_404(Categoria, pk=pk)
+        categoria = get_object_or_404(Categoria, pk=pk, eliminado=False)
+        user = request.user
         destino_id = request.POST.get("almacen_destino")
-        almacen_destino = get_object_or_404(Almacen, pk=destino_id)
+        if not destino_id or not destino_id.isdigit():
+            messages.error(request, "Debe seleccionar un almacén de destino válido.")
+            return self.get(request, pk)
 
-        try:
-            n = trasladar_productos_categoria(
-                categoria=categoria,
-                almacen_destino=almacen_destino,
-                usuario=request.user,
+        almacen_destino = get_object_or_404(Almacen, pk=int(destino_id), activo=True, eliminado=False)
+        if getattr(user, "es_usuario_normal", False) and not user.tiene_acceso_almacen(almacen_destino):
+            messages.error(request, "No tienes permisos para trasladar a este almacén.")
+            return self.get(request, pk)
+
+        productos_qs = list(categoria.productos.filter(archivado=False).distinct())
+        almacen_anterior = categoria.almacen_principal
+        total_trasladados = 0
+        from django.db import transaction
+        import uuid
+        from inventario.auditoria import registrar_auditoria
+
+        with transaction.atomic():
+            categoria.almacen_principal = almacen_destino
+            categoria.save(update_fields=["almacen_principal", "fecha_modificacion"])
+
+            for p in productos_qs:
+                ubic_id = request.POST.get(f"ubicacion_producto_{p.id}")
+                ProductoUbicacion.objects.filter(producto=p).delete()
+                ubic_dest = None
+                if ubic_id and str(ubic_id).isdigit():
+                    ubic_dest = Ubicacion.objects.filter(
+                        pk=int(ubic_id), almacen=almacen_destino, activo=True, eliminado=False
+                    ).first()
+                    if ubic_dest:
+                        ProductoUbicacion.objects.create(producto=p, ubicacion=ubic_dest)
+
+                ex_ori = Existencia.objects.select_for_update().filter(producto=p, almacen=almacen_anterior).first()
+                cant = ex_ori.stock_disponible if ex_ori else 0
+
+                if ex_ori:
+                    ex_ori.stock_disponible = 0
+                    if ex_ori.stock_en_prestamo == 0:
+                        ex_ori.delete()
+                    else:
+                        ex_ori.save()
+
+                ex_dest, _ = Existencia.objects.select_for_update().get_or_create(
+                    producto=p,
+                    almacen=almacen_destino,
+                    defaults={"stock_disponible": 0, "stock_en_prestamo": 0},
+                )
+                stock_ant = ex_dest.stock_disponible
+                stock_post = stock_ant + cant
+                ex_dest.stock_disponible = stock_post
+                ex_dest.save()
+
+                Existencia.objects.filter(
+                    producto=p, stock_disponible=0, stock_en_prestamo=0
+                ).exclude(id=ex_dest.id).delete()
+
+                if cant > 0:
+                    Movimiento.objects.create(
+                        clave_idempotencia=f"TRAS-CAT-{p.id}-{almacen_anterior.id}-{almacen_destino.id}-{uuid.uuid4().hex[:8]}",
+                        producto=p,
+                        tipo=Movimiento.Tipo.TRASLADO_ENTRE,
+                        almacen_origen=almacen_anterior,
+                        almacen_destino=almacen_destino,
+                        ubicacion_destino=ubic_dest,
+                        cantidad=cant,
+                        stock_disponible_anterior=stock_ant,
+                        stock_disponible_posterior=stock_post,
+                        usuario=user,
+                        motivo=f"Traslado por cambio de almacén principal de la categoría '{categoria.nombre}'",
+                    )
+                total_trasladados += 1
+
+            registrar_auditoria(
+                usuario=user,
+                accion="TRASLADO_CATEGORIA",
+                tipo_entidad="Categoria",
+                id_entidad=str(categoria.id),
+                valores_anteriores={"almacen_principal_id": almacen_anterior.id, "almacen_nombre": almacen_anterior.nombre},
+                valores_nuevos={"almacen_principal_id": almacen_destino.id, "almacen_nombre": almacen_destino.nombre, "productos_trasladados": total_trasladados},
+                motivo=f"Traslado de categoría '{categoria.nombre}' a '{almacen_destino.nombre}' con reasignación de ubicaciones físicas",
+                resultado="OK",
                 ip_origen=_obtener_ip(request),
             )
-            messages.success(request, f"Se trasladaron {n} productos de '{categoria.nombre}' a '{almacen_destino.nombre}'.")
-            return redirect("inventario:categoria-lista")
-        except Exception as exc:
-            messages.error(request, str(exc))
-            return self.get(request, pk)
+
+        messages.success(
+            request,
+            f"Se trasladó la categoría '{categoria.nombre}' y {total_trasladados} producto(s) a '{almacen_destino.nombre}' exitosamente."
+        )
+        return redirect("inventario:categoria-lista")
 
 
 class CategoriaDesactivarView(LoginRequiredMixin, RolRequeridoMixin, View):
@@ -1542,6 +1885,24 @@ class MovimientoListaView(LoginRequiredMixin, ListView):
                 ]
             )
 
+        fecha_desde = self.request.GET.get("fecha_desde", "").strip()
+        fecha_hasta = self.request.GET.get("fecha_hasta", "").strip()
+        almacen_id = self.request.GET.get("almacen_id", "").strip()
+        if fecha_desde:
+            try:
+                datetime.strptime(fecha_desde, "%Y-%m-%d")
+                qs = qs.filter(fecha_hora__date__gte=fecha_desde)
+            except ValueError:
+                pass
+        if fecha_hasta:
+            try:
+                datetime.strptime(fecha_hasta, "%Y-%m-%d")
+                qs = qs.filter(fecha_hora__date__lte=fecha_hasta)
+            except ValueError:
+                pass
+        if almacen_id and almacen_id.isdigit():
+            qs = qs.filter(Q(almacen_origen_id=int(almacen_id)) | Q(almacen_destino_id=int(almacen_id)))
+
         q = self.request.GET.get("q", "").strip()
         if q:
             qs = qs.filter(
@@ -1605,6 +1966,24 @@ class MovimientoListaView(LoginRequiredMixin, ListView):
             else:
                 prestamos_qs = prestamos_qs.none()
 
+        fecha_desde = self.request.GET.get("fecha_desde", "").strip()
+        fecha_hasta = self.request.GET.get("fecha_hasta", "").strip()
+        almacen_id = self.request.GET.get("almacen_id", "").strip()
+        if fecha_desde:
+            try:
+                datetime.strptime(fecha_desde, "%Y-%m-%d")
+                prestamos_qs = prestamos_qs.filter(fecha_creacion__date__gte=fecha_desde)
+            except ValueError:
+                pass
+        if fecha_hasta:
+            try:
+                datetime.strptime(fecha_hasta, "%Y-%m-%d")
+                prestamos_qs = prestamos_qs.filter(fecha_creacion__date__lte=fecha_hasta)
+            except ValueError:
+                pass
+        if almacen_id and almacen_id.isdigit():
+            prestamos_qs = prestamos_qs.filter(almacen_id=int(almacen_id))
+
         estado_prestamo = self.request.GET.get("estado_prestamo", "")
         if estado_prestamo:
             prestamos_qs = prestamos_qs.filter(estado=estado_prestamo)
@@ -1635,6 +2014,21 @@ class MovimientoListaView(LoginRequiredMixin, ListView):
                 conteos_qs = conteos_qs.filter(almacen__in=user_alms)
             else:
                 conteos_qs = conteos_qs.none()
+        if fecha_desde:
+            try:
+                datetime.strptime(fecha_desde, "%Y-%m-%d")
+                conteos_qs = conteos_qs.filter(fecha_conteo__date__gte=fecha_desde)
+            except ValueError:
+                pass
+        if fecha_hasta:
+            try:
+                datetime.strptime(fecha_hasta, "%Y-%m-%d")
+                conteos_qs = conteos_qs.filter(fecha_conteo__date__lte=fecha_hasta)
+            except ValueError:
+                pass
+        if almacen_id and almacen_id.isdigit():
+            conteos_qs = conteos_qs.filter(almacen_id=int(almacen_id))
+
         if q:
             conteos_qs = conteos_qs.filter(
                 Q(producto__nombre__icontains=q)
@@ -1646,7 +2040,8 @@ class MovimientoListaView(LoginRequiredMixin, ListView):
         dias_str = self.request.GET.get("dias", "30").strip()
         dias_estancados = int(dias_str) if dias_str.isdigit() else 30
         from web.servicios.reportes import obtener_reporte_productos_estancados
-        estancados_lista = obtener_reporte_productos_estancados(usuario=user, dias_inactividad=dias_estancados)
+        alm_obj_filtro = Almacen.objects.filter(id=int(almacen_id), activo=True, eliminado=False).first() if (almacen_id and almacen_id.isdigit()) else None
+        estancados_lista = obtener_reporte_productos_estancados(usuario=user, dias_inactividad=dias_estancados, almacen=alm_obj_filtro)
         if q:
             q_low = q.lower()
             estancados_lista = [
@@ -1659,6 +2054,9 @@ class MovimientoListaView(LoginRequiredMixin, ListView):
         context["tipo_seleccionado"] = tipo
         context["estado_prestamo"] = estado_prestamo
         context["estados_prestamo"] = Prestamo.Estado.choices
+        context["fecha_desde"] = fecha_desde
+        context["fecha_hasta"] = fecha_hasta
+        context["almacen_id"] = almacen_id
         context["q"] = q
         context["prestamos_lista"] = prestamos_lista
         context["conteos_lista"] = conteos_qs[:100]
@@ -1729,6 +2127,19 @@ class MovimientoListaView(LoginRequiredMixin, ListView):
                 alms_ubs[aid] = []
             alms_ubs[aid].append({"id": str(u.id), "nombre": u.nombre})
         context["almacen_ubicaciones_json"] = json.dumps(alms_ubs)
+        context["almacenes_filtro"] = user_alms.order_by("nombre")
+
+        # Categorías agrupadas por almacén para el selector dinámico de traslado (§5.1)
+        alms_cats = {}
+        cats_qs = Categoria.objects.filter(activo=True, eliminado=False).order_by("nombre")
+        if es_normal:
+            cats_qs = cats_qs.filter(almacen_principal__in=user_alms)
+        for c in cats_qs:
+            aid = str(c.almacen_principal_id)
+            if aid not in alms_cats:
+                alms_cats[aid] = []
+            alms_cats[aid].append({"id": str(c.id), "nombre": c.nombre})
+        context["almacen_categorias_json"] = json.dumps(alms_cats)
         return context
 
 
@@ -2049,6 +2460,7 @@ class TrasladoCrearView(LoginRequiredMixin, View):
             try:
                 if alm_dest and alm_dest.id != alm_orig.id:
                     # Traslado entre almacenes
+                    cat_dest = form.cleaned_data.get("categoria_destino")
                     ex_o, ex_d, mov = registrar_traslado_entre_almacenes(
                         producto=prod,
                         almacen_origen=alm_orig,
@@ -2057,6 +2469,7 @@ class TrasladoCrearView(LoginRequiredMixin, View):
                         usuario=request.user,
                         ubicacion_origen=ub_orig,
                         ubicacion_destino=ub_dest,
+                        categoria_destino=cat_dest,
                         motivo=mot,
                         clave_idempotencia=idem,
                         ip_origen=_obtener_ip(request),

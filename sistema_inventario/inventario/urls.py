@@ -23,7 +23,7 @@ urlpatterns = [
     path("ubicaciones/<int:pk>/desactivar/", views.UbicacionDesactivarView.as_view(), name="ubicacion-desactivar"),
     path("ubicaciones/<int:pk>/reactivar/", views.UbicacionReactivarView.as_view(), name="ubicacion-reactivar"),
     path("ubicaciones/<int:pk>/eliminar/", views.UbicacionEliminarView.as_view(), name="ubicacion-eliminar"),
-    path("ubicaciones/<int:pk>/trasladar/", views.UbicacionDesactivarView.as_view(), name="trasladar-ubicacion"),
+    path("ubicaciones/<int:pk>/trasladar/", views.UbicacionTrasladarView.as_view(), name="trasladar-ubicacion"),
 
     # Categorías y Tipos opcionales
     path("categorias/", views.CategoriaListaView.as_view(), name="categoria-lista"),

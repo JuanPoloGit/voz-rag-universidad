@@ -1,69 +1,174 @@
 {% extends "base.html" %}
-{% block page_title %}Desactivar Ubicación{% endblock %}
+{% block page_title %}Trasladar Ubicación y Productos{% endblock %}
 {% block sidebar_ubicaciones %}active{% endblock %}
 
-{% block title %}Desactivar Ubicación: {{ ubicacion.nombre }} — Inventario AudacIA{% endblock %}
+{% block title %}Trasladar Ubicación: {{ ubicacion.nombre }} — Inventario AudacIA{% endblock %}
 
 {% block content %}
-<div style="max-width: 680px; margin: 0 auto;">
+<div style="max-width: 900px; margin: 0 auto;">
     <div class="card">
         <div class="card-header">
             <div>
-                <h1 class="card-title" style="color: var(--crit);">
-                    Desactivar Ubicación: {{ ubicacion.nombre }}
+                <h1 class="card-title" style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.3rem;">🔀</span> Trasladar Ubicación: {{ ubicacion.nombre }}
                 </h1>
                 <p style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.25rem;">
-                    Almacén: <strong>{{ ubicacion.almacen.nombre }}</strong>
+                    Reasigna esta ubicación y sus existencias a un nuevo almacén, definiendo la categoría destino para cada producto.
                 </p>
+            </div>
+            <a href="{% url 'inventario:ubicacion-lista' %}" class="btn btn-secondary btn-sm">
+                Volver a Ubicaciones
+            </a>
+        </div>
+
+        <!-- Resumen de Origen -->
+        <div style="background: var(--bg-panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1.5rem; display: flex; flex-wrap: wrap; gap: 1.5rem;">
+            <div>
+                <span style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; display: block; margin-bottom: 2px;">Ubicación Física</span>
+                <strong style="font-size: 1.05rem; color: var(--text);">{{ ubicacion.nombre }}</strong>
+            </div>
+            <div>
+                <span style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; display: block; margin-bottom: 2px;">Almacén Actual</span>
+                <span class="badge badge-accent" style="font-size: 0.85rem;">{{ ubicacion.almacen.nombre }}</span>
+            </div>
+            <div>
+                <span style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; display: block; margin-bottom: 2px;">Productos Asignados</span>
+                <strong style="font-size: 1.05rem; color: var(--accent-2);">{{ productos.count }} artículo(s)</strong>
             </div>
         </div>
 
-        {% if tiene_productos %}
-            <div style="background: var(--bg-panel-2); border: 1px solid rgba(255,189,92,0.3); border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem;">
-                <h3 style="font-size: 1rem; color: var(--warn); margin-bottom: 0.5rem;">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> Reasignación de Ubicación Requerida (§7.2)
-                </h3>
-                <p style="font-size: 0.875rem; color: var(--warn); margin-bottom: 0.75rem;">
-                    Esta ubicación contiene productos asignados. Selecciona otra ubicación dentro del almacén
-                    <strong>{{ ubicacion.almacen.nombre }}</strong> para transferir las referencias físicas.
-                </p>
-
-                <ul style="max-height: 150px; overflow-y: auto; padding-left: 1.25rem; font-size: 0.85rem; color: var(--text);">
-                    {% for pu in productos %}
-                        <li><code>{{ pu.producto.codigo_interno }}</code> — {{ pu.producto.nombre }}</li>
-                    {% endfor %}
-                </ul>
+        {% if not almacenes_destino %}
+            <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 8px; padding: 1rem; color: var(--crit); margin-bottom: 1.5rem;">
+                ⚠️ No existen otros almacenes activos disponibles para realizar el traslado.
             </div>
         {% else %}
-            <div style="background: var(--bg-panel-2); border: 1px solid rgba(78,230,171,0.3); border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem; color: var(--ok); font-size: 0.875rem;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><polyline points="20 6 9 17 4 12"/></svg> Esta ubicación no tiene productos asignados. Puede ser desactivada directamente.
-            </div>
-        {% endif %}
+            <form method="post" id="formTrasladarUbicacion" novalidate>
+                {% csrf_token %}
 
-        <form method="post" novalidate>
-            {% csrf_token %}
-
-            {% if tiene_productos %}
-                <div class="form-group">
-                    <label for="ubicacion_destino"><strong>Ubicación Destino en {{ ubicacion.almacen.nombre }} *</strong></label>
-                    <select name="ubicacion_destino" id="ubicacion_destino" class="form-control" required>
-                        <option value="">-- Selecciona la ubicación receptora --</option>
-                        {% for ub in ubicaciones_destino %}
-                            <option value="{{ ub.id }}">{{ ub.nombre }}</option>
+                <!-- Selección de Almacén Destino -->
+                <div class="form-group" style="background: rgba(30, 41, 59, 0.5); padding: 1.25rem; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 1.5rem;">
+                    <label for="selectAlmacenDestino" style="font-size: 0.95rem; font-weight: 700; color: var(--text); display: block; margin-bottom: 6px;">
+                        🏛️ Almacén de Destino *
+                    </label>
+                    <p style="font-size: 0.825rem; color: var(--text-muted); margin-bottom: 10px;">
+                        Seleccione el almacén hacia donde se moverá la ubicación y todos sus productos relacionados.
+                    </p>
+                    <select name="almacen_destino" id="selectAlmacenDestino" class="form-control" style="max-width: 420px; font-weight: 600;" required>
+                        {% for alm in almacenes_destino %}
+                            <option value="{{ alm.id }}" {% if almacen_destino_seleccionado and almacen_destino_seleccionado.id == alm.id %}selected{% endif %}>
+                                {{ alm.nombre }}
+                            </option>
                         {% endfor %}
                     </select>
                 </div>
-            {% endif %}
 
-            <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border);">
-                <a href="{% url 'inventario:ubicacion-lista' %}" class="btn btn-secondary">
-                    Cancelar
-                </a>
-                <button type="submit" class="btn btn-danger" style="background: var(--crit); color: white;">
-                    Confirmar Desactivación
-                </button>
-            </div>
-        </form>
+                <!-- Tabla de Productos y Asignación de Categorías -->
+                <div style="margin-bottom: 1.5rem;">
+                    <h3 style="font-size: 1rem; font-weight: 700; color: var(--text); margin-bottom: 4px;">
+                        📦 Asignación de Categoría por Producto en Destino
+                    </h3>
+                    <p style="font-size: 0.825rem; color: var(--text-muted); margin-bottom: 12px;">
+                        Dado que cada producto pertenece a un único almacén, debe indicar qué categoría tendrá cada artículo en el nuevo almacén receptor.
+                    </p>
+
+                    {% if productos %}
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Código</th>
+                                        <th>Producto</th>
+                                        <th style="text-align: center;">Stock</th>
+                                        <th>Categoría Actual</th>
+                                        <th style="min-width: 250px;">Nueva Categoría en Destino *</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for p in productos %}
+                                        <tr>
+                                            <td><code>{{ p.codigo_interno }}</code></td>
+                                            <td><strong>{{ p.nombre }}</strong></td>
+                                            <td style="text-align: center;">
+                                                <span class="badge badge-accent">{{ p.stock_actual }} u.</span>
+                                            </td>
+                                            <td>
+                                                <span style="color: var(--text-muted); font-size: 0.85rem;">
+                                                    {{ p.categoria.nombre|default:"Sin categoría" }}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <select name="categoria_producto_{{ p.id }}" class="form-control select-categoria-destino" data-prod-id="{{ p.id }}" required>
+                                                    {% for cat in categorias_destino_actuales %}
+                                                        <option value="{{ cat.id }}">{{ cat.nombre }}</option>
+                                                    {% empty %}
+                                                        <option value="">-- No hay categorías en este almacén --</option>
+                                                    {% endfor %}
+                                                </select>
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <div style="padding: 1.5rem; text-align: center; color: var(--text-muted); background: var(--bg-panel-2); border-radius: 8px;">
+                            Esta ubicación no tiene productos asociados actualmente. El almacén de la ubicación se actualizará directamente.
+                        </div>
+                    {% endif %}
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem; padding-top: 1.25rem; border-top: 1px solid var(--border);">
+                    <a href="{% url 'inventario:ubicacion-lista' %}" class="btn btn-secondary">
+                        Cancelar
+                    </a>
+                    <button type="submit" class="btn btn-primary" id="btnConfirmarTrasladoUbic">
+                        Confirmar Traslado de Ubicación y Productos
+                    </button>
+                </div>
+            </form>
+        {% endif %}
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    var categoriasPorAlmacen = {{ categorias_por_almacen_json|safe }};
+    var selectAlmDest = document.getElementById("selectAlmacenDestino");
+
+    function actualizarOpcionesCategorias() {
+        if (!selectAlmDest) return;
+        var almId = selectAlmDest.value;
+        var cats = categoriasPorAlmacen[almId] || [];
+
+        document.querySelectorAll(".select-categoria-destino").forEach(function(sel) {
+            var valorActual = sel.value;
+            sel.innerHTML = "";
+            if (cats.length === 0) {
+                var opt = document.createElement("option");
+                opt.value = "";
+                opt.textContent = "-- Sin categorías disponibles --";
+                sel.appendChild(opt);
+            } else {
+                cats.forEach(function(c, idx) {
+                    var opt = document.createElement("option");
+                    opt.value = c.id;
+                    opt.textContent = c.nombre;
+                    // Preseleccionar la categoría General por defecto si existe
+                    if (c.nombre.toLowerCase().startsWith("general") || idx === 0) {
+                        opt.selected = true;
+                    }
+                    sel.appendChild(opt);
+                });
+            }
+        });
+    }
+
+    if (selectAlmDest) {
+        selectAlmDest.addEventListener("change", actualizarOpcionesCategorias);
+        actualizarOpcionesCategorias();
+    }
+});
+</script>
 {% endblock %}

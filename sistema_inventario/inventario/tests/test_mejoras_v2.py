@@ -136,7 +136,8 @@ class MejorasV2TestCase(TestCase):
         self.assertEqual(form_interno.cleaned_data["cantidad"], 10)
 
     def test_punto_3_traslado_entre_almacenes_exige_almacen_y_ubicacion_destino(self):
-        """Traslado a otro almacén requiere almacén destino y ubicación destino."""
+        """Traslado a otro almacén requiere almacén destino, ubicación destino y categoría destino."""
+        cat_b = Categoria.objects.filter(almacen_principal=self.almacen_b).first()
         form_entre = TrasladoForm(
             data={
                 "producto": self.producto.id,
@@ -144,6 +145,7 @@ class MejorasV2TestCase(TestCase):
                 "ubicacion_origen": self.ubicacion_a1.id,  # Mantiene la actual
                 "almacen_destino": self.almacen_b.id,
                 "ubicacion_destino": self.ubicacion_b1.id,
+                "categoria_destino": cat_b.id,
                 "motivo": "Traslado entre bodegas",
             },
             usuario=self.superadmin,
@@ -272,3 +274,88 @@ class MejorasV2TestCase(TestCase):
         mapa_dict = json.loads(resp.context["mapa_ubicaciones_json"])
         self.assertIn(str(self.producto.id), mapa_dict)
         self.assertNotIn(str(prod_b.id), mapa_dict)
+
+    def test_crear_almacen_autocrea_categoria_general(self):
+        """Crear un almacén debe auto-generar la categoría por defecto 'General - [Nombre]'."""
+        nuevo_alm = crear_almacen(nombre="Almacen Automatizado", usuario=self.superadmin)
+        cat_auto = Categoria.objects.filter(almacen_principal=nuevo_alm, nombre=f"General - {nuevo_alm.nombre}").first()
+        self.assertIsNotNone(cat_auto)
+        self.assertTrue(cat_auto.activo)
+
+    def test_traslado_entre_almacenes_elimina_existencia_origen_invariante_unico(self):
+        """Al trasladar existencias a otro almacén, la existencia origen con 0 stock es eliminada para cumplir invariante."""
+        cat_dest = Categoria.objects.filter(almacen_principal=self.almacen_b).first()
+        ex_o, ex_d, mov = registrar_traslado_entre_almacenes(
+            producto=self.producto,
+            almacen_origen=self.almacen_a,
+            almacen_destino=self.almacen_b,
+            cantidad=10,
+            usuario=self.superadmin,
+            ubicacion_destino=self.ubicacion_b1,
+            categoria_destino=cat_dest,
+        )
+        self.assertEqual(ex_d.stock_disponible, 10)
+        # La existencia en el almacén origen con 0 unidades debe eliminarse
+        self.assertFalse(Existencia.objects.filter(producto=self.producto, almacen=self.almacen_a).exists())
+        # El producto ahora pertenece a la categoría y almacén de destino
+        self.producto.refresh_from_db()
+        self.assertEqual(self.producto.categoria, cat_dest)
+        self.assertEqual(self.producto.ubicaciones.first(), self.ubicacion_b1)
+
+    def test_asistente_traslado_ubicacion_vista(self):
+        """UbicacionTrasladarView permite mover la ubicación a otro almacén reasignando categorías a los productos."""
+        self.client.force_login(self.superadmin)
+        url = reverse("inventario:trasladar-ubicacion", args=[self.ubicacion_a1.pk])
+        resp_get = self.client.get(url)
+        self.assertEqual(resp_get.status_code, 200)
+        self.assertContains(resp_get, self.ubicacion_a1.nombre)
+
+        cat_b = Categoria.objects.filter(almacen_principal=self.almacen_b).first()
+        resp_post = self.client.post(
+            url,
+            {
+                "almacen_destino": self.almacen_b.pk,
+                f"categoria_producto_{self.producto.id}": cat_b.pk,
+            },
+        )
+        self.assertEqual(resp_post.status_code, 302)
+        self.ubicacion_a1.refresh_from_db()
+        self.assertEqual(self.ubicacion_a1.almacen, self.almacen_b)
+        self.producto.refresh_from_db()
+        self.assertEqual(self.producto.categoria, cat_b)
+
+    def test_asistente_traslado_categoria_vista(self):
+        """CategoriaTrasladarView permite mover la categoría a otro almacén reasignando ubicaciones a los productos."""
+        self.client.force_login(self.superadmin)
+        url = reverse("inventario:categoria-trasladar", args=[self.categoria_a.pk])
+        resp_get = self.client.get(url)
+        self.assertEqual(resp_get.status_code, 200)
+        self.assertContains(resp_get, self.categoria_a.nombre)
+
+        resp_post = self.client.post(
+            url,
+            {
+                "almacen_destino": self.almacen_b.pk,
+                f"ubicacion_producto_{self.producto.id}": self.ubicacion_b1.pk,
+            },
+        )
+        self.assertEqual(resp_post.status_code, 302)
+        self.categoria_a.refresh_from_db()
+        self.assertEqual(self.categoria_a.almacen_principal, self.almacen_b)
+        self.producto.refresh_from_db()
+        self.assertEqual(self.producto.ubicaciones.first(), self.ubicacion_b1)
+
+    def test_movimiento_lista_filtros_fecha_y_almacen(self):
+        """MovimientoListaView filtra correctamente por rango de fechas y almacén."""
+        from django.utils import timezone
+        hoy = timezone.localdate().strftime("%Y-%m-%d")
+        self.client.force_login(self.superadmin)
+        resp = self.client.get(reverse("inventario:movimiento-lista"), {
+            "fecha_desde": hoy,
+            "fecha_hasta": hoy,
+            "almacen_id": str(self.almacen_a.id),
+        })
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context["fecha_desde"], hoy)
+        self.assertEqual(resp.context["fecha_hasta"], hoy)
+        self.assertEqual(resp.context["almacen_id"], str(self.almacen_a.id))
