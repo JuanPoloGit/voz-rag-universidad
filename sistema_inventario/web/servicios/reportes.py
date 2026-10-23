@@ -1,4 +1,4 @@
-"""Servicios de agregación analítica y generación de reportes de inventario."""
+"""Servicios analíticos y de generación de reportes — Web AudacIA."""
 
 from datetime import timedelta
 from typing import Any, Dict, List, Optional
@@ -8,13 +8,27 @@ from django.utils import timezone
 from inventario.models import Almacen, Categoria, Existencia, Movimiento, Prestamo, Producto
 
 
+def _resolver_almacenes_usuario(usuario: Any, almacen: Optional[Almacen] = None):
+    """Retorna (almacen_especifico, queryset_almacenes_permitidos)."""
+    es_normal = getattr(usuario, "es_usuario_normal", False)
+    if es_normal:
+        user_alms = usuario.get_almacenes_asignados()
+        if almacen and user_alms.filter(id=almacen.id).exists():
+            return almacen, user_alms.filter(id=almacen.id)
+        if user_alms.count() == 1:
+            return user_alms.first(), user_alms
+        return None, user_alms
+    if almacen:
+        return almacen, Almacen.objects.filter(id=almacen.id)
+    return None, Almacen.objects.filter(activo=True, eliminado=False)
+
+
 def obtener_metricas_dashboard(usuario: Any, almacen: Optional[Almacen] = None) -> Dict[str, Any]:
     """Calcula las métricas principales para el Dashboard según el ámbito del usuario y almacén opcional."""
     es_normal = getattr(usuario, "es_usuario_normal", False)
-    almacen_usuario = getattr(usuario, "almacen_asignado", None) if es_normal else None
-    almacen_efectivo = almacen_usuario if es_normal else almacen
+    alm_especifico, alms_permitidos = _resolver_almacenes_usuario(usuario, almacen)
 
-    if es_normal and not almacen_efectivo:
+    if es_normal and not alms_permitidos.exists():
         return {
             "total_productos": 0,
             "total_stock_disponible": 0,
@@ -26,37 +40,61 @@ def obtener_metricas_dashboard(usuario: Any, almacen: Optional[Almacen] = None) 
             "prestamos_recientes": [],
         }
 
-    if almacen_efectivo:
+    if alm_especifico:
         prod_qs = Producto.objects.filter(
             archivado=False,
             activo=True,
         ).filter(
-            Q(categoria__almacen_principal=almacen_efectivo) | Q(existencias__almacen=almacen_efectivo)
+            Q(categoria__almacen_principal=alm_especifico)
+            | Q(existencias__almacen=alm_especifico)
+            | Q(ubicaciones__almacen=alm_especifico)
         ).distinct()
         ex_qs = Existencia.objects.filter(
             producto__archivado=False,
             producto__activo=True,
-            almacen=almacen_efectivo,
+            almacen=alm_especifico,
         )
         mov_qs = Movimiento.objects.filter(
-            Q(almacen_origen=almacen_efectivo) | Q(almacen_destino=almacen_efectivo)
+            Q(almacen_origen=alm_especifico) | Q(almacen_destino=alm_especifico)
         )
         pres_qs = Prestamo.objects.filter(
-            almacen=almacen_efectivo,
+            almacen=alm_especifico,
             estado__in=[Prestamo.Estado.ABIERTO, Prestamo.Estado.DEVUELTO_PARCIAL],
         )
     else:
-        prod_qs = Producto.objects.filter(archivado=False, activo=True)
-        ex_qs = Existencia.objects.filter(
-            producto__archivado=False,
-            producto__activo=True,
-            almacen__activo=True,
-            almacen__eliminado=False,
-        )
-        mov_qs = Movimiento.objects.all()
-        pres_qs = Prestamo.objects.filter(
-            estado__in=[Prestamo.Estado.ABIERTO, Prestamo.Estado.DEVUELTO_PARCIAL]
-        )
+        if es_normal:
+            prod_qs = Producto.objects.filter(
+                archivado=False,
+                activo=True,
+            ).filter(
+                Q(categoria__almacen_principal__in=alms_permitidos)
+                | Q(existencias__almacen__in=alms_permitidos)
+                | Q(ubicaciones__almacen__in=alms_permitidos)
+            ).distinct()
+            ex_qs = Existencia.objects.filter(
+                producto__archivado=False,
+                producto__activo=True,
+                almacen__in=alms_permitidos,
+            )
+            mov_qs = Movimiento.objects.filter(
+                Q(almacen_origen__in=alms_permitidos) | Q(almacen_destino__in=alms_permitidos)
+            )
+            pres_qs = Prestamo.objects.filter(
+                almacen__in=alms_permitidos,
+                estado__in=[Prestamo.Estado.ABIERTO, Prestamo.Estado.DEVUELTO_PARCIAL],
+            )
+        else:
+            prod_qs = Producto.objects.filter(archivado=False, activo=True)
+            ex_qs = Existencia.objects.filter(
+                producto__archivado=False,
+                producto__activo=True,
+                almacen__activo=True,
+                almacen__eliminado=False,
+            )
+            mov_qs = Movimiento.objects.all()
+            pres_qs = Prestamo.objects.filter(
+                estado__in=[Prestamo.Estado.ABIERTO, Prestamo.Estado.DEVUELTO_PARCIAL]
+            )
 
     totales_stock = ex_qs.aggregate(
         disp=Sum("stock_disponible"),
@@ -82,16 +120,17 @@ def obtener_metricas_dashboard(usuario: Any, almacen: Optional[Almacen] = None) 
 
 def obtener_datos_grafico_categorias(usuario: Any, almacen: Optional[Almacen] = None) -> Dict[str, Any]:
     """Genera datos para el gráfico de distribución de productos por categoría."""
+    alm_especifico, alms_permitidos = _resolver_almacenes_usuario(usuario, almacen)
     es_normal = getattr(usuario, "es_usuario_normal", False)
-    almacen_usuario = getattr(usuario, "almacen_asignado", None) if es_normal else None
-    almacen_efectivo = almacen_usuario if es_normal else almacen
 
-    if es_normal and not almacen_efectivo:
+    if es_normal and not alms_permitidos.exists():
         return {"labels": [], "data": []}
 
     cats_qs = Categoria.objects.filter(activo=True, eliminado=False)
-    if almacen_efectivo:
-        cats_qs = cats_qs.filter(almacen_principal=almacen_efectivo)
+    if alm_especifico:
+        cats_qs = cats_qs.filter(almacen_principal=alm_especifico)
+    elif es_normal:
+        cats_qs = cats_qs.filter(almacen_principal__in=alms_permitidos)
 
     cats = cats_qs.annotate(
         num_prods=Count("productos", filter=Q(productos__archivado=False, productos__activo=True))
@@ -116,16 +155,17 @@ def obtener_datos_grafico_balance_movimientos(
     entradas = []
     salidas = []
 
+    alm_especifico, alms_permitidos = _resolver_almacenes_usuario(usuario, almacen)
     es_normal = getattr(usuario, "es_usuario_normal", False)
-    almacen_usuario = getattr(usuario, "almacen_asignado", None) if es_normal else None
-    almacen_efectivo = almacen_usuario if es_normal else almacen
 
-    if es_normal and not almacen_efectivo:
+    if es_normal and not alms_permitidos.exists():
         return {"labels": [], "entradas": [], "salidas": []}
 
     base_qs = Movimiento.objects.all()
-    if almacen_efectivo:
-        base_qs = base_qs.filter(Q(almacen_origen=almacen_efectivo) | Q(almacen_destino=almacen_efectivo))
+    if alm_especifico:
+        base_qs = base_qs.filter(Q(almacen_origen=alm_especifico) | Q(almacen_destino=alm_especifico))
+    elif es_normal:
+        base_qs = base_qs.filter(Q(almacen_origen__in=alms_permitidos) | Q(almacen_destino__in=alms_permitidos))
 
     for i in range(dias - 1, -1, -1):
         dia = hoy - timedelta(days=i)
@@ -160,7 +200,7 @@ def obtener_reporte_existencias(
 ):
     """Consulta de existencias filtrable con cálculo de alertas."""
     es_normal = getattr(usuario, "es_usuario_normal", False)
-    almacen_usuario = getattr(usuario, "almacen_asignado", None) if es_normal else None
+    alms_permitidos = usuario.get_almacenes_asignados() if es_normal else None
 
     qs = Existencia.objects.filter(
         producto__archivado=False,
@@ -170,9 +210,12 @@ def obtener_reporte_existencias(
     ).select_related("producto", "almacen", "producto__categoria").order_by("producto__codigo_interno")
 
     if es_normal:
-        if not almacen_usuario:
+        if not alms_permitidos.exists():
             return qs.none()
-        qs = qs.filter(almacen=almacen_usuario)
+        if almacen_id and alms_permitidos.filter(id=almacen_id).exists():
+            qs = qs.filter(almacen_id=almacen_id)
+        else:
+            qs = qs.filter(almacen__in=alms_permitidos)
     elif almacen_id:
         qs = qs.filter(almacen_id=almacen_id)
 
@@ -198,16 +241,16 @@ def obtener_reporte_movimientos_periodo(
 ):
     """Consulta de movimientos en un período filtrables por tipo y producto."""
     es_normal = getattr(usuario, "es_usuario_normal", False)
-    almacen_usuario = getattr(usuario, "almacen_asignado", None) if es_normal else None
+    alms_permitidos = usuario.get_almacenes_asignados() if es_normal else None
 
     qs = Movimiento.objects.select_related(
         "producto", "almacen_origen", "almacen_destino", "usuario"
     ).order_by("-fecha_hora")
 
     if es_normal:
-        if not almacen_usuario:
+        if not alms_permitidos.exists():
             return qs.none()
-        qs = qs.filter(Q(almacen_origen=almacen_usuario) | Q(almacen_destino=almacen_usuario))
+        qs = qs.filter(Q(almacen_origen__in=alms_permitidos) | Q(almacen_destino__in=alms_permitidos))
 
     if fecha_desde:
         qs = qs.filter(fecha_hora__date__gte=fecha_desde)
@@ -224,14 +267,14 @@ def obtener_reporte_movimientos_periodo(
 def obtener_reporte_prestamos_activos(usuario: Any, estado: Optional[str] = None) -> List[Any]:
     """Lista de préstamos abiertos con cálculo de días transcurridos."""
     es_normal = getattr(usuario, "es_usuario_normal", False)
-    almacen_usuario = getattr(usuario, "almacen_asignado", None) if es_normal else None
+    alms_permitidos = usuario.get_almacenes_asignados() if es_normal else None
 
     qs = Prestamo.objects.select_related("producto", "almacen", "usuario").order_by("-fecha_creacion")
 
     if es_normal:
-        if not almacen_usuario:
+        if not alms_permitidos.exists():
             return []
-        qs = qs.filter(almacen=almacen_usuario)
+        qs = qs.filter(almacen__in=alms_permitidos)
 
     if estado:
         qs = qs.filter(estado=estado)
@@ -249,13 +292,17 @@ def obtener_reporte_prestamos_activos(usuario: Any, estado: Optional[str] = None
 def obtener_reporte_productos_estancados(usuario: Any, dias_inactividad: int = 30) -> List[Any]:
     """Identifica productos que no han tenido ningún movimiento en los últimos N días."""
     es_normal = getattr(usuario, "es_usuario_normal", False)
-    almacen_usuario = getattr(usuario, "almacen_asignado", None) if es_normal else None
+    alms_permitidos = usuario.get_almacenes_asignados() if es_normal else None
 
     prods = Producto.objects.filter(archivado=False, activo=True).select_related("categoria")
     if es_normal:
-        if not almacen_usuario:
+        if not alms_permitidos.exists():
             return []
-        prods = prods.filter(categoria__almacen_principal=almacen_usuario)
+        prods = prods.filter(
+            Q(categoria__almacen_principal__in=alms_permitidos)
+            | Q(existencias__almacen__in=alms_permitidos)
+            | Q(ubicaciones__almacen__in=alms_permitidos)
+        ).distinct()
 
     limite = timezone.now() - timedelta(days=dias_inactividad)
     

@@ -141,6 +141,9 @@ class AlmacenListaView(LoginRequiredMixin, ListView):
 
     def get_queryset(self):
         qs = Almacen.objects.filter(eliminado=False)
+        user = self.request.user
+        if getattr(user, "es_usuario_normal", False):
+            qs = qs.filter(id__in=user.get_almacenes_asignados())
         mostrar_inactivos = self.request.GET.get("mostrar_inactivos") == "1"
         if not mostrar_inactivos:
             qs = qs.filter(activo=True)
@@ -752,9 +755,17 @@ class ProductoListaView(LoginRequiredMixin, ListView):
         if f["es_normal"]:
             user_alms = self.request.user.get_almacenes_asignados()
             if f["almacen_id"]:
-                qs = qs.filter(categoria__almacen_principal_id=f["almacen_id"])
+                qs = qs.filter(
+                    Q(categoria__almacen_principal_id=f["almacen_id"])
+                    | Q(existencias__almacen_id=f["almacen_id"])
+                    | Q(ubicaciones__almacen_id=f["almacen_id"])
+                ).distinct()
             else:
-                qs = qs.filter(categoria__almacen_principal__in=user_alms)
+                qs = qs.filter(
+                    Q(categoria__almacen_principal__in=user_alms)
+                    | Q(existencias__almacen__in=user_alms)
+                    | Q(ubicaciones__almacen__in=user_alms)
+                ).distinct()
         elif f["almacen_id"]:
             qs = qs.filter(
                 Q(categoria__almacen_principal_id=f["almacen_id"])
@@ -1646,13 +1657,27 @@ class MovimientoListaView(LoginRequiredMixin, ListView):
         # Mapa de almacén, ubicación fija y stock disponible por producto (acotado por permisos de rol)
         import json
         mapa_ubic = {}
-        prods_qs = Producto.objects.filter(archivado=False).select_related("categoria__almacen_principal").prefetch_related("ubicaciones__almacen", "existencias__almacen")
+        prods_qs = Producto.objects.filter(archivado=False, activo=True).select_related("categoria__almacen_principal").prefetch_related("ubicaciones__almacen", "existencias__almacen")
         if es_normal:
-            prods_qs = prods_qs.filter(categoria__almacen_principal__in=user_alms)
+            prods_qs = prods_qs.filter(
+                Q(categoria__almacen_principal__in=user_alms)
+                | Q(existencias__almacen__in=user_alms)
+                | Q(ubicaciones__almacen__in=user_alms)
+            ).distinct()
 
         for prod in prods_qs:
-            ub = prod.ubicaciones.first()
-            alm = ub.almacen if ub else prod.categoria.almacen_principal
+            if es_normal:
+                ub = prod.ubicaciones.filter(almacen__in=user_alms).first() or prod.ubicaciones.first()
+                ex_user = prod.existencias.filter(almacen__in=user_alms).first()
+                if ex_user:
+                    alm = ex_user.almacen
+                elif ub and ub.almacen:
+                    alm = ub.almacen
+                else:
+                    alm = prod.categoria.almacen_principal
+            else:
+                ub = prod.ubicaciones.first()
+                alm = ub.almacen if ub else prod.categoria.almacen_principal
             ex = prod.existencias.filter(almacen=alm).first() if alm else None
             stock_disp = ex.stock_disponible if ex else 0
             mapa_ubic[str(prod.id)] = {
@@ -2184,6 +2209,25 @@ class MovimientoRevertirView(LoginRequiredMixin, View):
             except Exception as exc:
                 form.add_error(None, str(exc))
         return render(request, "inventario/movimiento_revertir.html", {"movimiento": movimiento, "form": form})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 10. VISTAS PERSONALIZADAS DE ERROR (403, 404, 500)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def error_403_view(request, exception=None):
+    """Vista personalizada para error 403 (Permiso Denegado)."""
+    return render(request, "403.html", status=403)
+
+
+def error_404_view(request, exception=None):
+    """Vista personalizada para error 404 (No Encontrado)."""
+    return render(request, "404.html", status=404)
+
+
+def error_500_view(request):
+    """Vista personalizada para error 500 (Error del Servidor)."""
+    return render(request, "500.html", status=500)
 
 
 

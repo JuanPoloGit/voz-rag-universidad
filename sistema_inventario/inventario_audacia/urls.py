@@ -21,3 +21,7 @@ urlpatterns = [
         {"document_root": settings.BASE_DIR / "static"},
     ),
 ]
+
+handler403 = "inventario.views.error_403_view"
+handler404 = "inventario.views.error_404_view"
+handler500 = "inventario.views.error_500_view"

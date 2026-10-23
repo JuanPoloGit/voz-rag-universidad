@@ -1,6 +1,7 @@
 """Formularios para la aplicación de inventario."""
 
 from django import forms
+from django.db.models import Q
 
 from inventario.models import Almacen, Categoria, Producto, TipoCategoria, Ubicacion
 
@@ -490,8 +491,12 @@ class EntradaForm(forms.Form):
                 self.fields["almacen"].widget = forms.HiddenInput()
                 self.fields["almacen"].required = False
             self.fields["producto"].queryset = Producto.objects.filter(
-                archivado=False, activo=True, categoria__almacen_principal__in=user_alms
-            )
+                archivado=False, activo=True
+            ).filter(
+                Q(categoria__almacen_principal__in=user_alms)
+                | Q(existencias__almacen__in=user_alms)
+                | Q(ubicaciones__almacen__in=user_alms)
+            ).distinct().order_by("nombre")
             self.fields["ubicacion"].queryset = Ubicacion.objects.filter(
                 activo=True, eliminado=False, almacen__in=user_alms
             )
@@ -504,18 +509,23 @@ class EntradaForm(forms.Form):
         producto = cleaned_data.get("producto")
         almacen = cleaned_data.get("almacen")
 
-        if self.usuario and getattr(self.usuario, "es_usuario_normal", False):
-            user_alms = self.usuario.get_almacenes_asignados()
-            if not almacen and user_alms.count() == 1:
-                almacen = user_alms.first()
-                cleaned_data["almacen"] = almacen
-            if almacen and not user_alms.filter(id=almacen.id).exists():
-                self.add_error("almacen", "No tienes acceso al almacén seleccionado.")
-            if producto and not user_alms.filter(id=producto.categoria.almacen_principal_id).exists():
-                self.add_error("producto", "El producto seleccionado no pertenece a tus almacenes asignados.")
+        is_normal = self.usuario and getattr(self.usuario, "es_usuario_normal", False)
+        user_alms = self.usuario.get_almacenes_asignados() if is_normal else None
 
-        if producto and almacen and producto.categoria.almacen_principal_id != almacen.id:
-            self.add_error("almacen", f"El producto '{producto.nombre}' pertenece al almacén '{producto.categoria.almacen_principal.nombre}'.")
+        if producto:
+            if not almacen:
+                if is_normal:
+                    ex_user = producto.existencias.filter(almacen__in=user_alms).first()
+                    ub_user = producto.ubicaciones.filter(almacen__in=user_alms).first()
+                    almacen = ex_user.almacen if ex_user else (ub_user.almacen if ub_user else producto.categoria.almacen_principal)
+                else:
+                    ex_prod = producto.existencias.filter(cantidad__gt=0).first() or producto.existencias.first()
+                    ub_prod = producto.ubicaciones.first()
+                    almacen = ex_prod.almacen if ex_prod else (ub_prod.almacen if ub_prod else producto.categoria.almacen_principal)
+                cleaned_data["almacen"] = almacen
+
+            if is_normal and not user_alms.filter(id=almacen.id).exists():
+                self.add_error("almacen", "No tienes acceso al almacén donde ingresa este producto.")
 
         if es_empaque:
             if not cantidad_empaques:
@@ -574,8 +584,12 @@ class SalidaForm(forms.Form):
                 self.fields["almacen"].widget = forms.HiddenInput()
                 self.fields["almacen"].required = False
             self.fields["producto"].queryset = Producto.objects.filter(
-                archivado=False, activo=True, categoria__almacen_principal__in=user_alms
-            )
+                archivado=False, activo=True
+            ).filter(
+                Q(categoria__almacen_principal__in=user_alms)
+                | Q(existencias__almacen__in=user_alms)
+                | Q(ubicaciones__almacen__in=user_alms)
+            ).distinct().order_by("nombre")
 
     def clean(self):
         cleaned_data = super().clean()
@@ -583,19 +597,25 @@ class SalidaForm(forms.Form):
         almacen = cleaned_data.get("almacen")
         cantidad = cleaned_data.get("cantidad")
 
-        if self.usuario and getattr(self.usuario, "es_usuario_normal", False):
-            user_alms = self.usuario.get_almacenes_asignados()
-            if not almacen and user_alms.count() == 1:
-                almacen = user_alms.first()
+        is_normal = self.usuario and getattr(self.usuario, "es_usuario_normal", False)
+        user_alms = self.usuario.get_almacenes_asignados() if is_normal else None
+
+        if producto:
+            if not almacen:
+                if is_normal:
+                    ex_user = producto.existencias.filter(almacen__in=user_alms).first()
+                    ub_user = producto.ubicaciones.filter(almacen__in=user_alms).first()
+                    almacen = ex_user.almacen if ex_user else (ub_user.almacen if ub_user else producto.categoria.almacen_principal)
+                else:
+                    ex_prod = producto.existencias.filter(cantidad__gt=0).first() or producto.existencias.first()
+                    ub_prod = producto.ubicaciones.first()
+                    almacen = ex_prod.almacen if ex_prod else (ub_prod.almacen if ub_prod else producto.categoria.almacen_principal)
                 cleaned_data["almacen"] = almacen
-            if almacen and not user_alms.filter(id=almacen.id).exists():
-                self.add_error("almacen", "No tienes acceso al almacén seleccionado.")
-            if producto and not user_alms.filter(id=producto.categoria.almacen_principal_id).exists():
-                self.add_error("producto", "El producto seleccionado no pertenece a tus almacenes asignados.")
+
+            if is_normal and not user_alms.filter(id=almacen.id).exists():
+                self.add_error("almacen", "No tienes acceso al almacén donde se encuentra este producto.")
 
         if producto and almacen:
-            if producto.categoria.almacen_principal_id != almacen.id:
-                self.add_error("almacen", f"El producto '{producto.nombre}' pertenece al almacén '{producto.categoria.almacen_principal.nombre}'.")
             if cantidad:
                 from inventario.models import Existencia
                 existencia = Existencia.objects.filter(producto=producto, almacen=almacen).first()
@@ -652,8 +672,12 @@ class PrestamoForm(forms.Form):
                 self.fields["almacen"].widget = forms.HiddenInput()
                 self.fields["almacen"].required = False
             self.fields["producto"].queryset = Producto.objects.filter(
-                archivado=False, activo=True, categoria__almacen_principal__in=user_alms
-            )
+                archivado=False, activo=True
+            ).filter(
+                Q(categoria__almacen_principal__in=user_alms)
+                | Q(existencias__almacen__in=user_alms)
+                | Q(ubicaciones__almacen__in=user_alms)
+            ).distinct().order_by("nombre")
 
     def clean(self):
         cleaned_data = super().clean()
@@ -661,19 +685,25 @@ class PrestamoForm(forms.Form):
         almacen = cleaned_data.get("almacen")
         cantidad = cleaned_data.get("cantidad")
 
-        if self.usuario and getattr(self.usuario, "es_usuario_normal", False):
-            user_alms = self.usuario.get_almacenes_asignados()
-            if not almacen and user_alms.count() == 1:
-                almacen = user_alms.first()
+        is_normal = self.usuario and getattr(self.usuario, "es_usuario_normal", False)
+        user_alms = self.usuario.get_almacenes_asignados() if is_normal else None
+
+        if producto:
+            if not almacen:
+                if is_normal:
+                    ex_user = producto.existencias.filter(almacen__in=user_alms).first()
+                    ub_user = producto.ubicaciones.filter(almacen__in=user_alms).first()
+                    almacen = ex_user.almacen if ex_user else (ub_user.almacen if ub_user else producto.categoria.almacen_principal)
+                else:
+                    ex_prod = producto.existencias.filter(cantidad__gt=0).first() or producto.existencias.first()
+                    ub_prod = producto.ubicaciones.first()
+                    almacen = ex_prod.almacen if ex_prod else (ub_prod.almacen if ub_prod else producto.categoria.almacen_principal)
                 cleaned_data["almacen"] = almacen
-            if almacen and not user_alms.filter(id=almacen.id).exists():
-                self.add_error("almacen", "No tienes acceso al almacén seleccionado.")
-            if producto and not user_alms.filter(id=producto.categoria.almacen_principal_id).exists():
-                self.add_error("producto", "El producto seleccionado no pertenece a tus almacenes asignados.")
+
+            if is_normal and not user_alms.filter(id=almacen.id).exists():
+                self.add_error("almacen", "No tienes acceso al almacén donde se encuentra este producto.")
 
         if producto and almacen:
-            if producto.categoria.almacen_principal_id != almacen.id:
-                self.add_error("almacen", f"El producto '{producto.nombre}' pertenece al almacén '{producto.categoria.almacen_principal.nombre}'.")
             if cantidad:
                 from inventario.models import Existencia
                 existencia = Existencia.objects.filter(producto=producto, almacen=almacen).first()
@@ -789,8 +819,12 @@ class TrasladoForm(forms.Form):
                     activo=True, eliminado=False, almacen__in=user_alms
                 )
             self.fields["producto"].queryset = Producto.objects.filter(
-                archivado=False, activo=True, categoria__almacen_principal__in=user_alms
-            )
+                archivado=False, activo=True
+            ).filter(
+                Q(categoria__almacen_principal__in=user_alms)
+                | Q(existencias__almacen__in=user_alms)
+                | Q(ubicaciones__almacen__in=user_alms)
+            ).distinct().order_by("nombre")
             self.fields["ubicacion_origen"].queryset = Ubicacion.objects.filter(
                 activo=True, eliminado=False, almacen__in=user_alms
             )
@@ -809,8 +843,17 @@ class TrasladoForm(forms.Form):
         user_alms = self.usuario.get_almacenes_asignados() if is_normal else None
 
         if prod:
-            alm_orig = prod.categoria.almacen_principal
-            cleaned_data["almacen_origen"] = alm_orig
+            if alm_orig is None:
+                if is_normal:
+                    ex_user = prod.existencias.filter(almacen__in=user_alms).first()
+                    ub_user = prod.ubicaciones.filter(almacen__in=user_alms).first()
+                    alm_orig = ex_user.almacen if ex_user else (ub_user.almacen if ub_user else prod.categoria.almacen_principal)
+                else:
+                    ex_prod = prod.existencias.filter(cantidad__gt=0).first() or prod.existencias.first()
+                    ub_prod = prod.ubicaciones.first()
+                    alm_orig = ex_prod.almacen if ex_prod else (ub_prod.almacen if ub_prod else prod.categoria.almacen_principal)
+                cleaned_data["almacen_origen"] = alm_orig
+
             if is_normal and not user_alms.filter(id=alm_orig.id).exists():
                 self.add_error("producto", "No tienes permisos sobre el almacén de este producto.")
 
@@ -825,7 +868,7 @@ class TrasladoForm(forms.Form):
             elif cant > stock_disp:
                 self.add_error("cantidad", f"No puedes trasladar {cant} unidades. Stock disponible en origen: {stock_disp} unidades.")
 
-            ub_actual = prod.ubicaciones.first()
+            ub_actual = prod.ubicaciones.filter(almacen=alm_orig).first() if alm_orig else prod.ubicaciones.first()
             es_cambio_ubicacion_interna = ub_orig and ((ub_actual and ub_orig.id != ub_actual.id) or not ub_actual)
 
             if is_normal and user_alms.count() <= 1:
@@ -900,26 +943,35 @@ class ConteoFisicoForm(forms.Form):
                 self.fields["almacen"].widget = forms.HiddenInput()
                 self.fields["almacen"].required = False
             self.fields["producto"].queryset = Producto.objects.filter(
-                archivado=False, activo=True, categoria__almacen_principal__in=user_alms
-            )
+                archivado=False, activo=True
+            ).filter(
+                Q(categoria__almacen_principal__in=user_alms)
+                | Q(existencias__almacen__in=user_alms)
+                | Q(ubicaciones__almacen__in=user_alms)
+            ).distinct().order_by("nombre")
 
     def clean(self):
         cleaned_data = super().clean()
         prod = cleaned_data.get("producto")
         almacen = cleaned_data.get("almacen")
+        is_normal = self.usuario and getattr(self.usuario, "es_usuario_normal", False)
+        user_alms = self.usuario.get_almacenes_asignados() if is_normal else None
 
-        if self.usuario and getattr(self.usuario, "es_usuario_normal", False):
-            user_alms = self.usuario.get_almacenes_asignados()
-            if not almacen and user_alms.count() == 1:
-                almacen = user_alms.first()
+        if prod:
+            if not almacen:
+                if is_normal:
+                    ex_user = prod.existencias.filter(almacen__in=user_alms).first()
+                    ub_user = prod.ubicaciones.filter(almacen__in=user_alms).first()
+                    almacen = ex_user.almacen if ex_user else (ub_user.almacen if ub_user else prod.categoria.almacen_principal)
+                else:
+                    ex_prod = prod.existencias.filter(cantidad__gt=0).first() or prod.existencias.first()
+                    ub_prod = prod.ubicaciones.first()
+                    almacen = ex_prod.almacen if ex_prod else (ub_prod.almacen if ub_prod else prod.categoria.almacen_principal)
                 cleaned_data["almacen"] = almacen
-            if almacen and not user_alms.filter(id=almacen.id).exists():
-                self.add_error("almacen", "No tienes acceso al almacén seleccionado.")
-            if prod and not user_alms.filter(id=prod.categoria.almacen_principal_id).exists():
-                self.add_error("producto", "El producto no pertenece a tus almacenes asignados.")
 
-        if prod and almacen and prod.categoria.almacen_principal_id != almacen.id:
-            self.add_error("almacen", f"El producto '{prod.nombre}' pertenece al almacén '{prod.categoria.almacen_principal.nombre}'.")
+            if is_normal:
+                if not user_alms.filter(id=almacen.id).exists():
+                    self.add_error("almacen", "No tienes acceso al almacén donde se encuentra este producto.")
 
         return cleaned_data
 

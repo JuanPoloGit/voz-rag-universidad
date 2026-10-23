@@ -722,7 +722,7 @@
         </form>
 
         <!-- 4. FORMULARIO TRASLADO -->
-        <form method="post" action="{% url 'inventario:movimiento-traslado' %}" id="secFormTraslado" class="mov-dynamic-form" style="display: none;">
+        <form method="post" action="{% url 'inventario:movimiento-traslado' %}" id="secFormTraslado" class="mov-dynamic-form" style="display: none;" novalidate>
             {% csrf_token %}
             <input type="hidden" name="next" value="{% url 'inventario:movimiento-lista' %}?vista=TRASLADO">
             <input type="hidden" name="clave_idempotencia" class="idem-token-input">
@@ -782,9 +782,16 @@
                 </div>
             </div>
 
+            <div id="feedbackTraslado" style="display: none; background: rgba(255, 107, 122, 0.12); border: 1px solid var(--crit); color: #ffb4bc; padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-top: 14px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0; color: var(--crit);"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    <span id="feedbackTrasladoTxt"></span>
+                </div>
+            </div>
+
             <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-soft);">
                 <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalNuevoMovimiento')">Cancelar</button>
-                <button type="submit" class="btn btn-primary" id="btnSubmitTraslado" disabled>Confirmar Traslado</button>
+                <button type="submit" class="btn btn-primary" id="btnSubmitTraslado">Confirmar Traslado</button>
             </div>
         </form>
 
@@ -1274,6 +1281,80 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     }
 
+    function mostrarFeedbackTraslado(mensaje, campoTarget) {
+        var fb = document.getElementById("feedbackTraslado");
+        var fbTxt = document.getElementById("feedbackTrasladoTxt");
+        if (fb && fbTxt) {
+            fbTxt.textContent = mensaje;
+            fb.style.display = "block";
+        }
+        if (campoTarget) {
+            campoTarget.style.borderColor = "var(--crit)";
+            try { campoTarget.focus(); } catch (e) {}
+        }
+    }
+
+    function ocultarFeedbackTraslado() {
+        var fb = document.getElementById("feedbackTraslado");
+        if (fb) fb.style.display = "none";
+        [selectProductoTraslado, selectUbOrigenTraslado, selectAlmDestinoTraslado, selectUbDestinoTraslado, inputMotivoTraslado].forEach(function(el) {
+            if (el) el.style.borderColor = "";
+        });
+    }
+
+    function validarFormularioTraslado() {
+        ocultarFeedbackTraslado();
+        var prodId = selectProductoTraslado ? selectProductoTraslado.value : "";
+        if (!prodId) {
+            mostrarFeedbackTraslado("Por favor selecciona primero el producto que deseas trasladar.", selectProductoTraslado);
+            return false;
+        }
+
+        var info = mapaUbicacionesStock[String(prodId)];
+        if (!info || info.stock_disponible <= 0) {
+            mostrarFeedbackTraslado("Este producto no tiene existencias disponibles para trasladar (Stock: 0).", selectProductoTraslado);
+            return false;
+        }
+
+        var ubOrigenSeleccionada = selectUbOrigenTraslado ? String(selectUbOrigenTraslado.value || "") : "";
+
+        // Si es usuario normal con solo 1 almacén asignado: reubicación interna obligatoria
+        if (esUsuarioNormal && usuarioAlmacenesCount <= 1) {
+            if (!ubOrigenSeleccionada) {
+                mostrarFeedbackTraslado("Debes seleccionar la nueva ubicación física de destino dentro de tu almacén.", selectUbOrigenTraslado);
+                return false;
+            }
+            if (currentProductoUbicacionId && ubOrigenSeleccionada === String(currentProductoUbicacionId)) {
+                var nombreActual = info.nombre || "la actual";
+                mostrarFeedbackTraslado("La nueva ubicación debe ser distinta a la ubicación física actual del producto ('" + nombreActual + "').", selectUbOrigenTraslado);
+                return false;
+            }
+        } else {
+            // General / Multialmacén / Administrador
+            var esTrasladoInterno = currentProductoUbicacionId && ubOrigenSeleccionada && (ubOrigenSeleccionada !== String(currentProductoUbicacionId));
+            if (!esTrasladoInterno) {
+                var almDestId = selectAlmDestinoTraslado ? selectAlmDestinoTraslado.value : "";
+                if (!almDestId) {
+                    mostrarFeedbackTraslado("Debes seleccionar el almacén de destino (o cambiar la ubicación de origen si deseas una reubicación interna).", selectAlmDestinoTraslado);
+                    return false;
+                }
+                var ubDestId = selectUbDestinoTraslado ? selectUbDestinoTraslado.value : "";
+                if (!ubDestId) {
+                    mostrarFeedbackTraslado("Debes seleccionar la ubicación física en el almacén de destino.", selectUbDestinoTraslado);
+                    return false;
+                }
+            }
+        }
+
+        var motivo = inputMotivoTraslado ? inputMotivoTraslado.value.trim() : "";
+        if (!motivo) {
+            mostrarFeedbackTraslado("El motivo del traslado es obligatorio. Por favor ingresa una breve descripción.", inputMotivoTraslado);
+            return false;
+        }
+
+        return true;
+    }
+
     function evaluarJerarquiaTraslado() {
         var prodId = selectProductoTraslado ? selectProductoTraslado.value : "";
         if (!prodId) {
@@ -1281,13 +1362,11 @@ document.addEventListener("DOMContentLoaded", function() {
                 bodyCamposTraslado.style.opacity = "0.35";
                 bodyCamposTraslado.style.pointerEvents = "none";
             }
-            if (btnSubmitTraslado) btnSubmitTraslado.disabled = true;
             return;
         }
 
         var info = mapaUbicacionesStock[String(prodId)];
         if (!info || info.stock_disponible <= 0) {
-            if (btnSubmitTraslado) btnSubmitTraslado.disabled = true;
             return;
         }
 
@@ -1297,14 +1376,13 @@ document.addEventListener("DOMContentLoaded", function() {
         if (esUsuarioNormal && usuarioAlmacenesCount <= 1) {
             var cambioValido = ubOrigenSeleccionada && (!currentProductoUbicacionId || ubOrigenSeleccionada !== String(currentProductoUbicacionId));
             if (cambioValido) {
+                ocultarFeedbackTraslado();
                 var nombreNuevaUb = selectUbOrigenTraslado.options[selectUbOrigenTraslado.selectedIndex] ? selectUbOrigenTraslado.options[selectUbOrigenTraslado.selectedIndex].text : "nueva ubicación";
                 if (inputMotivoTraslado) {
                     inputMotivoTraslado.value = "Traslado interno en " + info.almacen_nombre + ": reubicación física a " + nombreNuevaUb;
                 }
-                if (btnSubmitTraslado) btnSubmitTraslado.disabled = false;
-            } else {
-                if (btnSubmitTraslado) btnSubmitTraslado.disabled = true;
-                if (inputMotivoTraslado) inputMotivoTraslado.value = "";
+            } else if (ubOrigenSeleccionada && currentProductoUbicacionId && ubOrigenSeleccionada === String(currentProductoUbicacionId)) {
+                mostrarFeedbackTraslado("Ubicación actual seleccionada. Elige una estantería o nivel diferente para completar la reubicación interna.", selectUbOrigenTraslado);
             }
             return;
         }
@@ -1312,6 +1390,7 @@ document.addEventListener("DOMContentLoaded", function() {
         var esTrasladoInterno = currentProductoUbicacionId && ubOrigenSeleccionada && (ubOrigenSeleccionada !== String(currentProductoUbicacionId));
 
         if (esTrasladoInterno) {
+            ocultarFeedbackTraslado();
             if (selectAlmDestinoTraslado) {
                 selectAlmDestinoTraslado.value = "";
                 selectAlmDestinoTraslado.disabled = true;
@@ -1332,7 +1411,6 @@ document.addEventListener("DOMContentLoaded", function() {
             if (inputMotivoTraslado) {
                 inputMotivoTraslado.value = "Traslado interno en " + info.almacen_nombre + ": reubicación física a " + nombreNuevaUb;
             }
-            if (btnSubmitTraslado) btnSubmitTraslado.disabled = false;
         } else {
             if (grpAlmDestinoTraslado) {
                 grpAlmDestinoTraslado.style.opacity = "1";
@@ -1355,10 +1433,6 @@ document.addEventListener("DOMContentLoaded", function() {
                 if (inputMotivoTraslado) {
                     inputMotivoTraslado.value = "Traslado de " + info.almacen_nombre + " a " + selText;
                 }
-                var ubDestId = selectUbDestinoTraslado ? selectUbDestinoTraslado.value : "";
-                if (btnSubmitTraslado) {
-                    btnSubmitTraslado.disabled = !ubDestId;
-                }
             } else {
                 if (grpUbDestinoTraslado) {
                     grpUbDestinoTraslado.style.opacity = "0.35";
@@ -1371,19 +1445,16 @@ document.addEventListener("DOMContentLoaded", function() {
                 if (inputMotivoTraslado) {
                     inputMotivoTraslado.value = "";
                 }
-                if (btnSubmitTraslado) {
-                    btnSubmitTraslado.disabled = true;
-                }
             }
         }
     }
 
     function actualizarProductoTraslado(prodId) {
+        ocultarFeedbackTraslado();
         var info = mapaUbicacionesStock[String(prodId)];
         if (info) {
             var sinStock = info.stock_disponible <= 0;
             if (alertSinStockTraslado) alertSinStockTraslado.style.display = sinStock ? "block" : "none";
-            if (btnSubmitTraslado) btnSubmitTraslado.disabled = true;
 
             if (sinStock) {
                 if (bodyCamposTraslado) {
@@ -1432,7 +1503,6 @@ document.addEventListener("DOMContentLoaded", function() {
             evaluarJerarquiaTraslado();
         } else {
             if (alertSinStockTraslado) alertSinStockTraslado.style.display = "none";
-            if (btnSubmitTraslado) btnSubmitTraslado.disabled = true;
             if (bodyCamposTraslado) {
                 bodyCamposTraslado.style.opacity = "0.35";
                 bodyCamposTraslado.style.pointerEvents = "none";
@@ -1465,12 +1535,14 @@ document.addEventListener("DOMContentLoaded", function() {
 
     if (selectUbOrigenTraslado) {
         selectUbOrigenTraslado.addEventListener("change", function() {
+            ocultarFeedbackTraslado();
             evaluarJerarquiaTraslado();
         });
     }
 
     if (selectAlmDestinoTraslado) {
         selectAlmDestinoTraslado.addEventListener("change", function() {
+            ocultarFeedbackTraslado();
             var destId = selectAlmDestinoTraslado.value;
             if (destId) {
                 poblarOpcionesUbicacion(selectUbDestinoTraslado, destId, "");
@@ -1483,7 +1555,28 @@ document.addEventListener("DOMContentLoaded", function() {
 
     if (selectUbDestinoTraslado) {
         selectUbDestinoTraslado.addEventListener("change", function() {
+            ocultarFeedbackTraslado();
             evaluarJerarquiaTraslado();
+        });
+    }
+
+    if (inputMotivoTraslado) {
+        inputMotivoTraslado.addEventListener("input", function() {
+            if (inputMotivoTraslado.value.trim()) {
+                ocultarFeedbackTraslado();
+            }
+        });
+    }
+
+    // Interceptor de envío con retroalimentación explícita en Traslado
+    var secFormTraslado = document.getElementById("secFormTraslado");
+    if (secFormTraslado) {
+        secFormTraslado.addEventListener("submit", function(e) {
+            if (!validarFormularioTraslado()) {
+                e.preventDefault();
+                e.stopPropagation();
+                return false;
+            }
         });
     }
 
