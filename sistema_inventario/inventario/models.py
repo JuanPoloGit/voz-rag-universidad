@@ -39,7 +39,6 @@ class Almacen(models.Model):
     nombre = models.CharField(
         _("nombre"),
         max_length=100,
-        unique=True,
     )
     descripcion = models.TextField(
         _("descripción"),
@@ -62,6 +61,13 @@ class Almacen(models.Model):
         verbose_name = _("almacén")
         verbose_name_plural = _("almacenes")
         ordering = ["nombre"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["nombre"],
+                condition=models.Q(eliminado=False),
+                name="unique_almacen_nombre_no_eliminado",
+            )
+        ]
 
     def __str__(self):
         return self.nombre
@@ -98,8 +104,14 @@ class Ubicacion(models.Model):
     class Meta:
         verbose_name = _("ubicación")
         verbose_name_plural = _("ubicaciones")
-        unique_together = [("almacen", "nombre")]
         ordering = ["almacen", "nombre"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["almacen", "nombre"],
+                condition=models.Q(eliminado=False),
+                name="unique_ubicacion_almacen_nombre_no_eliminado",
+            )
+        ]
 
     def __str__(self):
         return f"{self.nombre} ({self.almacen.nombre})"
@@ -115,7 +127,6 @@ class Categoria(models.Model):
     nombre = models.CharField(
         _("nombre"),
         max_length=100,
-        unique=True,
     )
     almacen_principal = models.ForeignKey(
         Almacen,
@@ -135,6 +146,13 @@ class Categoria(models.Model):
         verbose_name = _("categoría")
         verbose_name_plural = _("categorías")
         ordering = ["nombre"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["nombre"],
+                condition=models.Q(eliminado=False),
+                name="unique_categoria_nombre_no_eliminado",
+            )
+        ]
 
     def __str__(self):
         return self.nombre
