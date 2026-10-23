@@ -934,10 +934,28 @@ class ProductoEditarView(LoginRequiredMixin, AjaxModalFormMixin, UpdateView):
     template_name = "inventario/producto_form.html"
     success_url = reverse_lazy("inventario:producto-lista")
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+        if getattr(user, "es_usuario_normal", False):
+            user_alms = user.get_almacenes_asignados()
+            qs = qs.filter(
+                Q(categoria__almacen_principal__in=user_alms)
+                | Q(existencias__almacen__in=user_alms)
+                | Q(ubicaciones__almacen__in=user_alms)
+            ).distinct()
+        return qs
+
     def dispatch(self, request, *args, **kwargs):
         obj = self.get_object()
         if getattr(request.user, "es_usuario_normal", False):
-            if not request.user.tiene_acceso_almacen(obj.categoria.almacen_principal):
+            user_alms = request.user.get_almacenes_asignados()
+            tiene_acceso = (
+                user_alms.filter(id=obj.categoria.almacen_principal_id).exists()
+                or obj.existencias.filter(almacen__in=user_alms).exists()
+                or obj.ubicaciones.filter(almacen__in=user_alms).exists()
+            )
+            if not tiene_acceso:
                 raise PermissionDenied("No tienes permisos para modificar productos de otro almacén.")
         return super().dispatch(request, *args, **kwargs)
 
@@ -950,7 +968,9 @@ class ProductoEditarView(LoginRequiredMixin, AjaxModalFormMixin, UpdateView):
         context = super().get_context_data(**kwargs)
         user = self.request.user
         alms = user.get_almacenes_asignados() if getattr(user, "es_usuario_normal", False) else Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
-        cats_qs = Categoria.objects.filter(activo=True, eliminado=False, almacen_principal__in=alms).select_related("almacen_principal").order_by("nombre")
+        cats_qs = Categoria.objects.filter(activo=True, eliminado=False).filter(
+            Q(almacen_principal__in=alms) | Q(pk=self.object.categoria_id)
+        ).select_related("almacen_principal").order_by("nombre")
         ubs_qs = Ubicacion.objects.filter(activo=True, eliminado=False, almacen__in=alms).select_related("almacen").order_by("almacen__nombre", "nombre")
         tipos = TipoCategoria.objects.filter(activo=True, categoria__in=cats_qs).order_by("nombre")
 
@@ -1003,7 +1023,12 @@ class ProductoDetalleView(LoginRequiredMixin, DetailView):
         qs = super().get_queryset()
         user = self.request.user
         if getattr(user, "es_usuario_normal", False):
-            qs = qs.filter(categoria__almacen_principal__in=user.get_almacenes_asignados())
+            user_alms = user.get_almacenes_asignados()
+            qs = qs.filter(
+                Q(categoria__almacen_principal__in=user_alms)
+                | Q(existencias__almacen__in=user_alms)
+                | Q(ubicaciones__almacen__in=user_alms)
+            ).distinct()
         return qs
 
     def get_context_data(self, **kwargs):
@@ -1017,7 +1042,9 @@ class ProductoDetalleView(LoginRequiredMixin, DetailView):
                 Q(almacen_origen__in=user_alms) | Q(almacen_destino__in=user_alms)
             ).select_related("usuario", "almacen_origen", "almacen_destino").order_by("-fecha_hora")[:25]
             context["ubicaciones"] = prod.ubicaciones.filter(almacen__in=user_alms).select_related("almacen")
-            cats_qs = Categoria.objects.filter(activo=True, eliminado=False, almacen_principal__in=user_alms)
+            cats_qs = Categoria.objects.filter(activo=True, eliminado=False).filter(
+                Q(almacen_principal__in=user_alms) | Q(pk=prod.categoria_id)
+            ).distinct()
         else:
             context["existencias"] = prod.existencias.select_related("almacen").all()
             context["movimientos"] = prod.movimientos.select_related("usuario", "almacen_origen", "almacen_destino").order_by("-fecha_hora")[:25]

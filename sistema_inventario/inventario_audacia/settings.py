@@ -52,6 +52,7 @@ MIDDLEWARE = [
     "integraciones.haku.middleware.HakuSessionMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "inventario.middleware.CustomErrorPagesMiddleware",
 ]
 
 ROOT_URLCONF = "inventario_audacia.urls"

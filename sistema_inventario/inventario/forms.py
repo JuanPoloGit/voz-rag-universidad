@@ -336,12 +336,13 @@ class ProductoForm(forms.ModelForm):
 
         if usuario and getattr(usuario, "es_usuario_normal", False):
             user_alms = usuario.get_almacenes_asignados()
-            cats_qs = Categoria.objects.filter(
-                activo=True, eliminado=False, almacen_principal__in=user_alms
-            )
-            ub_qs = Ubicacion.objects.filter(
-                activo=True, eliminado=False, almacen__in=user_alms
-            )
+            cats_qs = Categoria.objects.filter(activo=True, eliminado=False)
+            if self.instance and self.instance.pk and self.instance.categoria_id:
+                cats_qs = cats_qs.filter(Q(almacen_principal__in=user_alms) | Q(pk=self.instance.categoria_id))
+            else:
+                cats_qs = cats_qs.filter(almacen_principal__in=user_alms)
+
+            ub_qs = Ubicacion.objects.filter(activo=True, eliminado=False, almacen__in=user_alms)
             self.fields["almacen"].queryset = user_alms.order_by("nombre")
             if user_alms.count() == 1:
                 self.fields["almacen"].initial = user_alms.first()
@@ -377,8 +378,12 @@ class ProductoForm(forms.ModelForm):
         if self.instance and self.instance.pk:
             self.fields["stock_inicial"].disabled = True
             self.fields["stock_inicial"].required = False
-            self.fields["almacen"].initial = self.instance.categoria.almacen_principal_id
-            self.fields["ubicacion"].initial = self.instance.ubicaciones.first()
+            ub_actual = self.instance.ubicaciones.first()
+            if ub_actual and ub_actual.almacen_id:
+                self.fields["almacen"].initial = ub_actual.almacen_id
+            else:
+                self.fields["almacen"].initial = self.instance.categoria.almacen_principal_id
+            self.fields["ubicacion"].initial = ub_actual
 
     def clean(self):
         cleaned_data = super().clean()
@@ -391,11 +396,14 @@ class ProductoForm(forms.ModelForm):
             self.add_error("ubicacion", "La ubicación física es obligatoria para registrar o editar el producto.")
 
         if categoria:
-            if almacen and categoria.almacen_principal_id != almacen.id:
-                self.add_error("categoria", f"La categoría '{categoria.nombre}' pertenece a '{categoria.almacen_principal.nombre}', no al almacén '{almacen.nombre}'.")
-
-            if ub and ub.almacen_id != categoria.almacen_principal_id:
-                self.add_error("ubicacion", f"La ubicación '{ub.nombre}' pertenece a '{ub.almacen.nombre}', pero la categoría del producto pertenece a '{categoria.almacen_principal.nombre}'.")
+            if not (self.instance and self.instance.pk):
+                if almacen and categoria.almacen_principal_id != almacen.id:
+                    self.add_error("categoria", f"La categoría '{categoria.nombre}' pertenece a '{categoria.almacen_principal.nombre}', no al almacén '{almacen.nombre}'.")
+                if ub and ub.almacen_id != categoria.almacen_principal_id:
+                    self.add_error("ubicacion", f"La ubicación '{ub.nombre}' pertenece a '{ub.almacen.nombre}', pero la categoría del producto pertenece a '{categoria.almacen_principal.nombre}'.")
+            else:
+                if almacen and ub and ub.almacen_id != almacen.id:
+                    self.add_error("ubicacion", f"La ubicación '{ub.nombre}' pertenece al almacén '{ub.almacen.nombre}', pero seleccionaste '{almacen.nombre}'.")
 
             if tipo and tipo.categoria_id != categoria.id:
                 self.add_error("tipo", "El tipo seleccionado no pertenece a la categoría elegida.")
@@ -404,8 +412,6 @@ class ProductoForm(forms.ModelForm):
             user_alms = self.usuario.get_almacenes_asignados()
             if almacen and not user_alms.filter(id=almacen.id).exists():
                 self.add_error("almacen", "No tienes acceso al almacén seleccionado.")
-            if categoria and not user_alms.filter(id=categoria.almacen_principal_id).exists():
-                self.add_error("categoria", "No tienes acceso a la categoría seleccionada.")
             if ub and not user_alms.filter(id=ub.almacen_id).exists():
                 self.add_error("ubicacion", "No tienes acceso a la ubicación física seleccionada.")
 
