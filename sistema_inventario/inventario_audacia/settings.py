@@ -23,9 +23,33 @@ DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() in ("true", "1", "yes")
 
 ALLOWED_HOSTS = [
     h.strip()
-    for h in os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+    for h in os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,0.0.0.0").split(",")
     if h.strip()
 ]
+
+# Permitir resolución automática de hostname e IP local en LAN para conexión multiequipo
+try:
+    import socket
+
+    _hostname = socket.gethostname().lower()
+    for _extra in (_hostname, f"{_hostname}.local"):
+        if _extra not in ALLOWED_HOSTS:
+            ALLOWED_HOSTS.append(_extra)
+    _s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        _s.connect(("8.8.8.8", 80))
+        _ip = _s.getsockname()[0]
+        if _ip and _ip not in ALLOWED_HOSTS:
+            ALLOWED_HOSTS.append(_ip)
+    finally:
+        _s.close()
+
+    _, _, _ip_list = socket.gethostbyname_ex(socket.gethostname())
+    for _ip in _ip_list:
+        if _ip not in ALLOWED_HOSTS and not _ip.startswith("169.254"):
+            ALLOWED_HOSTS.append(_ip)
+except Exception:
+    pass
 
 # ─── Aplicaciones ────────────────────────────────────────────────────────────
 
@@ -191,14 +215,20 @@ SESSION_COOKIE_SECURE = (
 SESSION_COOKIE_SAMESITE = "Lax"
 
 # ─── CSRF ────────────────────────────────────────────────────────────────────
-CSRF_COOKIE_HTTPONLY = False  # Permitir que JS lea el csrftoken para peticiones fetch/AJAX                                                                                                                                       
-CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE                                                                                                                                                                                        
-CSRF_TRUSTED_ORIGINS = [                                                                                                                                                                                                          
-    f"https://{h}:8000" for h in ALLOWED_HOSTS if h not in ("*", "")                                                                                                                                                              
-] + [                                                                                                                                                                                                                             
-    f"https://{h}" for h in ALLOWED_HOSTS if h not in ("*", "")                                                                                                                                                                   
-] + [                                                                                                                                                                                                                             
-    f"http://{h}:8000" for h in ALLOWED_HOSTS if h not in ("*", "")                                                                                                                                                               
+CSRF_COOKIE_HTTPONLY = False  # Permitir que JS lea el csrftoken para peticiones fetch/AJAX
+CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE
+CSRF_TRUSTED_ORIGINS = [
+    f"https://{h}:8000"
+    for h in ALLOWED_HOSTS
+    if h not in ("*", "", "0.0.0.0") and not h.startswith(".")
+] + [
+    f"https://{h}"
+    for h in ALLOWED_HOSTS
+    if h not in ("*", "", "0.0.0.0") and not h.startswith(".")
+] + [
+    f"http://{h}:8000"
+    for h in ALLOWED_HOSTS
+    if h not in ("*", "", "0.0.0.0") and not h.startswith(".")
 ] 
 
 # ─── Internacionalización ────────────────────────────────────────────────────
