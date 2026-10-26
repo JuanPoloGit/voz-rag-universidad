@@ -50,9 +50,11 @@
             </p>
         </div>
         <div class="action-group">
+            {% if request.user.es_administrador or 'infraestructura.gestionar_categorias' in request.user.get_permisos_codigos %}
             <button type="button" class="btn btn-primary" id="btnNuevaCategoriaModal">
                 + Nueva Categoría
             </button>
+            {% endif %}
         </div>
     </div>
 
@@ -153,6 +155,7 @@
                             </td>
                             <td style="text-align: right; white-space: nowrap;">
                                 <div class="action-group">
+                                    {% if request.user.es_administrador or 'infraestructura.gestionar_categorias' in request.user.get_permisos_codigos %}
                                     <button type="button"
                                             class="btn btn-sm btn-secondary btn-preseleccionar-cat"
                                             data-cat-id="{{ cat.id }}"
@@ -169,14 +172,12 @@
                                     </button>
 
                                     {% if cat.activo %}
-                                        {% if user.es_administrador %}
-                                            <form method="post" action="{% url 'inventario:categoria-desactivar' cat.id %}" style="display: inline; margin: 0;">
-                                                {% csrf_token %}
-                                                <button type="submit" class="btn btn-sm btn-secondary" style="color: var(--warn);">
-                                                    Inhabilitar
-                                                </button>
-                                            </form>
-                                        {% endif %}
+                                        <form method="post" action="{% url 'inventario:categoria-desactivar' cat.id %}" style="display: inline; margin: 0;">
+                                            {% csrf_token %}
+                                            <button type="submit" class="btn btn-sm btn-secondary" style="color: var(--warn);">
+                                                Inhabilitar
+                                            </button>
+                                        </form>
                                     {% else %}
                                         <form method="post" action="{% url 'inventario:categoria-reactivar' cat.id %}" style="display: inline; margin: 0;">
                                             {% csrf_token %}
@@ -195,6 +196,9 @@
                                             Eliminar
                                         </button>
                                     </form>
+                                    {% else %}
+                                    <span style="font-size: 11.5px; color: var(--text-faint);">Solo lectura</span>
+                                    {% endif %}
                                 </div>
                             </td>
                         </tr>

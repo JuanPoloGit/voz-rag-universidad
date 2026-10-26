@@ -15,6 +15,81 @@ from django.utils.translation import gettext_lazy as _
 from .managers import UsuarioAudacIAManager
 
 
+class PermisoAudacIA(models.Model):
+    """Permiso granular del sistema de inventario (RBAC / PBAC)."""
+
+    class Modulo(models.TextChoices):
+        CATALOGO = "CATALOGO", _("Catálogo y Productos")
+        MOVIMIENTOS = "MOVIMIENTOS", _("Movimientos y Operaciones")
+        INFRAESTRUCTURA = "INFRAESTRUCTURA", _("Almacenes y Ubicaciones")
+        ANALITICA = "ANALITICA", _("Alertas y Reportes")
+        SEGURIDAD = "SEGURIDAD", _("Seguridad y Usuarios")
+
+    codigo = models.CharField(
+        _("código"),
+        max_length=64,
+        unique=True,
+        help_text=_("Identificador único del permiso (ej. 'movimientos.entrada')."),
+    )
+    modulo = models.CharField(
+        _("módulo"),
+        max_length=32,
+        choices=Modulo.choices,
+        help_text=_("Área funcional a la que pertenece el permiso."),
+    )
+    nombre = models.CharField(
+        _("nombre"),
+        max_length=128,
+        help_text=_("Nombre descriptivo del permiso para la interfaz."),
+    )
+    descripcion = models.CharField(
+        _("descripción"),
+        max_length=255,
+        blank=True,
+        default="",
+        help_text=_("Explicación de la acción que autoriza este permiso."),
+    )
+    orden = models.PositiveSmallIntegerField(
+        _("orden"),
+        default=0,
+        help_text=_("Orden de presentación dentro del módulo."),
+    )
+
+    class Meta:
+        verbose_name = _("permiso")
+        verbose_name_plural = _("permisos")
+        ordering = ["modulo", "orden", "nombre"]
+
+    def __str__(self):
+        return f"{self.nombre} ({self.codigo})"
+
+    _cached_todos_codigos = None
+
+    @classmethod
+    def get_todos_codigos(cls) -> set:
+        if cls._cached_todos_codigos is None:
+            cls._cached_todos_codigos = set(cls.objects.values_list("codigo", flat=True))
+        return set(cls._cached_todos_codigos)
+
+    @classmethod
+    def agrupados_por_modulo(cls):
+        """Devuelve una lista de tuplas (modulo_codigo, modulo_nombre, [permisos]) ordenada."""
+        modulos_ordenados = [
+            (cls.Modulo.CATALOGO, _("Catálogo y Fichas Técnicas")),
+            (cls.Modulo.MOVIMIENTOS, _("Movimientos y Operaciones")),
+            (cls.Modulo.INFRAESTRUCTURA, _("Almacenes y Ubicaciones")),
+            (cls.Modulo.ANALITICA, _("Alertas y Reportes")),
+            (cls.Modulo.SEGURIDAD, _("Seguridad y Administración")),
+        ]
+        todos = list(cls.objects.all().order_by("modulo", "orden", "nombre"))
+        resultado = []
+        for mod_cod, mod_label in modulos_ordenados:
+            perms = [p for p in todos if p.modulo == mod_cod]
+            if perms:
+                resultado.append((mod_cod, mod_label, perms))
+        return resultado
+
+
 class UsuarioAudacIA(AbstractUser):
     """Usuario del sistema de inventario.
 
@@ -86,6 +161,22 @@ class UsuarioAudacIA(AbstractUser):
         help_text=_(
             "Eliminación lógica. Los registros históricos se conservan."
         ),
+    )
+
+    # --- Control de permisos granulares y sincronización ---
+    permisos_version = models.PositiveIntegerField(
+        _("versión de permisos"),
+        default=1,
+        help_text=_(
+            "Contador incremental para sincronización e invalidación inmediata de permisos."
+        ),
+    )
+    permisos_personalizados = models.ManyToManyField(
+        PermisoAudacIA,
+        blank=True,
+        related_name="usuarios",
+        verbose_name=_("permisos personalizados"),
+        help_text=_("Permisos específicos asignados a este usuario."),
     )
 
     fecha_creacion = models.DateTimeField(_("fecha de creación"), auto_now_add=True)
@@ -163,6 +254,31 @@ class UsuarioAudacIA(AbstractUser):
             return self.almacenes_asignados.filter(id=alm_id, activo=True, eliminado=False).exists()
         return False
 
+    def get_permisos_codigos(self) -> set:
+        """Retorna el conjunto de códigos de permisos asignados al usuario.
+
+        Utiliza una caché viva exclusivamente durante la petición HTTP actual (_permisos_cache).
+        """
+        if not self.is_authenticated or not self.is_active or self.eliminado_logicamente:
+            return set()
+        if self.es_administrador:
+            return PermisoAudacIA.get_todos_codigos()
+        if not hasattr(self, "_permisos_cache"):
+            if not self.pk:
+                return set()
+            self._permisos_cache = set(
+                self.permisos_personalizados.values_list("codigo", flat=True)
+            )
+        return self._permisos_cache
+
+    def tiene_permiso(self, codigo_permiso: str) -> bool:
+        """Verifica si el usuario cuenta con un permiso específico en tiempo O(1)."""
+        if not self.is_authenticated or not self.is_active or self.eliminado_logicamente:
+            return False
+        if self.es_administrador:
+            return True
+        return codigo_permiso in self.get_permisos_codigos()
+
 
 class IntentoFallido(models.Model):
     """Registro de intentos fallidos de login para bloqueo temporal.
@@ -194,3 +310,248 @@ class IntentoFallido(models.Model):
 
     def __str__(self):
         return f"Intento fallido de {self.usuario} el {self.fecha_intento}"
+
+
+# --- Catálogo de permisos del sistema y Presets operativos ---
+
+PERMISOS_CATALOGO = [
+    # Módulo 1: CATALOGO
+    {
+        "codigo": "catalogo.ver",
+        "modulo": "CATALOGO",
+        "nombre": "Ver catálogo y productos",
+        "descripcion": "Consultar catálogo, fichas de producto, stock y especificaciones.",
+        "orden": 1,
+    },
+    {
+        "codigo": "catalogo.crear",
+        "modulo": "CATALOGO",
+        "nombre": "Crear productos",
+        "descripcion": "Registrar nuevos productos en el catálogo con stock inicial.",
+        "orden": 2,
+    },
+    {
+        "codigo": "catalogo.editar",
+        "modulo": "CATALOGO",
+        "nombre": "Editar información de productos",
+        "descripcion": "Modificar nombre, descripción, stock mínimo, código de barras y empaques.",
+        "orden": 3,
+    },
+    {
+        "codigo": "catalogo.reubicar_interno",
+        "modulo": "CATALOGO",
+        "nombre": "Reubicar productos internamente",
+        "descripcion": "Cambiar estantes o ubicaciones físicas dentro del mismo almacén.",
+        "orden": 4,
+    },
+    {
+        "codigo": "catalogo.trasladar_almacen",
+        "modulo": "CATALOGO",
+        "nombre": "Cambiar almacén principal (Traslado)",
+        "descripcion": "Cambiar la categoría o almacén principal de un producto con stock activo.",
+        "orden": 5,
+    },
+    {
+        "codigo": "catalogo.eliminar",
+        "modulo": "CATALOGO",
+        "nombre": "Archivar o eliminar productos",
+        "descripcion": "Archivar o retirar productos del catálogo de inventario.",
+        "orden": 6,
+    },
+
+    # Módulo 2: MOVIMIENTOS
+    {
+        "codigo": "movimientos.ver",
+        "modulo": "MOVIMIENTOS",
+        "nombre": "Ver historial de movimientos",
+        "descripcion": "Consultar movimientos, kardex y trazabilidad de inventario.",
+        "orden": 1,
+    },
+    {
+        "codigo": "movimientos.entrada",
+        "modulo": "MOVIMIENTOS",
+        "nombre": "Registrar entradas de stock",
+        "descripcion": "Registrar abastecimientos, compras y recepciones en almacén.",
+        "orden": 2,
+    },
+    {
+        "codigo": "movimientos.prestamo",
+        "modulo": "MOVIMIENTOS",
+        "nombre": "Autorizar y entregar préstamos",
+        "descripcion": "Entregar herramientas, equipos y materiales en calidad de préstamo.",
+        "orden": 3,
+    },
+    {
+        "codigo": "movimientos.dotacion",
+        "modulo": "MOVIMIENTOS",
+        "nombre": "Realizar dotaciones",
+        "descripcion": "Entregar consumibles o dotación de forma definitiva a destinatarios.",
+        "orden": 4,
+    },
+    {
+        "codigo": "movimientos.devolucion",
+        "modulo": "MOVIMIENTOS",
+        "nombre": "Recibir devoluciones de préstamos",
+        "descripcion": "Recibir y reintegrar a stock disponible los artículos en préstamo.",
+        "orden": 5,
+    },
+    {
+        "codigo": "movimientos.baja",
+        "modulo": "MOVIMIENTOS",
+        "nombre": "Registrar bajas por daño o pérdida",
+        "descripcion": "Dar de baja existencias o préstamos deteriorados o extraviados.",
+        "orden": 6,
+    },
+    {
+        "codigo": "movimientos.traslado",
+        "modulo": "MOVIMIENTOS",
+        "nombre": "Ejecutar traslados explícitos",
+        "descripcion": "Registrar traslados explícitos internos o entre almacenes.",
+        "orden": 7,
+    },
+
+    # Módulo 3: INFRAESTRUCTURA
+    {
+        "codigo": "infraestructura.ver",
+        "modulo": "INFRAESTRUCTURA",
+        "nombre": "Ver almacenes, categorías y ubicaciones",
+        "descripcion": "Consultar la estructura física y organizativa del inventario.",
+        "orden": 1,
+    },
+    {
+        "codigo": "infraestructura.gestionar_ubicaciones",
+        "modulo": "INFRAESTRUCTURA",
+        "nombre": "Gestionar ubicaciones físicas",
+        "descripcion": "Crear, editar o reorganizar estantes, casilleros y niveles.",
+        "orden": 2,
+    },
+    {
+        "codigo": "infraestructura.gestionar_categorias",
+        "modulo": "INFRAESTRUCTURA",
+        "nombre": "Gestionar categorías y tipos",
+        "descripcion": "Crear, editar o clasificar categorías y tipos de productos.",
+        "orden": 3,
+    },
+    {
+        "codigo": "infraestructura.gestionar_almacenes",
+        "modulo": "INFRAESTRUCTURA",
+        "nombre": "Gestionar almacenes y bodegas",
+        "descripcion": "Crear, editar o trasladar inventarios completos de almacenes.",
+        "orden": 4,
+    },
+
+    # Módulo 4: ANALITICA
+    {
+        "codigo": "analitica.ver_alertas",
+        "modulo": "ANALITICA",
+        "nombre": "Ver centro de alertas de stock",
+        "descripcion": "Monitorear alertas de existencias agotadas o bajo umbral mínimo.",
+        "orden": 1,
+    },
+    {
+        "codigo": "analitica.ver_reportes",
+        "modulo": "ANALITICA",
+        "nombre": "Ver dashboard y reportes analíticos",
+        "descripcion": "Acceder al panel de control y reportes de existencias y rotación.",
+        "orden": 2,
+    },
+    {
+        "codigo": "analitica.exportar",
+        "modulo": "ANALITICA",
+        "nombre": "Exportar reportes (Excel / CSV / PDF)",
+        "descripcion": "Descargar archivos de existencias, préstamos y movimientos.",
+        "orden": 3,
+    },
+
+    # Módulo 5: SEGURIDAD
+    {
+        "codigo": "seguridad.gestionar_usuarios",
+        "modulo": "SEGURIDAD",
+        "nombre": "Gestionar usuarios y permisos",
+        "descripcion": "Crear y administrar usuarios subordinados y sus facultades.",
+        "orden": 1,
+    },
+]
+
+PRESETS_PERMISOS = {
+    "OPERADOR_INTEGRAL": {
+        "nombre": "Operador Integral de Almacén",
+        "descripcion": "Control operativo de entradas, salidas, préstamos y catálogo en su almacén.",
+        "icon": "zap",
+        "icono": "zap",
+        "codigos": [
+            "catalogo.ver",
+            "catalogo.crear",
+            "catalogo.editar",
+            "catalogo.reubicar_interno",
+            "movimientos.ver",
+            "movimientos.entrada",
+            "movimientos.prestamo",
+            "movimientos.dotacion",
+            "movimientos.devolucion",
+            "movimientos.baja",
+            "infraestructura.ver",
+            "infraestructura.gestionar_ubicaciones",
+            "infraestructura.gestionar_categorias",
+            "analitica.ver_alertas",
+            "analitica.ver_reportes",
+        ],
+    },
+    "ABASTECIMIENTO": {
+        "nombre": "Operador de Abastecimiento",
+        "descripcion": "Recepción de compras, entrada de stock y monitoreo de alertas.",
+        "icon": "package",
+        "icono": "package",
+        "codigos": [
+            "catalogo.ver",
+            "movimientos.ver",
+            "movimientos.entrada",
+            "analitica.ver_alertas",
+        ],
+    },
+    "PANOLERO": {
+        "nombre": "Pañolero / Despacho",
+        "descripcion": "Entrega de herramientas en préstamo, dotaciones y retornos.",
+        "icon": "wrench",
+        "icono": "wrench",
+        "codigos": [
+            "catalogo.ver",
+            "movimientos.ver",
+            "movimientos.prestamo",
+            "movimientos.dotacion",
+            "movimientos.devolucion",
+            "movimientos.baja",
+            "analitica.ver_alertas",
+        ],
+    },
+    "GESTOR_CATALOGO": {
+        "nombre": "Gestor de Catálogo y Bodega",
+        "descripcion": "Catalogación de productos, estantes, casilleros y categorías.",
+        "icon": "tag",
+        "icono": "tag",
+        "codigos": [
+            "catalogo.ver",
+            "catalogo.crear",
+            "catalogo.editar",
+            "catalogo.reubicar_interno",
+            "infraestructura.ver",
+            "infraestructura.gestionar_ubicaciones",
+            "infraestructura.gestionar_categorias",
+            "analitica.ver_alertas",
+        ],
+    },
+    "AUDITOR": {
+        "nombre": "Auditor / Solo Lectura",
+        "descripcion": "Consulta global de catálogo, movimientos, reportes y exportación.",
+        "icon": "eye",
+        "icono": "eye",
+        "codigos": [
+            "catalogo.ver",
+            "movimientos.ver",
+            "infraestructura.ver",
+            "analitica.ver_alertas",
+            "analitica.ver_reportes",
+            "analitica.exportar",
+        ],
+    },
+}

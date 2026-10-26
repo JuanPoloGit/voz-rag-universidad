@@ -4,13 +4,353 @@
 {% block page_title %}Usuarios y Roles{% endblock %}
 {% block sidebar_usuarios %}active{% endblock %}
 
+{% block extra_css %}
+<style>
+    /* ═══ Estilos para Formulario de Usuario y Permisos Granulares (Modal y Vista) ═══ */
+    .almacen-option-row {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 8px 11px;
+        background: var(--bg-panel-2);
+        border: 1px solid var(--border-soft);
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 12.8px;
+        font-weight: 500;
+        margin: 0;
+        user-select: none;
+        transition: all 0.15s ease;
+    }
+    .almacen-option-row:hover {
+        border-color: var(--accent-bright);
+        background: rgba(59, 111, 240, 0.08);
+    }
+    .almacen-option-row.is-checked {
+        border-color: var(--accent-bright);
+        background: rgba(59, 111, 240, 0.12);
+        box-shadow: 0 0 0 1px rgba(92, 139, 255, 0.35);
+    }
+    .almacen-option-row input[type="checkbox"] {
+        accent-color: var(--accent-bright);
+        cursor: pointer;
+    }
+    .almacen-option-row.is-checked .almacen-option-name {
+        color: var(--accent-bright);
+        font-weight: 600;
+    }
+
+    /* Contenedor e Iconos de Encabezado */
+    .permiso-header-shield-icon {
+        width: 30px;
+        height: 30px;
+        border-radius: 7px;
+        background: rgba(92, 139, 255, 0.12);
+        color: var(--accent-bright);
+        display: inline-grid;
+        place-items: center;
+        flex-shrink: 0;
+        border: 1px solid rgba(92, 139, 255, 0.25);
+    }
+    .permiso-header-shield-icon svg {
+        width: 16px;
+        height: 16px;
+        stroke: currentColor;
+        stroke-width: 2;
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+
+    /* Buscador Integrado */
+    .permiso-search-wrap {
+        position: relative;
+        width: 100%;
+    }
+    .permiso-search-wrap svg {
+        position: absolute;
+        left: 11px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 14px;
+        height: 14px;
+        stroke: var(--text-faint);
+        stroke-width: 2;
+        fill: none;
+        pointer-events: none;
+    }
+    .permiso-search-input {
+        width: 100%;
+        height: 35px;
+        font-size: 12.5px;
+        padding: 6px 12px 6px 34px !important;
+        background: var(--bg-panel-2) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: var(--radius-sm);
+        color: var(--text) !important;
+        transition: all 0.15s ease;
+    }
+    .permiso-search-input:focus {
+        border-color: var(--accent-bright) !important;
+        box-shadow: 0 0 0 2px rgba(59, 111, 240, 0.25);
+        outline: none;
+    }
+
+    /* Grid de Presets / Plantillas */
+    .presets-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 8px;
+        margin-top: 6px;
+        margin-bottom: 12px;
+    }
+    .btn-preset-card {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 9px 12px;
+        background: var(--bg-panel-2);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        text-align: left;
+        transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+        user-select: none;
+        width: 100%;
+    }
+    .btn-preset-card:hover {
+        border-color: var(--accent-bright);
+        background: var(--bg-elevated);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+    }
+    .btn-preset-card.active {
+        border-color: var(--accent-bright);
+        background: linear-gradient(135deg, rgba(59, 111, 240, 0.20) 0%, rgba(17, 31, 77, 0.85) 100%);
+        box-shadow: 0 0 0 1px var(--accent-bright), 0 4px 14px rgba(59, 111, 240, 0.28);
+    }
+    .preset-card-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        margin-bottom: 3px;
+    }
+    .preset-card-icon {
+        width: 24px;
+        height: 24px;
+        border-radius: 6px;
+        background: rgba(92, 139, 255, 0.12);
+        color: var(--accent-bright);
+        display: inline-grid;
+        place-items: center;
+        flex-shrink: 0;
+        transition: all 0.18s ease;
+    }
+    .preset-card-icon svg {
+        width: 13px;
+        height: 13px;
+        stroke: currentColor;
+        stroke-width: 2;
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+    .btn-preset-card.active .preset-card-icon {
+        background: var(--accent);
+        color: #ffffff;
+        box-shadow: 0 2px 6px rgba(59, 111, 240, 0.45);
+    }
+    .preset-card-title {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text);
+        line-height: 1.25;
+        flex: 1;
+    }
+    .btn-preset-card.active .preset-card-title {
+        color: #ffffff;
+        font-weight: 700;
+    }
+    .preset-card-desc {
+        font-size: 10.5px;
+        color: var(--text-dim);
+        line-height: 1.3;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    /* Módulos y Listado de Permisos */
+    .permiso-module-card {
+        background: var(--bg-panel-2);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        margin-bottom: 10px;
+        overflow: hidden;
+        transition: border-color 0.15s ease;
+    }
+    .permiso-module-card:hover {
+        border-color: rgba(92, 139, 255, 0.4);
+    }
+    .permiso-module-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 12px;
+        background: rgba(255, 255, 255, 0.025);
+        border-bottom: 1px solid var(--border-soft);
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+    .permiso-module-title-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .permiso-module-icon {
+        width: 22px;
+        height: 22px;
+        border-radius: 5px;
+        background: rgba(92, 139, 255, 0.1);
+        color: var(--accent-bright);
+        display: inline-grid;
+        place-items: center;
+        flex-shrink: 0;
+    }
+    .permiso-module-icon svg {
+        width: 13px;
+        height: 13px;
+        stroke: currentColor;
+        stroke-width: 2;
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+    .permiso-module-name {
+        font-family: var(--font-heading);
+        font-size: 12.8px;
+        font-weight: 600;
+        color: var(--text);
+        letter-spacing: -0.01em;
+    }
+    .permiso-module-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .permiso-btn-module-toggle {
+        background: transparent;
+        border: 1px solid var(--border-soft);
+        color: var(--text-dim);
+        border-radius: 4px;
+        padding: 2px 8px;
+        font-size: 10.5px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+    .permiso-btn-module-toggle:hover {
+        background: var(--bg-elevated);
+        color: var(--accent-bright);
+        border-color: var(--accent);
+    }
+    .permiso-module-badge {
+        font-size: 10.5px;
+        font-weight: 600;
+        padding: 2px 7px;
+        border-radius: 10px;
+    }
+    .permiso-items-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 7px;
+        padding: 9px;
+    }
+    .permiso-option-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 9px;
+        padding: 8px 10px;
+        background: var(--bg-panel);
+        border: 1px solid var(--border-soft);
+        border-radius: 7px;
+        cursor: pointer;
+        margin: 0;
+        user-select: none;
+        transition: all 0.15s ease;
+        position: relative;
+    }
+    .permiso-option-row:hover {
+        border-color: var(--accent);
+        background: rgba(59, 111, 240, 0.05);
+    }
+    .permiso-option-row.is-checked {
+        border-color: var(--accent-bright);
+        background: rgba(59, 111, 240, 0.09);
+        box-shadow: 0 0 0 1px rgba(92, 139, 255, 0.32);
+    }
+    .permiso-option-row input[type="checkbox"] {
+        margin-top: 2px;
+        width: 15px;
+        height: 15px;
+        accent-color: var(--accent-bright);
+        cursor: pointer;
+        flex-shrink: 0;
+    }
+    .permiso-option-info {
+        flex: 1;
+        min-width: 0;
+    }
+    .permiso-option-top {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 2px;
+    }
+    .permiso-option-name {
+        font-size: 12.3px;
+        font-weight: 600;
+        color: var(--text);
+        line-height: 1.3;
+    }
+    .permiso-option-row.is-checked .permiso-option-name {
+        color: var(--accent-bright);
+    }
+    .permiso-code-badge {
+        font-size: 9.8px;
+        font-family: var(--font-mono);
+        color: var(--text-faint);
+        background: rgba(255, 255, 255, 0.04);
+        padding: 1px 5px;
+        border-radius: 4px;
+        border: 1px solid var(--border-soft);
+        white-space: nowrap;
+    }
+    .permiso-option-row.is-checked .permiso-code-badge {
+        border-color: rgba(92, 139, 255, 0.3);
+        color: var(--text-dim);
+    }
+    .permiso-option-desc {
+        font-size: 11px;
+        color: var(--text-dim);
+        line-height: 1.35;
+        margin-top: 2px;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="card">
     <div class="card-header">
         <div>
             <h1 class="card-title">Usuarios y Roles del Sistema</h1>
             <p class="text-faint" style="font-size: 12.5px; margin-top: 2px;">
-                Administración de cuentas operativas, roles y almacenes asignados.
+                Administración de cuentas operativas, roles, permisos granulares y almacenes asignados.
             </p>
         </div>
         <div class="action-group">
@@ -38,35 +378,43 @@
                     <th>Usuario</th>
                     <th>Nombre Completo</th>
                     <th>Rol</th>
-                    <th>Almacén Asignado</th>
+                    <th>Almacenes Asignados</th>
                     <th>Estado</th>
-                    <th style="text-align: right;">Acciones</th>
+                    <th>Acciones</th>
                 </tr>
             </thead>
             <tbody>
                 {% for u in usuarios %}
-                    {% if not u.eliminado_logicamente %}
+                    {% if not u.es_superusuario_inventario or user.es_superusuario_inventario %}
                     <tr>
                         <td><strong>{{ u.username }}</strong></td>
                         <td>{{ u.nombre_completo }}</td>
                         <td>
-                            {% if u.rol == "SUPERUSUARIO" %}
-                                <span class="badge badge-warn">Superusuario</span>
-                            {% elif u.rol == "ADMINISTRADOR" %}
-                                <span class="badge badge-purple">Administrador</span>
-                            {% else %}
-                                <span class="badge badge-accent">Usuario</span>
-                            {% endif %}
+                            <span class="badge {% if u.rol == 'SUPERUSUARIO' %}badge-accent{% elif u.rol == 'ADMINISTRADOR' %}badge-secondary{% else %}badge-info{% endif %}">
+                                {{ u.get_rol_display }}
+                            </span>
                         </td>
                         <td>
-                            {% if u.es_administrador %}
-                                <span class="text-faint">(Todos los almacenes)</span>
-                            {% elif u.get_almacenes_asignados %}
-                                {% for alm in u.get_almacenes_asignados %}
-                                    <span class="badge badge-accent" style="margin-right: 3px; font-size: 11px;">{{ alm.nombre }}</span>
-                                {% endfor %}
+                            {% if u.rol == "USUARIO" %}
+                                {% with alms=u.almacenes_asignados.all %}
+                                    {% if alms %}
+                                        <div style="display: flex; flex-wrap: wrap; gap: 4px; max-width: 280px;">
+                                            {% for alm in alms %}
+                                                <span class="badge badge-secondary" style="font-size: 11px; padding: 2px 7px;">
+                                                    {{ alm.nombre }}
+                                                </span>
+                                            {% endfor %}
+                                        </div>
+                                    {% elif u.almacen_asignado %}
+                                        <span class="badge badge-secondary" style="font-size: 11px; padding: 2px 7px;">
+                                            {{ u.almacen_asignado.nombre }}
+                                        </span>
+                                    {% else %}
+                                        <span class="text-faint" style="font-size: 12px; font-style: italic;">Sin almacenes asignados</span>
+                                    {% endif %}
+                                {% endwith %}
                             {% else %}
-                                <span class="text-faint">Sin almacén</span>
+                                <span class="text-dim" style="font-size: 12px;">Todos (Acceso Global)</span>
                             {% endif %}
                         </td>
                         <td>
@@ -76,24 +424,19 @@
                                 <span class="badge badge-crit">Inactivo</span>
                             {% endif %}
                         </td>
-                        <td style="text-align: right; white-space: nowrap;">
+                        <td>
                             <div class="action-group">
-                                {% if not u.es_superusuario_inventario or request.user.es_superusuario_inventario %}
-                                    <button type="button"
-                                            class="btn btn-secondary btn-sm btn-abrir-modal-usuario"
-                                            data-url="{% url 'cuentas:usuario_editar' u.pk %}"
-                                            data-titulo="Editar Usuario ({{ u.username }})">
-                                        Editar
-                                    </button>
-                                    {% if not u.es_superusuario_inventario %}
-                                        <form method="post" action="{% url 'cuentas:usuario_eliminar' u.pk %}" style="display:inline; margin: 0;"
-                                              onsubmit="return confirm('¿Eliminar al usuario «{{ u.username }}» del sistema?');">
-                                            {% csrf_token %}
-                                            <button type="submit" class="btn btn-danger btn-sm">Eliminar</button>
-                                        </form>
-                                    {% endif %}
-                                {% else %}
-                                    <span class="text-faint" style="font-size: 11.5px;">Protegido</span>
+                                <button type="button"
+                                        class="btn btn-sm btn-secondary btn-abrir-modal-usuario"
+                                        data-url="{% url 'cuentas:usuario_editar' u.pk %}"
+                                        data-titulo="Editar Usuario: {{ u.username }}">
+                                    Editar
+                                </button>
+                                {% if not u.es_superusuario_inventario and u.is_active %}
+                                    <form method="post" action="{% url 'cuentas:usuario_eliminar' u.pk %}" style="display: inline;" onsubmit="return confirm('¿Está seguro de desactivar a este usuario?');">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm btn-danger">Desactivar</button>
+                                    </form>
                                 {% endif %}
                             </div>
                         </td>
@@ -110,7 +453,7 @@
 </div>
 
 <!-- ═══ MODAL DINÁMICO NUEVO / EDITAR USUARIO ═══ -->
-<dialog id="modalUsuario" class="app-modal">
+<dialog id="modalUsuario" class="app-modal" style="width: min(880px, 95vw); max-width: 900px; max-height: 92vh;">
     <div class="app-modal-header">
         <h2 class="app-modal-title" id="tituloModalUsuario">Gestión de Usuario</h2>
         <button type="button" class="app-modal-close" onclick="closeAppModal('modalUsuario')">&times;</button>
@@ -123,6 +466,305 @@
 
 {% block extra_js %}
 <script>
+window.initUsuarioForm = function(root) {
+    root = root || document;
+    var rolSelect = root.querySelector('select[name="rol"]');
+    var grpAlmacenes = root.querySelector('#grupoAlmacenesAsignados');
+    var grpPermisos = root.querySelector('#grupoPermisosGranulares');
+
+    function actualizarVisibilidadRol() {
+        if (!rolSelect) return;
+        var esUsuarioNormal = (rolSelect.value === "USUARIO");
+        if (grpAlmacenes) grpAlmacenes.style.display = esUsuarioNormal ? "block" : "none";
+        if (grpPermisos) grpPermisos.style.display = esUsuarioNormal ? "block" : "none";
+    }
+
+    if (rolSelect && !rolSelect.dataset.listenerAttached) {
+        rolSelect.dataset.listenerAttached = "1";
+        rolSelect.addEventListener("change", actualizarVisibilidadRol);
+    }
+    actualizarVisibilidadRol();
+
+    // ─── LÓGICA DE ALMACENES ASIGNADOS ───
+    var counterBadgeAlm = root.querySelector("#almacenesCounterBadge");
+    var almCheckboxes = root.querySelectorAll('input[name="almacenes_asignados"]');
+    var btnSelectAllAlm = root.querySelector("#btnSelectAllAlmacenes");
+    var btnClearAlm = root.querySelector("#btnClearAlmacenes");
+    var almSearchInput = root.querySelector("#almacenSearchInput");
+    var almSearchEmpty = root.querySelector("#almacenSearchEmpty");
+    var almOptionRows = root.querySelectorAll(".almacen-option-row");
+
+    function updateAlmacenesCounter() {
+        var checked = 0;
+        almCheckboxes.forEach(function(box) {
+            var row = box.closest(".almacen-option-row");
+            if (box.checked) {
+                checked++;
+                if (row) row.classList.add("is-checked");
+            } else {
+                if (row) row.classList.remove("is-checked");
+            }
+        });
+        if (counterBadgeAlm) {
+            counterBadgeAlm.textContent = checked === 1 ? "1 seleccionado" : checked + " seleccionados";
+            counterBadgeAlm.className = checked > 0 ? "badge badge-accent" : "badge badge-secondary";
+        }
+    }
+
+    almCheckboxes.forEach(function(box) {
+        if (!box.dataset.listenerAttached) {
+            box.dataset.listenerAttached = "1";
+            box.addEventListener("change", updateAlmacenesCounter);
+        }
+    });
+
+    if (btnSelectAllAlm && !btnSelectAllAlm.dataset.listenerAttached) {
+        btnSelectAllAlm.dataset.listenerAttached = "1";
+        btnSelectAllAlm.addEventListener("click", function(e) {
+            e.preventDefault();
+            almOptionRows.forEach(function(row) {
+                if (row.style.display !== "none") {
+                    var box = row.querySelector('input[type="checkbox"]');
+                    if (box) box.checked = true;
+                }
+            });
+            updateAlmacenesCounter();
+        });
+    }
+
+    if (btnClearAlm && !btnClearAlm.dataset.listenerAttached) {
+        btnClearAlm.dataset.listenerAttached = "1";
+        btnClearAlm.addEventListener("click", function(e) {
+            e.preventDefault();
+            almCheckboxes.forEach(function(box) {
+                box.checked = false;
+            });
+            updateAlmacenesCounter();
+        });
+    }
+
+    if (almSearchInput && !almSearchInput.dataset.listenerAttached) {
+        almSearchInput.dataset.listenerAttached = "1";
+        almSearchInput.addEventListener("input", function() {
+            var q = this.value.toLowerCase().trim();
+            var visible = 0;
+            almOptionRows.forEach(function(row) {
+                var name = row.getAttribute("data-name") || "";
+                if (!q || name.indexOf(q) !== -1) {
+                    row.style.display = "flex";
+                    visible++;
+                } else {
+                    row.style.display = "none";
+                }
+            });
+            if (almSearchEmpty) {
+                almSearchEmpty.style.display = visible === 0 ? "block" : "none";
+            }
+        });
+    }
+    updateAlmacenesCounter();
+
+    // ─── LÓGICA DE PERMISOS GRANULARES & PRESETS ───
+    var presetsData = {};
+    if (grpPermisos && grpPermisos.getAttribute("data-presets")) {
+        try {
+            presetsData = JSON.parse(grpPermisos.getAttribute("data-presets"));
+        } catch(e) {
+            console.error("Error parseando data-presets:", e);
+        }
+    }
+
+    var permCheckboxes = root.querySelectorAll('input[name="permisos_personalizados"]');
+    var permCounterBadge = root.querySelector("#permisosCounterBadge");
+    var btnSelectAllPerms = root.querySelector("#btnSelectAllPermisos");
+    var btnClearPerms = root.querySelector("#btnClearPermisos");
+    var permSearchInput = root.querySelector("#permisoSearchInput");
+    var permSearchEmpty = root.querySelector("#permisoSearchEmpty");
+    var permOptionRows = root.querySelectorAll(".permiso-option-row");
+    var presetCards = root.querySelectorAll(".btn-preset-card");
+    var moduleCards = root.querySelectorAll(".permiso-module-card");
+
+    function updatePermisosCounters() {
+        var checkedBoxes = root.querySelectorAll('input[name="permisos_personalizados"]:checked');
+        var totalBoxes = permCheckboxes.length;
+        var checkedCount = checkedBoxes.length;
+
+        // Actualizar clase is-checked en cada fila de permiso
+        permCheckboxes.forEach(function(box) {
+            var row = box.closest(".permiso-option-row");
+            if (row) {
+                if (box.checked) row.classList.add("is-checked");
+                else row.classList.remove("is-checked");
+            }
+        });
+
+        if (permCounterBadge) {
+            permCounterBadge.textContent = checkedCount + " de " + totalBoxes + " seleccionados";
+            permCounterBadge.className = checkedCount > 0 ? "badge badge-accent" : "badge badge-secondary";
+        }
+
+        // Badges y botones toggle por módulo
+        moduleCards.forEach(function(card) {
+            var modCod = card.getAttribute("data-module-card");
+            var modBadge = card.querySelector("#badge_mod_" + modCod);
+            var modToggleBtn = card.querySelector('.permiso-btn-module-toggle[data-module-toggle="' + modCod + '"]');
+            var modBoxes = card.querySelectorAll('.permiso-checkbox');
+            var modTotal = modBoxes.length;
+            var modChecked = card.querySelectorAll('.permiso-checkbox:checked').length;
+
+            if (modBadge) {
+                modBadge.textContent = modChecked + " / " + modTotal;
+                modBadge.className = modChecked > 0 ? "badge badge-accent permiso-module-badge" : "badge badge-secondary permiso-module-badge";
+            }
+            if (modToggleBtn) {
+                modToggleBtn.textContent = (modChecked === modTotal && modTotal > 0) ? "Desmarcar" : "Marcar";
+            }
+        });
+
+        // Detección de coincidencia exacta con plantillas (Presets)
+        var checkedCodes = new Set();
+        checkedBoxes.forEach(function(b) {
+            var c = b.getAttribute("data-codigo");
+            if (c) checkedCodes.add(c);
+        });
+
+        var matchedPreset = null;
+        for (var pKey in presetsData) {
+            var pCodes = presetsData[pKey].codigos || [];
+            if (pCodes.length === checkedCodes.size) {
+                var allMatch = pCodes.every(function(code) { return checkedCodes.has(code); });
+                if (allMatch) {
+                    matchedPreset = pKey;
+                    break;
+                }
+            }
+        }
+
+        presetCards.forEach(function(card) {
+            var key = card.getAttribute("data-preset");
+            if (matchedPreset) {
+                if (key === matchedPreset) card.classList.add("active");
+                else card.classList.remove("active");
+            } else {
+                if (key === "CUSTOM") card.classList.add("active");
+                else card.classList.remove("active");
+            }
+        });
+    }
+
+    permCheckboxes.forEach(function(box) {
+        if (!box.dataset.listenerAttached) {
+            box.dataset.listenerAttached = "1";
+            box.addEventListener("change", updatePermisosCounters);
+        }
+    });
+
+    presetCards.forEach(function(card) {
+        if (!card.dataset.listenerAttached) {
+            card.dataset.listenerAttached = "1";
+            card.addEventListener("click", function(e) {
+                e.preventDefault();
+                var presetKey = this.getAttribute("data-preset");
+                if (presetKey === "CUSTOM") {
+                    presetCards.forEach(function(c) { c.classList.remove("active"); });
+                    card.classList.add("active");
+                    return;
+                }
+
+                var targetCodes = (presetsData[presetKey] && presetsData[presetKey].codigos) ? presetsData[presetKey].codigos : [];
+                var targetSet = new Set(targetCodes);
+
+                permCheckboxes.forEach(function(box) {
+                    var code = box.getAttribute("data-codigo");
+                    box.checked = targetSet.has(code);
+                });
+
+                updatePermisosCounters();
+            });
+        }
+    });
+
+    // Toggle por módulo (Marcar / Desmarcar)
+    root.querySelectorAll(".permiso-btn-module-toggle").forEach(function(btn) {
+        if (!btn.dataset.listenerAttached) {
+            btn.dataset.listenerAttached = "1";
+            btn.addEventListener("click", function(e) {
+                e.preventDefault();
+                var modCod = this.getAttribute("data-module-toggle");
+                var modCard = root.querySelector('.permiso-module-card[data-module-card="' + modCod + '"]');
+                if (!modCard) return;
+                var boxes = modCard.querySelectorAll('.permiso-checkbox');
+                var allChecked = Array.from(boxes).every(function(b) { return b.checked; });
+                var targetState = !allChecked;
+                boxes.forEach(function(b) {
+                    b.checked = targetState;
+                });
+                updatePermisosCounters();
+            });
+        }
+    });
+
+    if (btnSelectAllPerms && !btnSelectAllPerms.dataset.listenerAttached) {
+        btnSelectAllPerms.dataset.listenerAttached = "1";
+        btnSelectAllPerms.addEventListener("click", function(e) {
+            e.preventDefault();
+            permOptionRows.forEach(function(row) {
+                if (row.style.display !== "none") {
+                    var box = row.querySelector('input[type="checkbox"]');
+                    if (box) box.checked = true;
+                }
+            });
+            updatePermisosCounters();
+        });
+    }
+
+    if (btnClearPerms && !btnClearPerms.dataset.listenerAttached) {
+        btnClearPerms.dataset.listenerAttached = "1";
+        btnClearPerms.addEventListener("click", function(e) {
+            e.preventDefault();
+            permCheckboxes.forEach(function(box) {
+                box.checked = false;
+            });
+            updatePermisosCounters();
+        });
+    }
+
+    if (permSearchInput && !permSearchInput.dataset.listenerAttached) {
+        permSearchInput.dataset.listenerAttached = "1";
+        permSearchInput.addEventListener("input", function() {
+            var q = this.value.toLowerCase().trim();
+            var totalVisible = 0;
+
+            moduleCards.forEach(function(card) {
+                var rows = card.querySelectorAll(".permiso-option-row");
+                var cardVisible = 0;
+                rows.forEach(function(row) {
+                    var name = row.getAttribute("data-name") || "";
+                    var desc = row.getAttribute("data-desc") || "";
+                    var cod = (row.getAttribute("data-codigo") || "").toLowerCase();
+                    if (!q || name.indexOf(q) !== -1 || desc.indexOf(q) !== -1 || cod.indexOf(q) !== -1) {
+                        row.style.display = "flex";
+                        cardVisible++;
+                    } else {
+                        row.style.display = "none";
+                    }
+                });
+                card.style.display = cardVisible > 0 ? "block" : "none";
+                totalVisible += cardVisible;
+            });
+
+            if (permSearchEmpty) {
+                permSearchEmpty.style.display = totalVisible === 0 ? "block" : "none";
+            }
+        });
+    }
+
+    updatePermisosCounters();
+    if (typeof window.initPasswordToggles === "function") {
+        window.initPasswordToggles(root);
+    }
+};
+
 document.addEventListener("DOMContentLoaded", function() {
     var inputFiltro = document.getElementById("inputFiltroUsuarios");
     var tabla = document.getElementById("tablaUsuarios");
@@ -138,97 +780,6 @@ document.addEventListener("DOMContentLoaded", function() {
 
     var cuerpoModal = document.getElementById("cuerpoModalUsuario");
     var tituloModal = document.getElementById("tituloModalUsuario");
-
-    function initUsuarioFormHandlers(root) {
-        root = root || document;
-        var rolSelect = root.querySelector('select[name="rol"]');
-        var grpAlmacenes = root.querySelector('#grupoAlmacenesAsignados');
-
-        function actualizarVisibilidadAlmacen() {
-            if (!rolSelect || !grpAlmacenes) return;
-            var esUsuarioNormal = (rolSelect.value === "USUARIO");
-            grpAlmacenes.style.display = esUsuarioNormal ? "block" : "none";
-        }
-
-        if (rolSelect && !rolSelect.dataset.listenerAttached) {
-            rolSelect.dataset.listenerAttached = "1";
-            rolSelect.addEventListener("change", actualizarVisibilidadAlmacen);
-        }
-        actualizarVisibilidadAlmacen();
-
-        var counterBadge = root.querySelector("#almacenesCounterBadge");
-        var checkboxes = root.querySelectorAll('input[name="almacenes_asignados"]');
-        var btnSelectAll = root.querySelector("#btnSelectAllAlmacenes");
-        var btnClear = root.querySelector("#btnClearAlmacenes");
-        var searchInput = root.querySelector("#almacenSearchInput");
-        var searchEmpty = root.querySelector("#almacenSearchEmpty");
-        var optionRows = root.querySelectorAll(".almacen-option-row");
-
-        function updateCounter() {
-            var checked = root.querySelectorAll('input[name="almacenes_asignados"]:checked').length;
-            if (counterBadge) {
-                counterBadge.textContent = checked === 1 ? "1 seleccionado" : checked + " seleccionados";
-                counterBadge.className = checked > 0 ? "badge badge-accent" : "badge badge-secondary";
-            }
-        }
-
-        checkboxes.forEach(function(box) {
-            if (!box.dataset.listenerAttached) {
-                box.dataset.listenerAttached = "1";
-                box.addEventListener("change", updateCounter);
-            }
-        });
-
-        if (btnSelectAll && !btnSelectAll.dataset.listenerAttached) {
-            btnSelectAll.dataset.listenerAttached = "1";
-            btnSelectAll.addEventListener("click", function(e) {
-                e.preventDefault();
-                optionRows.forEach(function(row) {
-                    if (row.style.display !== "none") {
-                        var box = row.querySelector('input[type="checkbox"]');
-                        if (box) box.checked = true;
-                    }
-                });
-                updateCounter();
-            });
-        }
-
-        if (btnClear && !btnClear.dataset.listenerAttached) {
-            btnClear.dataset.listenerAttached = "1";
-            btnClear.addEventListener("click", function(e) {
-                e.preventDefault();
-                checkboxes.forEach(function(box) {
-                    box.checked = false;
-                });
-                updateCounter();
-            });
-        }
-
-        if (searchInput && !searchInput.dataset.listenerAttached) {
-            searchInput.dataset.listenerAttached = "1";
-            searchInput.addEventListener("input", function() {
-                var q = this.value.toLowerCase().trim();
-                var visible = 0;
-                optionRows.forEach(function(row) {
-                    var name = row.getAttribute("data-name") || "";
-                    if (!q || name.indexOf(q) !== -1) {
-                        row.style.display = "flex";
-                        visible++;
-                    } else {
-                        row.style.display = "none";
-                    }
-                });
-                if (searchEmpty) {
-                    searchEmpty.style.display = visible === 0 ? "block" : "none";
-                }
-            });
-        }
-
-        updateCounter();
-        if (typeof window.initPasswordToggles === "function") {
-            window.initPasswordToggles(root);
-        }
-    }
 
     function enlazarFormularioModal(urlEndpoint) {
         var form = cuerpoModal.querySelector("form");
@@ -288,7 +839,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 if (nuevoForm) {
                     cuerpoModal.appendChild(nuevoForm);
                     enlazarFormularioModal(urlEndpoint);
-                    initUsuarioFormHandlers(cuerpoModal);
+                    window.initUsuarioForm(cuerpoModal);
                 } else {
                     window.location.reload();
                 }
@@ -316,7 +867,7 @@ document.addEventListener("DOMContentLoaded", function() {
                         cuerpoModal.innerHTML = "";
                         cuerpoModal.appendChild(form);
                         enlazarFormularioModal(url);
-                        initUsuarioFormHandlers(cuerpoModal);
+                        window.initUsuarioForm(cuerpoModal);
                     } else {
                         window.location.href = url;
                     }

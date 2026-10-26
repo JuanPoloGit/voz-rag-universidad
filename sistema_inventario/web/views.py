@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from django.contrib.auth.mixins import LoginRequiredMixin
+from cuentas.permisos import PermisoRequeridoMixin
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.generic import View
@@ -101,7 +102,8 @@ class GraficoBalanceJSONView(LoginRequiredMixin, View):
         return JsonResponse(datos)
 
 
-class ReporteExistenciasView(LoginRequiredMixin, View):
+class ReporteExistenciasView(LoginRequiredMixin, PermisoRequeridoMixin, View):
+    permiso_requerido = "analitica.ver_reportes"
     """Informe analítico de existencias actuales filtrable por almacén, categoría y nivel de stock."""
 
     def get(self, request):
@@ -141,7 +143,8 @@ class ReporteExistenciasView(LoginRequiredMixin, View):
         )
 
 
-class ReporteMovimientosView(LoginRequiredMixin, View):
+class ReporteMovimientosView(LoginRequiredMixin, PermisoRequeridoMixin, View):
+    permiso_requerido = "analitica.ver_reportes"
     """Informe cronológico de movimientos filtrable por rango de fechas, tipo y producto."""
 
     def get(self, request):
@@ -189,7 +192,8 @@ class ReporteMovimientosView(LoginRequiredMixin, View):
         )
 
 
-class ReportePrestamosView(LoginRequiredMixin, View):
+class ReportePrestamosView(LoginRequiredMixin, PermisoRequeridoMixin, View):
+    permiso_requerido = "analitica.ver_reportes"
     """Informe de préstamos activos con cálculo de antigüedad y responsable."""
 
     def get(self, request):
@@ -210,7 +214,8 @@ class ReportePrestamosView(LoginRequiredMixin, View):
         )
 
 
-class ReporteProductosEstancadosView(LoginRequiredMixin, View):
+class ReporteProductosEstancadosView(LoginRequiredMixin, PermisoRequeridoMixin, View):
+    permiso_requerido = "analitica.ver_reportes"
     """Informe de artículos sin rotación ni movimientos en los últimos N días."""
 
     def get(self, request):

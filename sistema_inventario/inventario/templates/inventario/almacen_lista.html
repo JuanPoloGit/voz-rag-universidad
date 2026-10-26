@@ -13,7 +13,7 @@
                 Gestión de bodegas y depósitos físicos autorizados en el sistema.
             </p>
         </div>
-        {% if user.es_administrador %}
+        {% if request.user.es_administrador or 'infraestructura.gestionar_almacenes' in request.user.get_permisos_codigos %}
         <div class="action-group">
             <button type="button" class="btn btn-primary" id="btnNuevoAlmacenModal">
                 + Nuevo Almacén
@@ -77,7 +77,7 @@
                         <td style="font-size: 12px; color: var(--text-muted); white-space: nowrap;">
                             {{ almacen.fecha_creacion|date:"d/m/Y H:i" }}
                         </td>
-                        {% if user.es_administrador %}
+                        {% if request.user.es_administrador or 'infraestructura.gestionar_almacenes' in request.user.get_permisos_codigos %}
                             <td style="text-align: right; white-space: nowrap;">
                                 <div class="action-group" style="display: inline-flex; flex-direction: row; flex-wrap: nowrap; gap: 6px; justify-content: flex-end;">
                                     <button type="button"

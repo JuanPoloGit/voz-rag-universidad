@@ -42,6 +42,16 @@ def _validar_acceso_almacen(usuario: Any, almacen: Almacen) -> None:
             raise PermissionDenied("No tienes permisos para realizar operaciones en este almacén.")
 
 
+def _validar_permiso_operativo(usuario: Any, codigo_permiso: str) -> None:
+    """Valida que el usuario cuente con el permiso específico para la operación."""
+    if not getattr(usuario, "is_authenticated", False):
+        raise PermissionDenied("Se requiere autenticación para operar sobre el inventario.")
+    if getattr(usuario, "es_administrador", False):
+        return
+    if not getattr(usuario, "tiene_permiso", lambda p: False)(codigo_permiso):
+        raise PermissionDenied(f"No tienes permisos suficientes ({codigo_permiso}) para realizar esta operación.")
+
+
 def registrar_entrada(
     *,
     producto: Producto,
@@ -62,6 +72,7 @@ def registrar_entrada(
     la cantidad base a partir de cantidad_empaques * producto.unidades_por_empaque.
     """
     _validar_acceso_almacen(usuario, almacen)
+    _validar_permiso_operativo(usuario, "movimientos.entrada")
 
     if not clave_idempotencia:
         clave_idempotencia = f"ENT-{producto.id}-{almacen.id}-{uuid.uuid4().hex[:12]}"
@@ -166,6 +177,7 @@ def registrar_salida(
     Retorna la existencia actualizada, el movimiento y el estado de alerta (§8.4).
     """
     _validar_acceso_almacen(usuario, almacen)
+    _validar_permiso_operativo(usuario, "movimientos.dotacion")
 
     motivo = (motivo or "").strip()
     if not motivo:
@@ -272,6 +284,7 @@ def registrar_prestamo(
 ) -> Tuple[Prestamo, Movimiento, Dict[str, Any]]:
     """Registra un préstamo de productos descontando de stock_disponible y sumando a stock_en_prestamo (§9.4)."""
     _validar_acceso_almacen(usuario, almacen)
+    _validar_permiso_operativo(usuario, "movimientos.prestamo")
 
     destinatario = (destinatario or "").strip()
     if not destinatario:
@@ -383,6 +396,7 @@ def registrar_devolucion_prestamo(
     Suma lo devuelto al stock disponible y descuenta de stock en préstamo.
     """
     _validar_acceso_almacen(usuario, prestamo.almacen)
+    _validar_permiso_operativo(usuario, "movimientos.devolucion")
 
     motivo = (motivo or "").strip()
     if not motivo:
@@ -488,6 +502,7 @@ def registrar_baja_prestamo(
     Reduce la cantidad pendiente y el stock en préstamo, pero NO suma a stock disponible.
     """
     _validar_acceso_almacen(usuario, prestamo.almacen)
+    _validar_permiso_operativo(usuario, "movimientos.baja")
 
     motivo = (motivo or "").strip()
     if not motivo:
@@ -593,6 +608,9 @@ def registrar_traslado_interno(
     Actualiza las ubicaciones registradas sin alterar el stock total.
     """
     _validar_acceso_almacen(usuario, almacen)
+    if getattr(usuario, "es_usuario_normal", False):
+        if not usuario.tiene_permiso("movimientos.traslado") and not usuario.tiene_permiso("catalogo.reubicar_interno"):
+            raise PermissionDenied("No tienes permisos para realizar traslados internos o reubicar productos.")
 
     if ubicacion_origen.almacen_id != almacen.id or ubicacion_destino.almacen_id != almacen.id:
         raise ValidationError("Ambas ubicaciones deben pertenecer al almacén indicado.")
@@ -671,6 +689,7 @@ def registrar_traslado_entre_almacenes(
     """
     # Valida permisos sobre el almacén origen (§6.2)
     _validar_acceso_almacen(usuario, almacen_origen)
+    _validar_permiso_operativo(usuario, "movimientos.traslado")
 
     if almacen_origen.id == almacen_destino.id:
         raise ValidationError("El almacén origen y destino no pueden ser el mismo.")

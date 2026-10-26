@@ -8,19 +8,13 @@
 <style>
     .mov-type-selector {
         display: grid;
-        grid-template-columns: repeat(5, 1fr);
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
         gap: 8px;
         margin-bottom: 18px;
         padding: 6px;
         background: var(--bg-deep-2);
         border: 1px solid var(--border);
         border-radius: var(--radius-sm);
-    }
-    .mov-type-selector.cols-4 {
-        grid-template-columns: repeat(4, 1fr);
-    }
-    .mov-type-selector.cols-5 {
-        grid-template-columns: repeat(5, 1fr);
     }
     .mov-type-btn {
         display: inline-flex;
@@ -143,9 +137,11 @@
             </p>
         </div>
         <div class="action-group">
+            {% if request.user.es_administrador or 'movimientos.entrada' in request.user.get_permisos_codigos or 'movimientos.dotacion' in request.user.get_permisos_codigos or 'movimientos.prestamo' in request.user.get_permisos_codigos or 'movimientos.traslado' in request.user.get_permisos_codigos or 'movimientos.ajuste_conteo' in request.user.get_permisos_codigos %}
             <button type="button" class="btn btn-primary" id="btnAbrirNuevoMovimiento">
                 + Nuevo Movimiento
             </button>
+            {% endif %}
         </div>
     </div>
 
@@ -326,6 +322,7 @@
                             <td style="text-align: right; white-space: nowrap;">
                                 {% if p.estado != 'CERRADO' and p.cantidad_pendiente_devolucion > 0 %}
                                     <div class="action-group">
+                                        {% if request.user.es_administrador or 'movimientos.devolucion' in request.user.get_permisos_codigos %}
                                         <button type="button"
                                                 class="btn btn-sm btn-primary btn-abrir-devolucion"
                                                 data-url="{% url 'inventario:prestamo-devolver' p.pk %}"
@@ -334,6 +331,8 @@
                                                 data-pendiente="{{ p.cantidad_pendiente_devolucion }}">
                                             Devolver
                                         </button>
+                                        {% endif %}
+                                        {% if request.user.es_administrador or 'movimientos.baja' in request.user.get_permisos_codigos %}
                                         <button type="button"
                                                 class="btn btn-sm btn-secondary btn-abrir-baja"
                                                 style="color: var(--crit);"
@@ -343,6 +342,7 @@
                                                 data-pendiente="{{ p.cantidad_pendiente_devolucion }}">
                                             Baja daño
                                         </button>
+                                        {% endif %}
                                     </div>
                                 {% else %}
                                     <span style="font-size: 11.5px; color: var(--text-faint);">Completado</span>
@@ -642,29 +642,37 @@
         <label style="font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-faint); margin-bottom: 6px;">
             1. Selecciona el tipo de operación
         </label>
-        <div class="mov-type-selector {% if es_usuario_normal %}cols-4{% else %}cols-5{% endif %}">
+        <div class="mov-type-selector">
+            {% if request.user.es_administrador or 'movimientos.prestamo' in request.user.get_permisos_codigos %}
             <button type="button" class="mov-type-btn" data-target-form="secFormPrestamo">
                 <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                 Préstamo
             </button>
+            {% endif %}
+            {% if request.user.es_administrador or 'movimientos.dotacion' in request.user.get_permisos_codigos %}
             <button type="button" class="mov-type-btn" data-target-form="secFormSalida">
                 <svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 Dotación
             </button>
-            <button type="button" class="mov-type-btn active" data-target-form="secFormEntrada">
+            {% endif %}
+            {% if request.user.es_administrador or 'movimientos.entrada' in request.user.get_permisos_codigos %}
+            <button type="button" class="mov-type-btn" data-target-form="secFormEntrada">
                 <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 Entrada
             </button>
-            {% if not es_usuario_normal %}
+            {% endif %}
+            {% if request.user.es_administrador or 'movimientos.traslado' in request.user.get_permisos_codigos %}
             <button type="button" class="mov-type-btn" data-target-form="secFormTraslado">
                 <svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
                 Traslado
             </button>
             {% endif %}
+            {% if request.user.es_administrador or 'movimientos.ajuste_conteo' in request.user.get_permisos_codigos %}
             <button type="button" class="mov-type-btn" data-target-form="secFormConteo">
                 <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
                 Conteo Físico
             </button>
+            {% endif %}
         </div>
 
         <!-- 1. FORMULARIO ENTRADA -->
@@ -1096,6 +1104,14 @@ document.addEventListener("DOMContentLoaded", function() {
     }
 
     function activarFormularioTipo(targetId) {
+        var targetBtn = document.querySelector('.mov-type-btn[data-target-form="' + targetId + '"]');
+        if (!targetBtn) {
+            var firstAvailableBtn = document.querySelector('.mov-type-btn');
+            if (firstAvailableBtn) {
+                targetId = firstAvailableBtn.getAttribute("data-target-form");
+            }
+        }
+
         typeBtns.forEach(function(b) {
             b.classList.toggle("active", b.getAttribute("data-target-form") === targetId);
         });

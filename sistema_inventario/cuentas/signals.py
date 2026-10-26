@@ -10,11 +10,11 @@ Implementa las invariantes de negocio de la especificación (§6.2):
 
 from django.core.exceptions import ValidationError
 from django.db import models
-from django.db.models.signals import pre_delete, pre_save
+from django.db.models.signals import post_save, pre_delete, pre_save
 from django.dispatch import receiver
 from django.utils.translation import gettext_lazy as _
 
-from .models import UsuarioAudacIA
+from .models import PermisoAudacIA, PRESETS_PERMISOS, UsuarioAudacIA
 
 
 @receiver(pre_save, sender=UsuarioAudacIA)
@@ -61,3 +61,20 @@ def impedir_borrado_superusuario(sender, instance, **kwargs):
         raise ValidationError(
             _("El superusuario es ineliminable.")
         )
+
+
+@receiver(post_save, sender=UsuarioAudacIA)
+def asignar_permisos_por_defecto_usuario(sender, instance, created, **kwargs):
+    """
+    Garantiza compatibilidad retroactiva: usuarios operativos recién creados programáticamente
+    reciben los permisos operativos base (preset 'OPERADOR_INTEGRAL') a menos que ya
+    hayan sido asignados explícitamente.
+    """
+    if created and instance.rol == UsuarioAudacIA.Rol.USUARIO:
+        # Solo asignar si no tiene permisos configurados previamente
+        if not instance.permisos_personalizados.exists():
+            preset_cods = PRESETS_PERMISOS.get("OPERADOR_INTEGRAL", {}).get("codigos", [])
+            perms = list(PermisoAudacIA.objects.filter(codigo__in=preset_cods))
+            if perms:
+                instance.permisos_personalizados.set(perms)
+

@@ -142,3 +142,58 @@ class AccesoAlmacenMixin:
             self.almacen = None
 
         return super().dispatch(request, *args, **kwargs)
+
+
+
+class PermisoRequeridoMixin:
+    """Mixin para CBVs que valida que el usuario cuente con los permisos requeridos."""
+    permiso_requerido = None  # str o iterable de str
+    requiere_todos = False
+
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            raise PermissionDenied(_("Debe iniciar sesión para acceder."))
+
+        if not request.user.is_active or getattr(request.user, "eliminado_logicamente", False):
+            raise PermissionDenied(_("Cuenta inactiva o eliminada."))
+
+        if getattr(request.user, "es_administrador", False):
+            return super().dispatch(request, *args, **kwargs)
+
+        if self.permiso_requerido:
+            perms = [self.permiso_requerido] if isinstance(self.permiso_requerido, str) else list(self.permiso_requerido)
+            if self.requiere_todos:
+                autorizado = all(request.user.tiene_permiso(p) for p in perms)
+            else:
+                autorizado = any(request.user.tiene_permiso(p) for p in perms)
+            if not autorizado:
+                raise PermissionDenied(_("No tienes permisos suficientes para realizar esta acción."))
+
+        return super().dispatch(request, *args, **kwargs)
+
+
+def requiere_permiso(*codigos_permiso, requiere_todos=False):
+    """Decorador para vistas basadas en funciones que valida permisos granulares."""
+    def decorator(view_func):
+        @wraps(view_func)
+        def _wrapped_view(request, *args, **kwargs):
+            if not request.user.is_authenticated:
+                raise PermissionDenied(_("Debe iniciar sesión para acceder."))
+
+            if not request.user.is_active or getattr(request.user, "eliminado_logicamente", False):
+                raise PermissionDenied(_("Cuenta inactiva o eliminada."))
+
+            if getattr(request.user, "es_administrador", False):
+                return view_func(request, *args, **kwargs)
+
+            if codigos_permiso:
+                if requiere_todos:
+                    autorizado = all(request.user.tiene_permiso(p) for p in codigos_permiso)
+                else:
+                    autorizado = any(request.user.tiene_permiso(p) for p in codigos_permiso)
+                if not autorizado:
+                    raise PermissionDenied(_("No tienes permisos suficientes para realizar esta acción."))
+
+            return view_func(request, *args, **kwargs)
+        return _wrapped_view
+    return decorator

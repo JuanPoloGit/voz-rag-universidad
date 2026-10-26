@@ -240,6 +240,8 @@ def crear_ubicacion(
         raise PermissionDenied("Se requiere autenticación para crear ubicaciones.")
 
     if getattr(usuario, "es_usuario_normal", False):
+        if not usuario.tiene_permiso("infraestructura.gestionar_ubicaciones"):
+            raise PermissionDenied("No tienes permisos para registrar ubicaciones.")
         if not usuario.tiene_acceso_almacen(almacen):
             raise PermissionDenied("Solo puedes registrar ubicaciones en tus almacenes asignados.")
 
@@ -328,6 +330,8 @@ def actualizar_ubicacion(
     ubicacion_db = Ubicacion.objects.select_related("almacen").get(pk=ubicacion.pk)
 
     if getattr(usuario, "es_usuario_normal", False):
+        if not usuario.tiene_permiso("infraestructura.gestionar_ubicaciones"):
+            raise PermissionDenied("No tienes permisos para modificar ubicaciones.")
         if not usuario.tiene_acceso_almacen(ubicacion_db.almacen):
             raise PermissionDenied("No tienes permisos para modificar ubicaciones de otros almacenes.")
         if almacen and not usuario.tiene_acceso_almacen(almacen):
@@ -477,6 +481,8 @@ def crear_categoria(
         raise PermissionDenied("Se requiere autenticación para crear categorías.")
 
     if getattr(usuario, "es_usuario_normal", False):
+        if not usuario.tiene_permiso("infraestructura.gestionar_categorias"):
+            raise PermissionDenied("No tienes permisos para registrar categorías.")
         if not usuario.tiene_acceso_almacen(almacen_principal):
             raise PermissionDenied("Solo puedes registrar categorías en tus almacenes asignados.")
 
@@ -564,6 +570,8 @@ def actualizar_categoria(
     categoria_db = Categoria.objects.select_related("almacen_principal").get(pk=categoria.pk)
 
     if getattr(usuario, "es_usuario_normal", False):
+        if not usuario.tiene_permiso("infraestructura.gestionar_categorias"):
+            raise PermissionDenied("No tienes permisos para modificar categorías.")
         if not usuario.tiene_acceso_almacen(categoria_db.almacen_principal):
             raise PermissionDenied("No tienes permisos para modificar categorías de otros almacenes.")
         if not usuario.tiene_acceso_almacen(almacen_principal):
@@ -911,6 +919,8 @@ def crear_producto(
         raise PermissionDenied("Se requiere autenticación para crear productos.")
 
     if getattr(usuario, "es_usuario_normal", False):
+        if not usuario.tiene_permiso("catalogo.crear"):
+            raise PermissionDenied("No tienes permisos para registrar nuevos productos en el catálogo.")
         if not usuario.tiene_acceso_almacen(categoria.almacen_principal):
             raise PermissionDenied("Solo puedes registrar productos en categorías de tus almacenes asignados.")
 
@@ -1020,6 +1030,8 @@ def actualizar_producto(
     producto_db = Producto.objects.select_related("categoria", "tipo").get(pk=producto.pk)
 
     if getattr(usuario, "es_usuario_normal", False):
+        if not usuario.tiene_permiso("catalogo.editar"):
+            raise PermissionDenied("No tienes permisos para modificar la información de productos.")
         if not usuario.tiene_acceso_almacen(producto_db.categoria.almacen_principal):
             raise PermissionDenied("No tienes permisos para modificar productos de otros almacenes.")
         if categoria and not usuario.tiene_acceso_almacen(categoria.almacen_principal):
@@ -1087,6 +1099,8 @@ def actualizar_producto(
 
         # Registro automático de traslado en caso de cambio de almacén o ubicación (§Punto 12)
         if almacen_nuevo.id != almacen_ant.id:
+            if getattr(usuario, "es_usuario_normal", False) and not usuario.tiene_permiso("catalogo.trasladar_almacen"):
+                raise PermissionDenied("No tienes permisos para trasladar productos entre almacenes.")
             from inventario.servicios.operaciones import registrar_traslado_entre_almacenes
             ex_origen = Existencia.objects.filter(producto=producto_db, almacen=almacen_ant).first()
             cant_traslado = ex_origen.stock_disponible if ex_origen and ex_origen.stock_disponible > 0 else 0
@@ -1109,6 +1123,8 @@ def actualizar_producto(
                     defaults={"stock_disponible": 0, "stock_en_prestamo": 0},
                 )
         elif ubicaciones is not None and ubicacion_nueva and ubicacion_ant and ubicacion_nueva.id != ubicacion_ant.id:
+            if getattr(usuario, "es_usuario_normal", False) and not usuario.tiene_permiso("catalogo.reubicar_interno"):
+                raise PermissionDenied("No tienes permisos para reubicar productos en el almacén.")
             from inventario.servicios.operaciones import registrar_traslado_interno
             registrar_traslado_interno(
                 producto=producto_db,
@@ -1192,8 +1208,8 @@ def archivar_producto(
     
     Solo Administradores y Superusuarios (§8.1).
     """
-    if not getattr(usuario, "es_administrador", False):
-        raise PermissionDenied("Solo los Administradores o el Superusuario pueden archivar productos.")
+    if not getattr(usuario, "es_administrador", False) and not getattr(usuario, "tiene_permiso", lambda p: False)("catalogo.eliminar"):
+        raise PermissionDenied("No tienes permisos para archivar o eliminar productos.")
 
     with transaction.atomic():
         producto.archivado = True

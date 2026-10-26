@@ -13,9 +13,11 @@
                 Control de artículos entregados temporalmente con seguimiento de devoluciones parciales y bajas (§9.4).
             </p>
         </div>
+        {% if request.user.es_administrador or 'movimientos.prestamo' in request.user.get_permisos_codigos %}
         <div>
             <a href="{% url 'inventario:prestamo-crear' %}" class="btn btn-primary">+ Entregar Préstamo</a>
         </div>
+        {% endif %}
     </div>
 
     <!-- Filtros -->
@@ -71,8 +73,12 @@
                         <td>
                             {% if p.estado != 'CERRADO' %}
                                 <div style="display: flex; gap: 0.25rem;">
+                                    {% if request.user.es_administrador or 'movimientos.devolucion' in request.user.get_permisos_codigos %}
                                     <a href="{% url 'inventario:prestamo-devolver' p.pk %}" class="btn btn-sm btn-primary">Devolver</a>
+                                    {% endif %}
+                                    {% if request.user.es_administrador or 'movimientos.baja' in request.user.get_permisos_codigos %}
                                     <a href="{% url 'inventario:prestamo-baja' p.pk %}" class="btn btn-sm btn-secondary" style="color: var(--danger);">Baja daño</a>
+                                    {% endif %}
                                 </div>
                             {% else %}
                                 <span style="font-size: 0.8rem; color: var(--text-muted);">Cerrado el {{ p.fecha_cierre|date:"Y-m-d" }}</span>

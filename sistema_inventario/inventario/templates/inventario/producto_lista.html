@@ -97,9 +97,11 @@
             </p>
         </div>
         <div class="action-group">
+            {% if request.user.es_administrador or 'catalogo.crear' in request.user.get_permisos_codigos %}
             <button type="button" class="btn btn-primary" id="btnNuevoProducto">
                 + Nuevo Producto
             </button>
+            {% endif %}
         </div>
     </div>
 
@@ -284,6 +286,7 @@
                                 <a href="{% url 'inventario:producto-detalle' prod.id %}" class="btn btn-sm btn-secondary" title="Ver detalle">
                                     Ver
                                 </a>
+                                {% if request.user.es_administrador or 'catalogo.editar' in request.user.get_permisos_codigos %}
                                 <button type="button"
                                         class="btn btn-sm btn-secondary btn-editar-producto"
                                         data-url="{% url 'inventario:producto-editar' prod.id %}"
@@ -311,7 +314,8 @@
                                         {% if prod.activo %}Inhabilitar{% else %}Habilitar{% endif %}
                                     </button>
                                 </form>
-                                {% if user.es_administrador %}
+                                {% endif %}
+                                {% if request.user.es_administrador or 'catalogo.eliminar' in request.user.get_permisos_codigos %}
                                 <form method="post" action="{% url 'inventario:producto-archivar' prod.id %}" style="display: inline; margin: 0;"
                                       onsubmit="return confirm('¿Eliminar el producto «{{ prod.codigo_interno }} — {{ prod.nombre }}» del catálogo?');">
                                     {% csrf_token %}
@@ -461,6 +465,7 @@ document.addEventListener("DOMContentLoaded", function() {
     var tituloModal = document.getElementById("modalProductoTitulo");
     var btnSubmit = document.getElementById("btnSubmitModalProducto");
     var urlCrear = "{% url 'inventario:producto-crear' %}";
+    var puedeTrasladarAlmacen = {% if request.user.es_administrador or 'catalogo.trasladar_almacen' in request.user.get_permisos_codigos %}true{% else %}false{% endif %};
 
     var almacenesEl = document.getElementById("almacenes-data");
     var categoriasEl = document.getElementById("categorias-data");
@@ -593,7 +598,14 @@ document.addEventListener("DOMContentLoaded", function() {
             if (elAyudaNuevo) elAyudaNuevo.style.display = "block";
             if (elAyudaEdicion) elAyudaEdicion.style.display = "none";
             if (inputStockMin) inputStockMin.value = "0";
-            if (selectAlmacen) selectAlmacen.value = "";
+            if (selectAlmacen) {
+                selectAlmacen.value = "";
+                selectAlmacen.disabled = false;
+                selectAlmacen.removeAttribute("title");
+            }
+            var hiddenAlm = document.getElementById("hiddenAlmacenEdit");
+            if (hiddenAlm) hiddenAlm.disabled = true;
+
             filtrarCategoriasPorAlmacen("", "");
             filtrarUbicacionesPorAlmacen("", "");
             filtrarTiposPorCategoria("", "");
@@ -617,6 +629,25 @@ document.addEventListener("DOMContentLoaded", function() {
 
             if (selectAlmacen && almId) {
                 selectAlmacen.value = almId;
+                if (!puedeTrasladarAlmacen) {
+                    selectAlmacen.disabled = true;
+                    selectAlmacen.title = "No tienes permiso para trasladar productos entre almacenes.";
+                    var hAlm = document.getElementById("hiddenAlmacenEdit");
+                    if (!hAlm) {
+                        hAlm = document.createElement("input");
+                        hAlm.type = "hidden";
+                        hAlm.name = "almacen";
+                        hAlm.id = "hiddenAlmacenEdit";
+                        formModal.appendChild(hAlm);
+                    }
+                    hAlm.value = almId;
+                    hAlm.disabled = false;
+                } else {
+                    selectAlmacen.disabled = false;
+                    selectAlmacen.removeAttribute("title");
+                    var hAlm = document.getElementById("hiddenAlmacenEdit");
+                    if (hAlm) hAlm.disabled = true;
+                }
             }
             filtrarCategoriasPorAlmacen(almId, catId);
             filtrarUbicacionesPorAlmacen(almId, ubId);

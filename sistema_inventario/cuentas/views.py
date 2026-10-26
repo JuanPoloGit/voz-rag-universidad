@@ -146,6 +146,42 @@ class UsuarioListView(RolRequeridoMixin, View):
         return render(request, self.template_name, {"usuarios": qs})
 
 
+def _obtener_contexto_permisos(form=None):
+    """Helper para entregar los permisos agrupados y los presets a la interfaz."""
+    import json
+    from .models import PermisoAudacIA, PRESETS_PERMISOS
+    presets_data = {}
+    for k, v in PRESETS_PERMISOS.items():
+        icon_val = v.get("icon") or v.get("icono") or "zap"
+        presets_data[k] = {
+            "nombre": v["nombre"],
+            "descripcion": v["descripcion"],
+            "icon": icon_val,
+            "icono": icon_val,
+            "codigos": v.get("codigos") or v.get("permisos") or [],
+        }
+
+    selected_pks = set()
+    if form and "permisos_personalizados" in form.fields:
+        val = form["permisos_personalizados"].value()
+        if val:
+            if hasattr(val, "values_list"):
+                selected_pks = set(val.values_list("pk", flat=True))
+            elif isinstance(val, (list, tuple, set)):
+                for item in val:
+                    try:
+                        selected_pks.add(int(item.pk if hasattr(item, "pk") else item))
+                    except (ValueError, TypeError):
+                        pass
+
+    return {
+        "permisos_modulos": PermisoAudacIA.agrupados_por_modulo(),
+        "presets_permisos": presets_data,
+        "presets_json": json.dumps(presets_data),
+        "selected_perm_pks": selected_pks,
+    }
+
+
 class UsuarioCreateView(RolRequeridoMixin, View):
     """Creación de usuarios con restricciones de rol (§6.2)."""
 
@@ -154,7 +190,9 @@ class UsuarioCreateView(RolRequeridoMixin, View):
 
     def get(self, request):
         form = UsuarioForm(request_user=request.user)
-        return render(request, self.template_name, {"form": form, "accion": "Crear"})
+        ctx = {"form": form, "accion": "Crear"}
+        ctx.update(_obtener_contexto_permisos(form))
+        return render(request, self.template_name, ctx)
 
     def post(self, request):
         form = UsuarioForm(request.POST, request_user=request.user)
@@ -188,7 +226,9 @@ class UsuarioCreateView(RolRequeridoMixin, View):
                 errores[field] = [e["message"] for e in err_list]
             return JsonResponse({"success": False, "errors": errores}, status=400)
 
-        return render(request, self.template_name, {"form": form, "accion": "Crear"})
+        ctx = {"form": form, "accion": "Crear"}
+        ctx.update(_obtener_contexto_permisos(form))
+        return render(request, self.template_name, ctx)
 
 
 class UsuarioUpdateView(RolRequeridoMixin, View):
@@ -219,7 +259,9 @@ class UsuarioUpdateView(RolRequeridoMixin, View):
 
     def get(self, request, pk):
         form = UsuarioForm(instance=self.target_user, request_user=request.user)
-        return render(request, self.template_name, {"form": form, "accion": "Editar", "target_user": self.target_user})
+        ctx = {"form": form, "accion": "Editar", "target_user": self.target_user}
+        ctx.update(_obtener_contexto_permisos(form))
+        return render(request, self.template_name, ctx)
 
     def post(self, request, pk):
         form = UsuarioForm(request.POST, instance=self.target_user, request_user=request.user)
@@ -253,7 +295,9 @@ class UsuarioUpdateView(RolRequeridoMixin, View):
                 errores[field] = [e["message"] for e in err_list]
             return JsonResponse({"success": False, "errors": errores}, status=400)
 
-        return render(request, self.template_name, {"form": form, "accion": "Editar", "target_user": self.target_user})
+        ctx = {"form": form, "accion": "Editar", "target_user": self.target_user}
+        ctx.update(_obtener_contexto_permisos(form))
+        return render(request, self.template_name, ctx)
 
 
 class UsuarioEliminarLogicamenteView(RolRequeridoMixin, View):

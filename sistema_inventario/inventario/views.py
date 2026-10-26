@@ -13,7 +13,7 @@ from django.utils.safestring import mark_safe
 from django.views.generic import CreateView, DetailView, ListView, UpdateView, View
 
 from cuentas.models import UsuarioAudacIA
-from cuentas.permisos import RolRequeridoMixin
+from cuentas.permisos import PermisoRequeridoMixin, RolRequeridoMixin
 from inventario.forms import (
     AlmacenForm,
     BajaPrestamoForm,
@@ -1010,9 +1010,10 @@ class ProductoListaView(LoginRequiredMixin, ListView):
         return context
 
 
-class ProductoCrearView(LoginRequiredMixin, AjaxModalFormMixin, CreateView):
+class ProductoCrearView(LoginRequiredMixin, PermisoRequeridoMixin, AjaxModalFormMixin, CreateView):
     """Creación de un nuevo producto en catálogo con opción de stock inicial y tipo opcional."""
 
+    permiso_requerido = "catalogo.crear"
     model = Producto
     form_class = ProductoForm
     template_name = "inventario/producto_form.html"
@@ -1064,9 +1065,10 @@ class ProductoCrearView(LoginRequiredMixin, AjaxModalFormMixin, CreateView):
             return self.form_invalid(form)
 
 
-class ProductoEditarView(LoginRequiredMixin, AjaxModalFormMixin, UpdateView):
+class ProductoEditarView(LoginRequiredMixin, PermisoRequeridoMixin, AjaxModalFormMixin, UpdateView):
     """Edición de datos operativos de un producto."""
 
+    permiso_requerido = "catalogo.editar"
     model = Producto
     form_class = ProductoForm
     template_name = "inventario/producto_form.html"
@@ -1101,6 +1103,17 @@ class ProductoEditarView(LoginRequiredMixin, AjaxModalFormMixin, UpdateView):
         kwargs = super().get_form_kwargs()
         kwargs["usuario"] = self.request.user
         return kwargs
+
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        user = self.request.user
+        if not user.es_administrador and not user.tiene_permiso("catalogo.trasladar_almacen"):
+            if "almacen" in form.fields:
+                form.fields["almacen"].disabled = True
+        if not user.es_administrador and not user.tiene_permiso("catalogo.reubicar_interno"):
+            if "ubicacion" in form.fields:
+                form.fields["ubicacion"].disabled = True
+        return form
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

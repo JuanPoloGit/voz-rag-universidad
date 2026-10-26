@@ -77,24 +77,47 @@ class UsuarioForm(forms.ModelForm):
         required=False,
         help_text=_("Mínimo 7 caracteres con al menos una letra y un número. Dejar en blanco para no modificar."),
     )
+    permisos_personalizados = forms.ModelMultipleChoiceField(
+        queryset=None,
+        widget=forms.CheckboxSelectMultiple(attrs={"class": "form-check-input"}),
+        required=False,
+        label=_("Permisos Granulares"),
+    )
 
     class Meta:
         from .models import UsuarioAudacIA
         model = UsuarioAudacIA
-        fields = ["username", "nombre_completo", "rol", "almacenes_asignados", "is_active"]
+        fields = ["username", "nombre_completo", "rol", "almacenes_asignados", "permisos_personalizados", "is_active"]
         widgets = {
             "username": forms.TextInput(attrs={"class": "form-control"}),
             "nombre_completo": forms.TextInput(attrs={"class": "form-control"}),
             "rol": forms.Select(attrs={"class": "form-select"}),
             "almacenes_asignados": forms.CheckboxSelectMultiple(attrs={"class": "form-check-input"}),
+            "permisos_personalizados": forms.CheckboxSelectMultiple(attrs={"class": "form-check-input"}),
             "is_active": forms.CheckboxInput(attrs={"class": "form-check-input"}),
         }
 
     def __init__(self, *args, request_user=None, **kwargs):
-        from .models import UsuarioAudacIA
+        from .models import UsuarioAudacIA, PermisoAudacIA, PRESETS_PERMISOS
         from inventario.models import Almacen
         self.request_user = request_user
         super().__init__(*args, **kwargs)
+
+        # Configuración del campo de permisos granulares
+        perms_qs = PermisoAudacIA.objects.all().order_by("modulo", "orden")
+        if "permisos_personalizados" in self.fields:
+            self.fields["permisos_personalizados"].queryset = perms_qs
+            self.fields["permisos_personalizados"].required = False
+            if self.instance.pk:
+                pks_actuales = list(self.instance.permisos_personalizados.values_list("pk", flat=True))
+                self.fields["permisos_personalizados"].initial = pks_actuales
+                self.initial["permisos_personalizados"] = pks_actuales
+            elif "permisos_personalizados" not in self.initial:
+                # Al crear nuevo usuario, preseleccionar el preset 'OPERADOR_INTEGRAL'
+                preset_cods = PRESETS_PERMISOS.get("OPERADOR_INTEGRAL", {}).get("codigos", [])
+                pks_default = list(perms_qs.filter(codigo__in=preset_cods).values_list("pk", flat=True))
+                self.fields["permisos_personalizados"].initial = pks_default
+                self.initial["permisos_personalizados"] = pks_default
 
         alms_qs = Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
         if "almacenes_asignados" in self.fields:
@@ -207,9 +230,10 @@ class UsuarioForm(forms.ModelForm):
                                         f"asignado a él y tiene productos registrados."
                                     ),
                                 )
-        else:
+        if rol != UsuarioAudacIA.Rol.USUARIO:
             cleaned_data["almacen_asignado"] = None
             cleaned_data["almacenes_asignados"] = []
+            cleaned_data["permisos_personalizados"] = []
 
         if password:
             password_validation.validate_password(password)
@@ -230,12 +254,48 @@ class UsuarioForm(forms.ModelForm):
         else:
             user.almacen_asignado = None
 
+        permisos = list(self.cleaned_data.get("permisos_personalizados") or []) if rol == user.Rol.USUARIO else []
+
+        # Detección de cambios de seguridad para versión de permisos y purga de sesiones
+        es_edicion = bool(user.pk)
+        rol_cambio = False
+        desactivado = False
+        permisos_cambiaron = False
+
+        if es_edicion:
+            from .models import UsuarioAudacIA
+            anterior = UsuarioAudacIA.objects.filter(pk=user.pk).first()
+            if anterior:
+                if anterior.rol != rol:
+                    rol_cambio = True
+                if anterior.is_active and not user.is_active:
+                    desactivado = True
+                if rol == user.Rol.USUARIO:
+                    pks_anteriores = set(anterior.permisos_personalizados.values_list("pk", flat=True))
+                    pks_nuevos = set(p.pk if hasattr(p, "pk") else p for p in permisos)
+                    if pks_anteriores != pks_nuevos:
+                        permisos_cambiaron = True
+
+        if permisos_cambiaron or rol_cambio:
+            user.permisos_version = (user.permisos_version or 1) + 1
+
         if commit:
             user.save()
             if rol == user.Rol.USUARIO and almacenes:
                 user.almacenes_asignados.set(almacenes)
             else:
                 user.almacenes_asignados.clear()
+
+            if rol == user.Rol.USUARIO:
+                user.permisos_personalizados.set(permisos)
+            else:
+                user.permisos_personalizados.clear()
+
+            # Purgar sesiones activas en la BD si el usuario fue desactivado o cambió de rol
+            if es_edicion and (desactivado or rol_cambio):
+                from .services import purgar_sesiones_activas
+                purgar_sesiones_activas(user)
+
         return user
 
 

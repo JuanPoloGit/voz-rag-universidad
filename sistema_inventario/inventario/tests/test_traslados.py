@@ -4,7 +4,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 
-from cuentas.models import UsuarioAudacIA
+from cuentas.models import UsuarioAudacIA, PermisoAudacIA
 from inventario.models import Almacen, Categoria, Existencia, Movimiento, Producto, Ubicacion, ProductoUbicacion
 from inventario.servicios.operaciones import (
     registrar_entrada,
@@ -31,6 +31,8 @@ class TrasladosTest(TestCase):
             rol=UsuarioAudacIA.Rol.USUARIO,
             almacen_asignado=self.almacen_origen,
         )
+        p_traslado = PermisoAudacIA.objects.get(codigo="movimientos.traslado")
+        self.user_origen.permisos_personalizados.add(p_traslado)
         self.user_ajeno = User.objects.create_user(
             username="user_ajeno",
             password="Password123",
