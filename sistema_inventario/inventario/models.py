@@ -72,6 +72,21 @@ class Almacen(models.Model):
     def __str__(self):
         return self.nombre
 
+    @property
+    def total_articulos(self) -> int:
+        """Cantidad de productos no archivados presentes en este almacén."""
+        from inventario.models import Producto
+        return (
+            Producto.objects.filter(archivado=False)
+            .filter(
+                models.Q(categoria__almacen_principal=self)
+                | models.Q(existencias__almacen=self)
+                | models.Q(ubicaciones__almacen=self)
+            )
+            .distinct()
+            .count()
+        )
+
 
 class Ubicacion(models.Model):
     """Ubicación dentro de un almacén (sección/estantería).
@@ -115,6 +130,11 @@ class Ubicacion(models.Model):
 
     def __str__(self):
         return f"{self.nombre} ({self.almacen.nombre})"
+
+    @property
+    def total_articulos(self) -> int:
+        """Cantidad de productos activos no archivados asignados a esta ubicación."""
+        return self.productos.filter(archivado=False).count()
 
 
 class Categoria(models.Model):
@@ -165,6 +185,11 @@ class Categoria(models.Model):
         """
         limpio = "".join(c for c in self.nombre if c.isalpha())
         return limpio[:3].upper().ljust(3, "X")
+
+    @property
+    def total_articulos(self) -> int:
+        """Cantidad de productos no archivados pertenecientes a esta categoría."""
+        return self.productos.filter(archivado=False).count()
 
 
 class TipoCategoria(models.Model):
@@ -957,3 +982,27 @@ class Auditoria(models.Model):
             f"[{self.fecha_hora:%Y-%m-%d %H:%M}] {self.accion} "
             f"{self.tipo_entidad} #{self.id_entidad}"
         )
+
+
+class AlertaStockLeida(models.Model):
+    """Registro persistente de alertas de stock leídas por usuario."""
+
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="alertas_stock_leidas",
+        verbose_name=_("usuario"),
+    )
+    clave = models.CharField(_("clave de alerta"), max_length=120, db_index=True)
+    fecha_leida = models.DateTimeField(_("fecha de lectura"), auto_now_add=True)
+
+    class Meta:
+        verbose_name = _("alerta de stock leída")
+        verbose_name_plural = _("alertas de stock leídas")
+        unique_together = ("usuario", "clave")
+        indexes = [
+            models.Index(fields=["usuario", "clave"]),
+        ]
+
+    def __str__(self):
+        return f"{self.usuario.username} - {self.clave}"

@@ -553,6 +553,20 @@
             text-decoration: underline;
         }
 
+        .table-item-link {
+            color: var(--text) !important;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-weight: 600;
+            transition: color 0.15s ease;
+        }
+        .table-item-link:hover {
+            color: var(--accent-bright) !important;
+            text-decoration: underline !important;
+        }
+
         /* ─── Forms ───────────────────────────────────────────────── */
         .form-group {
             margin-bottom: 1.25rem;
@@ -1406,7 +1420,7 @@
 
                 <a href="{% url 'inventario:categoria-lista' %}" class="nav-item {% block sidebar_categorias %}{% endblock %}{% block sidebar_ubicaciones %}{% endblock %}{% block sidebar_almacenes %}{% endblock %}">
                     <svg viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z"/><circle cx="17" cy="17" r="3"/></svg>
-                    Categorías y Bodegas
+                    Categorías y Almacenes
                 </a>
 
                 {% if user.es_administrador %}
@@ -1613,7 +1627,7 @@
                             </a>
                         </nav>
                     {% elif url_name in 'categoria-lista,categoria-crear,categoria-editar,categoria-desactivar,categoria-trasladar,ubicacion-lista,ubicacion-crear,ubicacion-editar,ubicacion-desactivar,trasladar-ubicacion,almacen-lista,almacen-crear,almacen-editar,almacen-desactivar,trasladar-almacen' %}
-                        <nav class="module-tabs" aria-label="Submenú de Categorías y Bodegas">
+                        <nav class="module-tabs" aria-label="Submenú de Categorías y Almacenes">
                             <a href="{% url 'inventario:categoria-lista' %}" class="module-tab {% if 'categoria' in url_name %}active{% endif %}">
                                 <svg viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z"/><circle cx="17" cy="17" r="3"/></svg>
                                 Categorías y Tipos

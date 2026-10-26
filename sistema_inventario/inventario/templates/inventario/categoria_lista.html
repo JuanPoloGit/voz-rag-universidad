@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block page_title %}Categorías y Bodegas{% endblock %}
+{% block page_title %}Categorías y Almacenes{% endblock %}
 {% block sidebar_categorias %}active{% endblock %}
 
 {% block title %}Categorías y Tipos — Inventario AudacIA{% endblock %}
@@ -101,9 +101,13 @@
                     {% for cat in categorias %}
                         <tr {% if not cat.activo %}style="opacity: 0.62;"{% endif %}>
                             <td>
-                                <strong>{{ cat.nombre }}</strong>
+                                <a href="{% url 'inventario:producto-lista' %}?almacen_id={{ cat.almacen_principal_id }}&categoria_id={{ cat.id }}"
+                                   class="table-item-link"
+                                   title="Ver productos de esta categoría">
+                                    <strong>{{ cat.nombre }}</strong>
+                                </a>
                                 <div style="font-size: 11px; color: var(--text-faint);">
-                                    {{ cat.productos.count }} artículo(s)
+                                    {{ cat.total_articulos }} artículo(s)
                                 </div>
                             </td>
                             <td><code>{{ cat.prefijo_codigo }}-XXXX</code></td>
@@ -113,7 +117,7 @@
                                         <div class="type-list">
                                             {% for t in tipos_activos %}
                                                 <span class="type-chip">
-                                                    <span>{{ t.nombre }}</span>
+                                                    <a href="{% url 'inventario:producto-lista' %}?almacen_id={{ cat.almacen_principal_id }}&categoria_id={{ cat.id }}&tipo_id={{ t.id }}" style="color: inherit; text-decoration: none;" title="Ver productos de tipo {{ t.nombre }}">{{ t.nombre }}</a>
                                                     <button type="button"
                                                             class="type-chip-btn btn-editar-tipo-chip"
                                                             data-id="{{ t.id }}"
@@ -139,7 +143,7 @@
                                     {% endif %}
                                 {% endwith %}
                             </td>
-                            <td><span class="badge badge-accent">{{ cat.almacen_principal.nombre }}</span></td>
+                            <td><a href="{% url 'inventario:producto-lista' %}?almacen_id={{ cat.almacen_principal_id }}" style="text-decoration: none;" title="Ver productos de este almacén"><span class="badge badge-accent">{{ cat.almacen_principal.nombre }}</span></a></td>
                             <td>
                                 {% if cat.activo %}
                                     <span class="badge badge-ok">Activa</span>

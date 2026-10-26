@@ -1,7 +1,10 @@
 """Context processors para la aplicación inventario."""
 
 from typing import Any, Dict
-from inventario.servicios.alertas import obtener_alertas_stock
+from inventario.servicios.alertas import (
+    obtener_alertas_stock,
+    obtener_claves_alertas_leidas,
+)
 
 
 def alertas_stock(request) -> Dict[str, Any]:
@@ -19,8 +22,10 @@ def alertas_stock(request) -> Dict[str, Any]:
         }
 
     alertas = obtener_alertas_stock(usuario=request.user)
-    leidas = set(request.session.get("alertas_leidas", [])) if hasattr(request, "session") else set()
-    no_leidas = 0
+    leidas = obtener_claves_alertas_leidas(request.user)
+    if hasattr(request, "session"):
+        request.session["alertas_leidas"] = list(leidas)
+
     criticas = alertas.get("criticas", [])
     bajas = alertas.get("bajas", [])
     for ex in criticas:

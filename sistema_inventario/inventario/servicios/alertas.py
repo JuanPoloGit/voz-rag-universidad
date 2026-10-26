@@ -8,7 +8,7 @@ de la especificación de requisitos.
 from typing import Any, Dict, Optional
 from django.db.models import F
 
-from inventario.models import Almacen, Existencia
+from inventario.models import Almacen, Existencia, AlertaStockLeida
 
 
 def verificar_estado_alerta(existencia: Existencia) -> Dict[str, Any]:
@@ -68,6 +68,11 @@ def obtener_alertas_stock(
         user_alms = usuario.get_almacenes_asignados()
         if user_alms.exists():
             qs = qs.filter(almacen__in=user_alms)
+            if almacen:
+                if user_alms.filter(pk=almacen.pk).exists():
+                    qs = qs.filter(almacen=almacen)
+                else:
+                    qs = qs.none()
         else:
             qs = qs.none()
     elif almacen:
@@ -89,3 +94,41 @@ def obtener_alertas_stock(
         "total_bajas": total_bajas,
         "total_alertas": total_criticas + total_bajas,
     }
+
+
+def obtener_claves_alertas_leidas(usuario) -> set:
+    """Retorna el conjunto de claves de alertas marcadas como leídas de forma persistente."""
+    if not usuario or not usuario.is_authenticated:
+        return set()
+    return set(
+        AlertaStockLeida.objects.filter(usuario=usuario).values_list("clave", flat=True)
+    )
+
+
+def marcar_alerta_stock_leida(usuario, clave: str) -> None:
+    """Marca una alerta específica como leída para el usuario."""
+    if usuario and usuario.is_authenticated and clave:
+        AlertaStockLeida.objects.get_or_create(usuario=usuario, clave=clave)
+
+
+def desmarcar_alerta_stock_leida(usuario, clave: str) -> None:
+    """Desmarca una alerta como leída (vuelve a estado pendiente)."""
+    if usuario and usuario.is_authenticated and clave:
+        AlertaStockLeida.objects.filter(usuario=usuario, clave=clave).delete()
+
+
+def marcar_todas_alertas_stock_leidas(usuario, claves: list) -> None:
+    """Marca un conjunto de alertas como leídas en bloque para el usuario."""
+    if usuario and usuario.is_authenticated and claves:
+        existentes = set(
+            AlertaStockLeida.objects.filter(usuario=usuario, clave__in=claves).values_list("clave", flat=True)
+        )
+        nuevas = [AlertaStockLeida(usuario=usuario, clave=k) for k in claves if k not in existentes]
+        if nuevas:
+            AlertaStockLeida.objects.bulk_create(nuevas, ignore_conflicts=True)
+
+
+def limpiar_alertas_stock_leidas(usuario) -> None:
+    """Elimina todas las alertas leídas registradas para el usuario."""
+    if usuario and usuario.is_authenticated:
+        AlertaStockLeida.objects.filter(usuario=usuario).delete()

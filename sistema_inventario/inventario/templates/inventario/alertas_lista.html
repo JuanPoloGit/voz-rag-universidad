@@ -55,6 +55,23 @@
     .notif-dot.crit { background: var(--crit); box-shadow: 0 0 8px var(--crit); }
     .notif-dot.warn { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
 
+    .kpi-filter-card {
+        cursor: pointer;
+    }
+    .kpi-filter-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    }
+    .kpi-filter-card.active-kpi {
+        box-shadow: 0 0 0 2px var(--accent-bright);
+    }
+    .kpi-filter-card.active-kpi-crit {
+        box-shadow: 0 0 0 2px var(--crit);
+    }
+    .kpi-filter-card.active-kpi-warn {
+        box-shadow: 0 0 0 2px var(--warn);
+    }
+
     @media (max-width: 640px) {
         .notif-item {
             flex-direction: column;
@@ -78,35 +95,85 @@
             </h1>
             <p style="color: var(--text-muted); font-size: 13px; margin-top: 3px;">
                 {% if alertas.total_alertas > 0 %}
-                    Monitoreo en tiempo real de artículos agotados o por debajo del umbral mínimo ({{ alertas.total_alertas }} alerta(s) activa(s)).
+                    Monitoreo en tiempo real de artículos agotados o por debajo del umbral mínimo ({{ alertas.total_alertas }} alerta(s) activa(s)){% if almacen_obj %} en <strong>{{ almacen_obj.nombre }}</strong>{% endif %}.
                 {% else %}
-                    Todo el inventario se encuentra en niveles óptimos de abastecimiento.
+                    {% if almacen_obj %}
+                        El almacén <strong>{{ almacen_obj.nombre }}</strong> se encuentra en niveles óptimos de abastecimiento.
+                    {% else %}
+                        Todo el inventario se encuentra en niveles óptimos de abastecimiento.
+                    {% endif %}
                 {% endif %}
             </p>
         </div>
     </div>
 
-    <!-- Tarjetas de resumen compactas -->
+    <!-- Tarjetas de resumen interactivas -->
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px;">
-        <div style="background: var(--bg-panel-2); border: 1px solid var(--border); padding: 12px 14px; border-radius: var(--radius-sm);">
+        <a href="{% url 'inventario:alertas-lista' %}{% if almacen_id %}?almacen_id={{ almacen_id }}{% endif %}"
+           class="kpi-filter-card {% if nivel == 'TODAS' or not nivel %}active-kpi{% endif %}"
+           style="text-decoration: none; display: block; background: var(--bg-panel-2); border: 1px solid {% if nivel == 'TODAS' or not nivel %}var(--accent-bright){% else %}var(--border){% endif %}; padding: 12px 14px; border-radius: var(--radius-sm); transition: all 0.15s ease;"
+           title="Ver todas las alertas activas">
             <div style="font-size: 11px; font-weight: 700; color: var(--text-faint); text-transform: uppercase;">Total Alertas Activas</div>
             <div style="font-size: 22px; font-weight: 800; color: var(--accent-bright); margin-top: 2px;">{{ alertas.total_alertas }}</div>
-        </div>
-        <div style="background: var(--danger-bg); border: 1px solid rgba(255,107,122,0.3); padding: 12px 14px; border-radius: var(--radius-sm);">
+        </a>
+        <a href="{% url 'inventario:alertas-lista' %}?nivel=CRITICA{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
+           class="kpi-filter-card {% if nivel == 'CRITICA' %}active-kpi-crit{% endif %}"
+           style="text-decoration: none; display: block; background: var(--danger-bg); border: 1px solid {% if nivel == 'CRITICA' %}var(--danger){% else %}rgba(255,107,122,0.3){% endif %}; padding: 12px 14px; border-radius: var(--radius-sm); transition: all 0.15s ease;"
+           title="Filtrar por productos agotados (Stock 0)">
             <div style="font-size: 11px; font-weight: 700; color: var(--crit); text-transform: uppercase;">Agotados (Stock 0)</div>
             <div style="font-size: 22px; font-weight: 800; color: var(--danger); margin-top: 2px;">{{ alertas.total_criticas }}</div>
-        </div>
-        <div style="background: var(--warning-bg); border: 1px solid rgba(255,189,92,0.3); padding: 12px 14px; border-radius: var(--radius-sm);">
+        </a>
+        <a href="{% url 'inventario:alertas-lista' %}?nivel=BAJA{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
+           class="kpi-filter-card {% if nivel == 'BAJA' %}active-kpi-warn{% endif %}"
+           style="text-decoration: none; display: block; background: var(--warning-bg); border: 1px solid {% if nivel == 'BAJA' %}var(--warning){% else %}rgba(255,189,92,0.3){% endif %}; padding: 12px 14px; border-radius: var(--radius-sm); transition: all 0.15s ease;"
+           title="Filtrar por productos con stock bajo (&lt; Mínimo)">
             <div style="font-size: 11px; font-weight: 700; color: var(--warn); text-transform: uppercase;">Stock Bajo (&lt; Mínimo)</div>
             <div style="font-size: 22px; font-weight: 800; color: var(--warning); margin-top: 2px;">{{ alertas.total_bajas }}</div>
-        </div>
+        </a>
     </div>
 
-    <!-- Barra de búsqueda automática -->
+    <!-- Barra de Filtros Completa y Responsiva -->
     <div style="margin-bottom: 16px;">
-        <form method="get" action="{% url 'inventario:alertas-lista' %}" data-auto-filter="true" style="max-width: 420px;">
-            <input type="text" name="q" value="{{ q }}" class="form-control"
-                   placeholder="Filtrar alertas por código, producto o bodega..." autocomplete="off">
+        <form method="get" action="{% url 'inventario:alertas-lista' %}" data-auto-filter="true"
+              style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; background: var(--bg-panel-2); border: 1px solid var(--border); padding: 10px 14px; border-radius: var(--radius-sm);">
+            
+            <div style="flex: 2; min-width: 220px;">
+                <input type="text" name="q" value="{{ q }}" class="form-control"
+                       placeholder="Buscar por código, producto o almacén..." autocomplete="off">
+            </div>
+
+            {% if almacenes and almacenes.count > 1 or not request.user.es_usuario_normal %}
+            <div style="flex: 1; min-width: 170px;">
+                <select name="almacen_id" class="form-control" title="Filtrar por Almacén">
+                    <option value="">Todos los almacenes</option>
+                    {% for alm in almacenes %}
+                        <option value="{{ alm.id }}" {% if almacen_id == alm.id|stringformat:'s' %}selected{% endif %}>{{ alm.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+
+            <div style="flex: 1; min-width: 160px;">
+                <select name="nivel" class="form-control" title="Filtrar por Nivel de Alerta">
+                    <option value="" {% if not nivel or nivel == 'TODAS' %}selected{% endif %}>Todas las alertas</option>
+                    <option value="CRITICA" {% if nivel == 'CRITICA' %}selected{% endif %}>Agotados (Stock 0)</option>
+                    <option value="BAJA" {% if nivel == 'BAJA' %}selected{% endif %}>Stock Bajo (&lt; Mínimo)</option>
+                </select>
+            </div>
+
+            <div style="flex: 1; min-width: 150px;">
+                <select name="estado" class="form-control" title="Filtrar por Estado de Lectura">
+                    <option value="" {% if not filtro_estado or filtro_estado == 'todas' %}selected{% endif %}>Todos los estados</option>
+                    <option value="pendientes" {% if filtro_estado == 'pendientes' %}selected{% endif %}>Solo no leídas</option>
+                    <option value="leidas" {% if filtro_estado == 'leidas' %}selected{% endif %}>Solo leídas</option>
+                </select>
+            </div>
+
+            {% if q or almacen_id or nivel != 'TODAS' or filtro_estado != 'todas' %}
+            <div>
+                <a href="{% url 'inventario:alertas-lista' %}" class="btn btn-sm btn-secondary" style="white-space: nowrap;">Limpiar</a>
+            </div>
+            {% endif %}
         </form>
     </div>
 
@@ -128,7 +195,7 @@
                                 {% endif %}
                             </div>
                             <div style="font-size: 12.5px; color: var(--text-dim); margin-top: 4px;">
-                                En bodega <strong>{{ ex.almacen.nombre }}</strong>:
+                                En almacén <strong>{{ ex.almacen.nombre }}</strong>:
                                 disponible <strong style="color: {% if ex.tipo_alerta == 'CRITICA' %}var(--crit){% else %}var(--warn){% endif %};">{{ ex.stock_disponible }} unid.</strong>
                                 (umbral mínimo requerido: {{ ex.producto.stock_minimo }} unid.)
                             </div>
@@ -153,13 +220,18 @@
             {% endfor %}
         </div>
     {% else %}
-        <div style="text-align: center; padding: 2.5rem 1rem; color: var(--text-muted);">
-            No hay alertas de stock que coincidan con la búsqueda.
+        <div style="text-align: center; padding: 2.5rem 1rem; color: var(--text-muted); background: var(--bg-panel-2); border: 1px dashed var(--border); border-radius: var(--radius-sm);">
+            No se encontraron alertas de stock que coincidan con los filtros aplicados.
+            {% if q or almacen_id or nivel != 'TODAS' or filtro_estado != 'todas' %}
+                <div style="margin-top: 10px;">
+                    <a href="{% url 'inventario:alertas-lista' %}" class="btn btn-sm btn-secondary">Limpiar filtros</a>
+                </div>
+            {% endif %}
         </div>
     {% endif %}
 </div>
 
-<!-- ═══ MODAL REGISTRAR ENTRADA DE STOCK (PRODUCTO Y BODEGA FIJOS) ═══ -->
+<!-- ═══ MODAL REGISTRAR ENTRADA DE STOCK (PRODUCTO Y ALMACÉN FIJOS) ═══ -->
 <dialog id="modalEntradaAlerta" class="app-modal">
     <form method="post" action="{% url 'inventario:movimiento-entrada' %}" id="formModalEntradaAlerta" style="display: flex; flex-direction: column; max-height: 90dvh; overflow: hidden;">
         {% csrf_token %}
@@ -174,7 +246,7 @@
         </div>
 
         <div class="app-modal-body">
-            <!-- Resumen fijo del producto y bodega seleccionados (no editable) -->
+            <!-- Resumen fijo del producto y almacén seleccionados (no editable) -->
             <div style="background: var(--bg-deep-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 16px;">
                 <div style="font-size: 11px; text-transform: uppercase; color: var(--text-faint); font-weight: 600;">Artículo a abastecer</div>
                 <div id="dispProdNombre" style="font-weight: 700; font-size: 14.5px; color: var(--text); margin-top: 3px;"></div>

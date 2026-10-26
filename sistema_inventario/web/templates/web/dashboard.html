@@ -46,6 +46,21 @@
     .kpi-card.kpi-amber::after { background: var(--warn); }
     .kpi-card.kpi-purple::after { background: #8b5cf6; }
 
+    .kpi-card a {
+        text-decoration: none;
+        color: inherit;
+        display: block;
+    }
+    .kpi-card:has(a) {
+        cursor: pointer;
+        transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .kpi-card:has(a):hover {
+        transform: translateY(-2px);
+        border-color: var(--accent-bright);
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+    }
+
     .kpi-label {
         font-size: 12px;
         font-weight: 500;
@@ -296,13 +311,15 @@
     </div>
 
     <div class="kpi-card kpi-blue">
-        <div class="kpi-label">Catálogo</div>
-        <div class="kpi-value" style="color: var(--accent-bright);">{{ metricas.total_productos|default:"0" }}</div>
-        <div class="kpi-footnote">Productos activos</div>
+        <a href="{% url 'inventario:producto-lista' %}{% if almacen_seleccionado %}?almacen_id={{ almacen_seleccionado }}{% endif %}" title="Ver catálogo de productos">
+            <div class="kpi-label">Catálogo</div>
+            <div class="kpi-value" style="color: var(--accent-bright);">{{ metricas.total_productos|default:"0" }}</div>
+            <div class="kpi-footnote">Productos activos</div>
+        </a>
     </div>
 
     <div class="kpi-card kpi-red" {% if metricas.total_criticos > 0 %}style="border-color: rgba(255,107,122,0.3);"{% endif %}>
-        <a href="{% url 'inventario:alertas-lista' %}" style="text-decoration: none; color: inherit; display: block;">
+        <a href="{% url 'inventario:alertas-lista' %}?nivel=CRITICA{% if almacen_seleccionado %}&almacen_id={{ almacen_seleccionado }}{% endif %}" style="text-decoration: none; color: inherit; display: block;" title="Ver productos sin stock">
             <div class="kpi-label">Sin Stock</div>
             <div class="kpi-value" style="color: var(--crit);">{{ metricas.total_criticos|default:"0" }}</div>
             <div class="kpi-footnote">Productos agotados</div>
@@ -310,7 +327,7 @@
     </div>
 
     <div class="kpi-card kpi-amber" {% if metricas.total_bajo_stock > 0 %}style="border-color: rgba(255,189,92,0.3);"{% endif %}>
-        <a href="{% url 'inventario:alertas-lista' %}" style="text-decoration: none; color: inherit; display: block;">
+        <a href="{% url 'inventario:alertas-lista' %}?nivel=BAJA{% if almacen_seleccionado %}&almacen_id={{ almacen_seleccionado }}{% endif %}" style="text-decoration: none; color: inherit; display: block;" title="Ver productos con stock bajo">
             <div class="kpi-label">Stock Bajo</div>
             <div class="kpi-value" style="color: var(--warn);">{{ metricas.total_bajo_stock|default:"0" }}</div>
             <div class="kpi-footnote">Bajo umbral mínimo</div>
@@ -318,9 +335,11 @@
     </div>
 
     <div class="kpi-card kpi-purple">
-        <div class="kpi-label">En Préstamo</div>
-        <div class="kpi-value" style="color: #c48bff;">{{ metricas.total_stock_prestamo|default:"0" }}</div>
-        <div class="kpi-footnote">{{ metricas.total_prestamos_activos|default:"0" }} préstamos activos</div>
+        <a href="{% url 'inventario:movimiento-lista' %}?vista=PRESTAMOS{% if almacen_seleccionado %}&almacen_id={{ almacen_seleccionado }}{% endif %}" title="Ver tabla de préstamos">
+            <div class="kpi-label">En Préstamo</div>
+            <div class="kpi-value" style="color: #c48bff;">{{ metricas.total_stock_prestamo|default:"0" }}</div>
+            <div class="kpi-footnote">{{ metricas.total_prestamos_activos|default:"0" }} préstamos activos</div>
+        </a>
     </div>
 </div>
 

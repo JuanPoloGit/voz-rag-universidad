@@ -17,7 +17,15 @@ class NecesitaTraslado(InventarioServiceError):
         self.destino = destino
 
 
-from .alertas import obtener_alertas_stock, verificar_estado_alerta
+from .alertas import (
+    desmarcar_alerta_stock_leida,
+    limpiar_alertas_stock_leidas,
+    marcar_alerta_stock_leida,
+    marcar_todas_alertas_stock_leidas,
+    obtener_alertas_stock,
+    obtener_claves_alertas_leidas,
+    verificar_estado_alerta,
+)
 from .operaciones import (
     confirmar_conteo_fisico,
     registrar_baja_prestamo,

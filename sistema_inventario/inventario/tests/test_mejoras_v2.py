@@ -408,8 +408,8 @@ class MejorasV2TestCase(TestCase):
         resp_vista = self.client.get(reverse("inventario:movimiento-lista") + "?vista=TRASLADO")
         self.assertEqual(resp_vista.status_code, 200)
 
-    def test_prestamo_abierto_muestra_badge_en_prestamo_no_cerrado(self):
-        """Un préstamo en estado ABIERTO debe mostrar la etiqueta 'En Préstamo' y las acciones de Devolver y Baja."""
+    def test_prestamo_abierto_muestra_badge_prestamo_no_cerrado(self):
+        """Un préstamo en estado ABIERTO debe mostrar la etiqueta 'Préstamo' y las acciones de Devolver y Baja."""
         p_obj, mov, _ = registrar_prestamo(
             producto=self.producto,
             almacen=self.almacen_a,
@@ -424,8 +424,208 @@ class MejorasV2TestCase(TestCase):
         self.client.force_login(self.admin)
         resp = self.client.get(reverse("inventario:movimiento-lista") + "?vista=PRESTAMOS")
         self.assertEqual(resp.status_code, 200)
-        self.assertContains(resp, "En Préstamo")
+        self.assertContains(resp, '<span class="badge badge-purple">Préstamo</span>')
         self.assertContains(resp, "Devolver")
         self.assertContains(resp, "Baja daño")
         # No debe figurar como Cerrado en la columna de estado
         self.assertNotContains(resp, '<span class="badge badge-ok">Cerrado</span>')
+
+    def test_selector_movimiento_responsivo_segun_rol(self):
+        """El selector de tipo de movimiento debe aplicar cols-4 para usuario normal y cols-5 para admin."""
+        self.client.force_login(self.usuario)
+        resp_user = self.client.get(reverse("inventario:movimiento-lista"))
+        self.assertContains(resp_user, "mov-type-selector cols-4")
+
+        self.client.force_login(self.admin)
+        resp_admin = self.client.get(reverse("inventario:movimiento-lista"))
+        self.assertContains(resp_admin, "mov-type-selector cols-5")
+
+    def test_desactivar_categoria_con_productos_mensaje_sin_corchetes(self):
+        """Al fallar la desactivación de categoría con productos, el mensaje no debe contener corchetes ni comillas."""
+        self.client.force_login(self.admin)
+        resp = self.client.post(
+            reverse("inventario:categoria-desactivar", kwargs={"pk": self.categoria_a.pk}),
+            follow=True,
+        )
+        self.assertEqual(resp.status_code, 200)
+        messages_list = list(resp.context["messages"])
+        self.assertTrue(len(messages_list) > 0)
+        error_msg = str(messages_list[0])
+        self.assertIn("No se puede desactivar una categoría con productos activos asociados.", error_msg)
+        self.assertNotIn("['", error_msg)
+        self.assertNotIn("']", error_msg)
+
+    def test_dashboard_enlaces_tarjetas(self):
+        """El dashboard debe enlazar catálogo, sin stock, stock bajo y préstamos con persistencia de almacén."""
+        self.client.force_login(self.admin)
+
+        # 1. Sin filtro de almacén
+        resp = self.client.get(reverse("web:dashboard"))
+        self.assertEqual(resp.status_code, 200)
+
+        # Tarjeta Catálogo tiene enlace
+        self.assertContains(resp, reverse("inventario:producto-lista"))
+        self.assertContains(resp, 'title="Ver catálogo de productos"')
+
+        # Tarjetas Sin Stock y Stock Bajo
+        self.assertContains(resp, reverse("inventario:alertas-lista") + "?nivel=CRITICA")
+        self.assertContains(resp, reverse("inventario:alertas-lista") + "?nivel=BAJA")
+
+        # Tarjeta Préstamo tiene enlace a vista=PRESTAMOS
+        self.assertContains(resp, "vista=PRESTAMOS")
+        self.assertContains(resp, 'title="Ver tabla de préstamos"')
+
+        # Tarjeta Stock Disponible NO tiene enlace propio
+        self.assertNotContains(resp, 'title="Ver stock disponible"')
+
+        # 2. Con almacén seleccionado (persistencia de almacén)
+        resp_alm = self.client.get(reverse("web:dashboard") + f"?almacen_id={self.almacen_a.pk}")
+        self.assertEqual(resp_alm.status_code, 200)
+        self.assertContains(resp_alm, f"{reverse('inventario:producto-lista')}?almacen_id={self.almacen_a.pk}")
+        self.assertContains(resp_alm, f"{reverse('inventario:alertas-lista')}?nivel=CRITICA&almacen_id={self.almacen_a.pk}")
+        self.assertContains(resp_alm, f"{reverse('inventario:alertas-lista')}?nivel=BAJA&almacen_id={self.almacen_a.pk}")
+        self.assertContains(resp_alm, f"{reverse('inventario:movimiento-lista')}?vista=PRESTAMOS&almacen_id={self.almacen_a.pk}")
+
+    def test_seccion_categorias_y_almacenes_y_enlaces_filtros(self):
+        """Las vistas deben titularse 'Categorías y Almacenes', enlazar al catálogo con filtros y mostrar conteo de artículos."""
+        self.client.force_login(self.admin)
+
+        # 1. Categorías y Tipos
+        resp_cat = self.client.get(reverse("inventario:categoria-lista"))
+        self.assertEqual(resp_cat.status_code, 200)
+        self.assertContains(resp_cat, "Categorías y Almacenes")
+        self.assertContains(resp_cat, f"/inventario/productos/?almacen_id={self.almacen_a.pk}&categoria_id={self.categoria_a.pk}")
+        self.assertContains(resp_cat, "artículo(s)")
+
+        # 2. Ubicaciones
+        resp_ub = self.client.get(reverse("inventario:ubicacion-lista"))
+        self.assertEqual(resp_ub.status_code, 200)
+        self.assertContains(resp_ub, "Categorías y Almacenes")
+        self.assertContains(resp_ub, f"/inventario/productos/?almacen_id={self.almacen_a.pk}&ubicacion_id={self.ubicacion_a1.pk}")
+        self.assertContains(resp_ub, "artículo(s)")
+
+        # 3. Almacenes
+        resp_alm = self.client.get(reverse("inventario:almacen-lista"))
+        self.assertEqual(resp_alm.status_code, 200)
+        self.assertContains(resp_alm, "Categorías y Almacenes")
+        self.assertContains(resp_alm, f"/inventario/productos/?almacen_id={self.almacen_a.pk}")
+        self.assertContains(resp_alm, "artículo(s)")
+
+    def test_persistencia_notificaciones_leidas_al_cerrar_sesion(self):
+        """Las notificaciones leídas deben persistir en base de datos al cerrar sesión y volver a iniciar sesión."""
+        from inventario.models import AlertaStockLeida
+        from inventario.servicios.datos_maestros import crear_producto
+
+        # Creamos un producto con stock 0 y stock_minimo 10 para generar alerta crítica
+        p_agotado = crear_producto(
+            nombre="Alambre de Cobre",
+            categoria=self.categoria_a,
+            stock_inicial=0,
+            stock_minimo=10,
+            ubicaciones=[self.ubicacion_a1.id],
+            usuario=self.superadmin,
+        )
+
+        self.client.force_login(self.admin)
+        resp_inicial = self.client.get(reverse("inventario:alertas-lista"))
+        self.assertEqual(resp_inicial.status_code, 200)
+
+        clave = f"{p_agotado.pk}:{self.almacen_a.pk}:0"
+
+        # Marcar como leída vía POST
+        resp_post = self.client.post(
+            reverse("inventario:alerta-marcar-leida"),
+            data={"key": clave, "accion": "una"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(resp_post.status_code, 200)
+
+        # Verificar persistencia en modelo AlertaStockLeida
+        self.assertTrue(
+            AlertaStockLeida.objects.filter(usuario=self.admin, clave=clave).exists()
+        )
+
+        # Simular cierre de sesión completo
+        self.client.logout()
+
+        # Iniciar sesión nuevamente con el mismo usuario
+        self.client.force_login(self.admin)
+        resp_despues = self.client.get(reverse("inventario:alertas-lista"))
+        self.assertEqual(resp_despues.status_code, 200)
+
+        # En context processor o vista, la alerta debe permanecer leída
+        alertas = resp_despues.context["alertas"]
+        self.assertEqual(alertas["total_no_leidas"], 0)
+
+    def test_alertas_stock_filtros_nivel_y_almacen(self):
+        """La vista de alertas de stock debe permitir filtrar por almacén, nivel (crítica/baja) y estado de lectura."""
+        self.client.force_login(self.admin)
+
+        # Crear producto crítico (stock 0) en almacén A
+        prod_crit = crear_producto(
+            nombre="Tornillos Acero Crit",
+            categoria=self.categoria_a,
+            stock_inicial=0,
+            ubicaciones=[self.ubicacion_a1.id],
+            stock_minimo=5,
+            usuario=self.superadmin,
+        )
+
+        # Crear producto con stock bajo en almacén B
+        cat_b = crear_categoria(nombre="Ferretería B", almacen_principal=self.almacen_b, usuario=self.superadmin)
+        prod_bajo = crear_producto(
+            nombre="Lija Madera Bajo",
+            categoria=cat_b,
+            stock_inicial=2,
+            ubicaciones=[self.ubicacion_b1.id],
+            stock_minimo=10,
+            usuario=self.superadmin,
+        )
+
+        # 1. Sin filtros: ambas alertas presentes en el contexto y formulario con filtros disponible
+        resp = self.client.get(reverse("inventario:alertas-lista"))
+        self.assertEqual(resp.status_code, 200)
+        nombres_todas = [n.producto.nombre for n in resp.context["notificaciones"]]
+        self.assertIn("Tornillos Acero Crit", nombres_todas)
+        self.assertIn("Lija Madera Bajo", nombres_todas)
+        self.assertContains(resp, 'name="almacen_id"')
+        self.assertContains(resp, 'name="nivel"')
+        self.assertContains(resp, 'name="estado"')
+
+        # 2. Filtrar por almacén A: solo Tornillos Acero Crit en notificaciones
+        resp_alm_a = self.client.get(reverse("inventario:alertas-lista") + f"?almacen_id={self.almacen_a.pk}")
+        self.assertEqual(resp_alm_a.status_code, 200)
+        nombres_alm_a = [n.producto.nombre for n in resp_alm_a.context["notificaciones"]]
+        self.assertIn("Tornillos Acero Crit", nombres_alm_a)
+        self.assertNotIn("Lija Madera Bajo", nombres_alm_a)
+        self.assertEqual(resp_alm_a.context["alertas"]["total_criticas"], 1)
+        self.assertEqual(resp_alm_a.context["alertas"]["total_bajas"], 0)
+
+        # 3. Filtrar por almacén B: solo Lija Madera Bajo en notificaciones
+        resp_alm_b = self.client.get(reverse("inventario:alertas-lista") + f"?almacen_id={self.almacen_b.pk}")
+        self.assertEqual(resp_alm_b.status_code, 200)
+        nombres_alm_b = [n.producto.nombre for n in resp_alm_b.context["notificaciones"]]
+        self.assertIn("Lija Madera Bajo", nombres_alm_b)
+        self.assertNotIn("Tornillos Acero Crit", nombres_alm_b)
+        self.assertEqual(resp_alm_b.context["alertas"]["total_criticas"], 0)
+        self.assertEqual(resp_alm_b.context["alertas"]["total_bajas"], 1)
+
+        # 4. Filtrar por nivel CRITICA: solo Tornillos Acero Crit en notificaciones
+        resp_crit = self.client.get(reverse("inventario:alertas-lista") + "?nivel=CRITICA")
+        self.assertEqual(resp_crit.status_code, 200)
+        nombres_crit = [n.producto.nombre for n in resp_crit.context["notificaciones"]]
+        self.assertIn("Tornillos Acero Crit", nombres_crit)
+        self.assertNotIn("Lija Madera Bajo", nombres_crit)
+
+        # 5. Filtrar por nivel BAJA: solo Lija Madera Bajo en notificaciones
+        resp_baja = self.client.get(reverse("inventario:alertas-lista") + "?nivel=BAJA")
+        self.assertEqual(resp_baja.status_code, 200)
+        nombres_baja = [n.producto.nombre for n in resp_baja.context["notificaciones"]]
+        self.assertIn("Lija Madera Bajo", nombres_baja)
+        self.assertNotIn("Tornillos Acero Crit", nombres_baja)
+
+        # 6. Combinación de filtros: Almacén A + nivel BAJA (no hay coincidencias)
+        resp_cruce = self.client.get(reverse("inventario:alertas-lista") + f"?almacen_id={self.almacen_a.pk}&nivel=BAJA")
+        self.assertEqual(resp_cruce.status_code, 200)
+        self.assertEqual(len(resp_cruce.context["notificaciones"]), 0)
+        self.assertContains(resp_cruce, "No se encontraron alertas de stock que coincidan con los filtros aplicados.")

@@ -45,7 +45,12 @@ from inventario.models import (
 from inventario.servicios import (
     NecesitaTraslado,
     confirmar_conteo_fisico,
+    desmarcar_alerta_stock_leida,
+    limpiar_alertas_stock_leidas,
+    marcar_alerta_stock_leida,
+    marcar_todas_alertas_stock_leidas,
     obtener_alertas_stock,
+    obtener_claves_alertas_leidas,
     registrar_baja_prestamo,
     registrar_conteo_fisico,
     registrar_devolucion_prestamo,
@@ -142,6 +147,24 @@ def _procesar_error_formulario(form, exc):
     form.add_error(None, msg_str)
 
 
+def _formatear_error_excepcion(exc: Exception) -> str:
+    """Extrae un mensaje de error limpio y legible para el usuario, sin listas ni corchetes."""
+    if hasattr(exc, "messages") and exc.messages:
+        return " ".join(str(m) for m in exc.messages)
+    if hasattr(exc, "message_dict") and exc.message_dict:
+        partes = []
+        for campo, errs in exc.message_dict.items():
+            err_text = ", ".join(str(e) for e in errs)
+            partes.append(f"{campo}: {err_text}" if campo != "__all__" else err_text)
+        return " | ".join(partes)
+    texto = str(exc).strip()
+    if (texto.startswith("['") and texto.endswith("']")) or (texto.startswith('["') and texto.endswith('"]')):
+        texto = texto[2:-2].strip()
+    elif texto.startswith("[") and texto.endswith("]"):
+        texto = texto[1:-1].strip("'\" ")
+    return texto
+
+
 class AjaxModalFormMixin:
     """Mixin para vistas de formulario embebidas en modales (<dialog>).
     
@@ -215,7 +238,7 @@ class AlmacenReactivarView(LoginRequiredMixin, RolRequeridoMixin, View):
             reactivar_almacen(almacen=almacen, usuario=request.user, ip_origen=_obtener_ip(request))
             messages.success(request, f"Almacén '{almacen.nombre}' habilitado nuevamente.")
         except Exception as exc:
-            messages.error(request, str(exc))
+            messages.error(request, _formatear_error_excepcion(exc))
         return redirect(request.POST.get("next") or "inventario:almacen-lista")
 
 
@@ -233,7 +256,7 @@ class AlmacenEliminarView(LoginRequiredMixin, RolRequeridoMixin, View):
             messages.warning(request, str(exc))
             return redirect("inventario:almacen-desactivar", pk=almacen.pk)
         except Exception as exc:
-            messages.error(request, str(exc))
+            messages.error(request, _formatear_error_excepcion(exc))
         return redirect(request.POST.get("next") or "inventario:almacen-lista")
 
 
@@ -257,7 +280,7 @@ class AlmacenCrearView(LoginRequiredMixin, RolRequeridoMixin, AjaxModalFormMixin
             messages.success(self.request, f"Almacén '{almacen.nombre}' creado exitosamente.")
             return self.responder_exito(self.success_url)
         except Exception as exc:
-            form.add_error(None, str(exc))
+            _procesar_error_formulario(form, exc)
             return self.form_invalid(form)
 
 
@@ -282,7 +305,7 @@ class AlmacenEditarView(LoginRequiredMixin, RolRequeridoMixin, AjaxModalFormMixi
             messages.success(self.request, f"Almacén '{almacen.nombre}' actualizado exitosamente.")
             return self.responder_exito(self.success_url)
         except Exception as exc:
-            form.add_error(None, str(exc))
+            _procesar_error_formulario(form, exc)
             return self.form_invalid(form)
 
 
@@ -347,7 +370,7 @@ class UbicacionReactivarView(LoginRequiredMixin, View):
             reactivar_ubicacion(ubicacion=ubicacion, usuario=request.user, ip_origen=_obtener_ip(request))
             messages.success(request, f"Ubicación '{ubicacion.nombre}' habilitada nuevamente.")
         except Exception as exc:
-            messages.error(request, str(exc))
+            messages.error(request, _formatear_error_excepcion(exc))
         return redirect(request.POST.get("next") or "inventario:ubicacion-lista")
 
 
@@ -371,7 +394,7 @@ class UbicacionEliminarView(LoginRequiredMixin, View):
             if getattr(request.user, "es_administrador", False):
                 return redirect("inventario:ubicacion-desactivar", pk=ubicacion.pk)
         except Exception as exc:
-            messages.error(request, str(exc))
+            messages.error(request, _formatear_error_excepcion(exc))
         return redirect(request.POST.get("next") or "inventario:ubicacion-lista")
 
 
@@ -406,7 +429,7 @@ class UbicacionCrearView(LoginRequiredMixin, AjaxModalFormMixin, CreateView):
             messages.success(self.request, f"Ubicación '{ubicacion.nombre}' creada exitosamente.")
             return self.responder_exito(self.success_url)
         except Exception as exc:
-            form.add_error(None, str(exc))
+            _procesar_error_formulario(form, exc)
             return self.form_invalid(form)
 
 
@@ -526,7 +549,7 @@ class CategoriaReactivarView(LoginRequiredMixin, View):
             reactivar_categoria(categoria=categoria, usuario=request.user, ip_origen=_obtener_ip(request))
             messages.success(request, f"Categoría '{categoria.nombre}' habilitada nuevamente.")
         except Exception as exc:
-            messages.error(request, str(exc))
+            messages.error(request, _formatear_error_excepcion(exc))
         return redirect(request.POST.get("next") or "inventario:categoria-lista")
 
 
@@ -550,7 +573,7 @@ class CategoriaEliminarView(LoginRequiredMixin, View):
             if getattr(request.user, "es_administrador", False):
                 return redirect("inventario:categoria-trasladar", pk=categoria.pk)
         except Exception as exc:
-            messages.error(request, str(exc))
+            messages.error(request, _formatear_error_excepcion(exc))
         return redirect(request.POST.get("next") or "inventario:categoria-lista")
 
 
@@ -592,7 +615,7 @@ class CategoriaCrearView(LoginRequiredMixin, AjaxModalFormMixin, CreateView):
             messages.success(self.request, f"Categoría '{categoria.nombre}' creada exitosamente.")
             return self.responder_exito(self.success_url)
         except Exception as exc:
-            form.add_error(None, str(exc))
+            _procesar_error_formulario(form, exc)
             return self.form_invalid(form)
 
 
@@ -818,6 +841,8 @@ class ProductoListaView(LoginRequiredMixin, ListView):
             cat_obj = cat_qs.first()
             if cat_obj:
                 categoria_id = cat_obj.id
+                if not almacen_id:
+                    almacen_id = cat_obj.almacen_principal_id
 
         # 3. Tipo (en cascada: si hay categoría, sólo tipos de esa categoría; si hay almacén, sólo tipos de categorías de ese almacén)
         tipo_id = None
@@ -848,6 +873,8 @@ class ProductoListaView(LoginRequiredMixin, ListView):
             ub_obj = ub_qs.first()
             if ub_obj:
                 ubicacion_id = ub_obj.id
+                if not almacen_id:
+                    almacen_id = ub_obj.almacen_id
 
         return {
             "almacen_id": almacen_id,
@@ -1033,7 +1060,7 @@ class ProductoCrearView(LoginRequiredMixin, AjaxModalFormMixin, CreateView):
             messages.success(self.request, f"Producto '{producto.codigo_interno} — {producto.nombre}' creado exitosamente.")
             return self.responder_exito(self.success_url)
         except Exception as exc:
-            form.add_error(None, str(exc))
+            _procesar_error_formulario(form, exc)
             return self.form_invalid(form)
 
 
@@ -1116,10 +1143,10 @@ class ProductoEditarView(LoginRequiredMixin, AjaxModalFormMixin, UpdateView):
             next_url = self.request.POST.get("next")
             return self.responder_exito(next_url or self.success_url)
         except Exception as exc:
-            form.add_error(None, str(exc))
+            _procesar_error_formulario(form, exc)
             return self.form_invalid(form)
         except Exception as exc:
-            form.add_error(None, str(exc))
+            _procesar_error_formulario(form, exc)
             return self.form_invalid(form)
 
 
@@ -1199,7 +1226,7 @@ class ProductoToggleActivoView(LoginRequiredMixin, View):
             estado_str = "habilitado" if actualizado.activo else "inhabilitado"
             messages.success(request, f"Producto '{actualizado.codigo_interno} — {actualizado.nombre}' {estado_str} exitosamente.")
         except Exception as exc:
-            messages.error(request, str(exc))
+            messages.error(request, _formatear_error_excepcion(exc))
         return redirect(request.POST.get("next") or "inventario:producto-lista")
 
 
@@ -1218,7 +1245,7 @@ class ProductoArchivarView(LoginRequiredMixin, RolRequeridoMixin, View):
             )
             messages.success(request, f"Producto '{producto.codigo_interno} — {producto.nombre}' eliminado del catálogo activo.")
         except Exception as exc:
-            messages.error(request, str(exc))
+            messages.error(request, _formatear_error_excepcion(exc))
         return redirect("inventario:producto-lista")
 
 
@@ -1274,7 +1301,7 @@ class AlmacenDesactivarView(LoginRequiredMixin, RolRequeridoMixin, View):
             messages.success(request, f"Almacén '{almacen.nombre}' desactivado exitosamente.")
             return redirect("inventario:almacen-lista")
         except Exception as exc:
-            messages.error(request, str(exc))
+            messages.error(request, _formatear_error_excepcion(exc))
             return self.get(request, pk)
 
 
@@ -1315,7 +1342,7 @@ class UbicacionDesactivarView(LoginRequiredMixin, RolRequeridoMixin, View):
             messages.success(request, f"Ubicación '{ubicacion.nombre}' desactivada exitosamente.")
             return redirect("inventario:ubicacion-lista")
         except Exception as exc:
-            messages.error(request, str(exc))
+            messages.error(request, _formatear_error_excepcion(exc))
             return self.get(request, pk)
 
 
@@ -1650,7 +1677,7 @@ class CategoriaDesactivarView(LoginRequiredMixin, RolRequeridoMixin, View):
             )
             messages.success(request, f"Categoría '{categoria.nombre}' desactivada exitosamente.")
         except Exception as exc:
-            messages.error(request, str(exc))
+            messages.error(request, _formatear_error_excepcion(exc))
         return redirect("inventario:categoria-lista")
 
 
@@ -1693,7 +1720,7 @@ class ProductoFusionarView(LoginRequiredMixin, RolRequeridoMixin, View):
             )
             return redirect("inventario:producto-detalle", pk=producto_principal.pk)
         except Exception as exc:
-            messages.error(request, str(exc))
+            messages.error(request, _formatear_error_excepcion(exc))
             return self.get(request, pk)
 
 
@@ -1705,10 +1732,32 @@ class AlertasStockListaView(LoginRequiredMixin, View):
     """Centro de Notificaciones y Alertas de Stock Bajo y Crítico."""
 
     def get(self, request):
-        alertas = obtener_alertas_stock(usuario=request.user)
-        leidas = set(request.session.get("alertas_leidas", []))
-        filtro_estado = request.GET.get("estado", "todas")
-        q = request.GET.get("q", "").strip().lower()
+        user = request.user
+        if getattr(user, "es_usuario_normal", False):
+            almacenes = user.get_almacenes_asignados()
+        else:
+            almacenes = Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
+
+        almacen_id = request.GET.get("almacen_id", "").strip()
+        almacen_obj = None
+        if almacen_id:
+            almacen_obj = almacenes.filter(pk=almacen_id).first()
+
+        alertas = obtener_alertas_stock(usuario=user, almacen=almacen_obj)
+        leidas = obtener_claves_alertas_leidas(user)
+        if hasattr(request, "session"):
+            request.session["alertas_leidas"] = list(leidas)
+
+        nivel = request.GET.get("nivel", "").strip().upper()
+        if nivel not in ["CRITICA", "BAJA"]:
+            nivel = "TODAS"
+
+        filtro_estado = request.GET.get("estado", "").strip().lower()
+        if filtro_estado not in ["pendientes", "leidas"]:
+            filtro_estado = "todas"
+
+        q = request.GET.get("q", "").strip()
+        q_lower = q.lower()
 
         notificaciones = []
         criticas_filtradas = []
@@ -1722,9 +1771,15 @@ class AlertasStockListaView(LoginRequiredMixin, View):
             ex.tipo_alerta = "CRITICA"
             if not ex.es_leida:
                 no_leidas_count += 1
-            if q and q not in ex.producto.nombre.lower() and q not in ex.producto.codigo_interno.lower() and q not in ex.almacen.nombre.lower():
+            if nivel == "BAJA":
+                continue
+            if q_lower and (q_lower not in ex.producto.nombre.lower() and 
+                            q_lower not in ex.producto.codigo_interno.lower() and 
+                            q_lower not in ex.almacen.nombre.lower()):
                 continue
             if filtro_estado == "pendientes" and ex.es_leida:
+                continue
+            if filtro_estado == "leidas" and not ex.es_leida:
                 continue
             criticas_filtradas.append(ex)
             notificaciones.append(ex)
@@ -1736,9 +1791,15 @@ class AlertasStockListaView(LoginRequiredMixin, View):
             ex.tipo_alerta = "BAJA"
             if not ex.es_leida:
                 no_leidas_count += 1
-            if q and q not in ex.producto.nombre.lower() and q not in ex.producto.codigo_interno.lower() and q not in ex.almacen.nombre.lower():
+            if nivel == "CRITICA":
+                continue
+            if q_lower and (q_lower not in ex.producto.nombre.lower() and 
+                            q_lower not in ex.producto.codigo_interno.lower() and 
+                            q_lower not in ex.almacen.nombre.lower()):
                 continue
             if filtro_estado == "pendientes" and ex.es_leida:
+                continue
+            if filtro_estado == "leidas" and not ex.es_leida:
                 continue
             bajas_filtradas.append(ex)
             notificaciones.append(ex)
@@ -1753,39 +1814,47 @@ class AlertasStockListaView(LoginRequiredMixin, View):
                 "criticas": criticas_filtradas,
                 "bajas": bajas_filtradas,
                 "notificaciones": notificaciones,
+                "almacenes": almacenes,
+                "almacen_id": str(almacen_obj.id) if almacen_obj else "",
+                "almacen_obj": almacen_obj,
+                "nivel": nivel,
                 "filtro_estado": filtro_estado,
-                "q": request.GET.get("q", ""),
+                "q": q,
                 "entrada_form": EntradaForm(usuario=request.user),
             },
         )
 
 
 class AlertaMarcarLeidaView(LoginRequiredMixin, View):
-    """Marca una o todas las notificaciones de stock como leídas y opcionalmente redirige al producto."""
+    """Marca una o todas las notificaciones de stock como leídas de forma persistente en BD."""
 
     def post(self, request):
-        leidas = set(request.session.get("alertas_leidas", []))
+        user = request.user
         accion = request.POST.get("accion", "una")
-        key = request.POST.get("key", "")
-        redirect_to = request.POST.get("redirect_to", "")
+        key = (request.POST.get("key") or "").strip()
+        redirect_to = (request.POST.get("redirect_to") or "").strip()
 
         if accion == "todas":
-            alertas = obtener_alertas_stock(usuario=request.user)
-            for ex in list(alertas["criticas"]) + list(alertas["bajas"]):
-                leidas.add(f"{ex.producto_id}:{ex.almacen_id}:{ex.stock_disponible}")
+            alertas = obtener_alertas_stock(usuario=user)
+            claves = [
+                f"{ex.producto_id}:{ex.almacen_id}:{ex.stock_disponible}"
+                for ex in list(alertas["criticas"]) + list(alertas["bajas"])
+            ]
+            marcar_todas_alertas_stock_leidas(user, claves)
             messages.success(request, "Todas las notificaciones actuales fueron marcadas como leídas.")
         elif accion == "no_leida" and key:
-            leidas.discard(key)
+            desmarcar_alerta_stock_leida(user, key)
         elif accion == "limpiar":
-            leidas.clear()
+            limpiar_alertas_stock_leidas(user)
         elif key:
-            leidas.add(key)
+            marcar_alerta_stock_leida(user, key)
 
+        leidas = obtener_claves_alertas_leidas(user)
         request.session["alertas_leidas"] = list(leidas)
         request.session.modified = True
 
         if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-            alertas = obtener_alertas_stock(usuario=request.user)
+            alertas = obtener_alertas_stock(usuario=user)
             pendientes = 0
             for ex in list(alertas["criticas"]) + list(alertas["bajas"]):
                 if f"{ex.producto_id}:{ex.almacen_id}:{ex.stock_disponible}" not in leidas:
@@ -2238,7 +2307,7 @@ class EntradaCrearView(LoginRequiredMixin, View):
                     return JsonResponse({"success": True, "redirect_url": next_url or reverse("inventario:movimiento-lista")})
                 return redirect(next_url or "inventario:movimiento-lista")
             except Exception as exc:
-                form.add_error(None, str(exc))
+                _procesar_error_formulario(form, exc)
         if request.headers.get("x-requested-with") == "XMLHttpRequest":
             errores = {}
             for field, err_list in form.errors.get_json_data().items():
@@ -2286,7 +2355,7 @@ class SalidaCrearView(LoginRequiredMixin, View):
                     return JsonResponse({"success": True, "redirect_url": next_url or reverse("inventario:movimiento-lista")})
                 return redirect(next_url or "inventario:movimiento-lista")
             except Exception as exc:
-                form.add_error(None, str(exc))
+                _procesar_error_formulario(form, exc)
         if request.headers.get("x-requested-with") == "XMLHttpRequest":
             errores = {}
             for field, err_list in form.errors.get_json_data().items():
@@ -2377,7 +2446,7 @@ class PrestamoCrearView(LoginRequiredMixin, View):
                     return JsonResponse({"success": True, "redirect_url": next_url or reverse("inventario:movimiento-lista")})
                 return redirect(next_url or "inventario:prestamo-lista")
             except Exception as exc:
-                form.add_error(None, str(exc))
+                _procesar_error_formulario(form, exc)
         if request.headers.get("x-requested-with") == "XMLHttpRequest":
             errores = {}
             for field, err_list in form.errors.get_json_data().items():
@@ -2429,7 +2498,7 @@ class PrestamoDevolucionView(LoginRequiredMixin, View):
                     return JsonResponse({"success": True, "redirect_url": next_url or reverse("inventario:prestamo-lista")})
                 return redirect(next_url or "inventario:prestamo-lista")
             except Exception as exc:
-                form.add_error(None, str(exc))
+                _procesar_error_formulario(form, exc)
         if request.headers.get("x-requested-with") == "XMLHttpRequest":
             errores = {}
             for field, err_list in form.errors.get_json_data().items():
@@ -2481,7 +2550,7 @@ class PrestamoBajaView(LoginRequiredMixin, View):
                     return JsonResponse({"success": True, "redirect_url": next_url or reverse("inventario:prestamo-lista")})
                 return redirect(next_url or "inventario:prestamo-lista")
             except Exception as exc:
-                form.add_error(None, str(exc))
+                _procesar_error_formulario(form, exc)
         if request.headers.get("x-requested-with") == "XMLHttpRequest":
             errores = {}
             for field, err_list in form.errors.get_json_data().items():
@@ -2575,7 +2644,7 @@ class TrasladoCrearView(LoginRequiredMixin, RolRequeridoMixin, View):
                     return JsonResponse({"success": True, "redirect_url": next_url or reverse("inventario:movimiento-lista")})
                 return redirect(next_url or "inventario:movimiento-lista")
             except Exception as exc:
-                form.add_error(None, str(exc))
+                _procesar_error_formulario(form, exc)
         if request.headers.get("x-requested-with") == "XMLHttpRequest":
             errores = {}
             for field, err_list in form.errors.get_json_data().items():
@@ -2644,7 +2713,7 @@ class ConteoFisicoCrearView(LoginRequiredMixin, View):
                     return JsonResponse({"success": True, "redirect_url": next_url or reverse("inventario:conteo-lista")})
                 return redirect(next_url or "inventario:conteo-lista")
             except Exception as exc:
-                form.add_error(None, str(exc))
+                _procesar_error_formulario(form, exc)
         if request.headers.get("x-requested-with") == "XMLHttpRequest":
             errores = {}
             for field, err_list in form.errors.get_json_data().items():
@@ -2677,7 +2746,7 @@ class ConteoFisicoConfirmarView(LoginRequiredMixin, RolRequeridoMixin, View):
                 f"Ajuste por conteo confirmado exitosamente para '{conteo_db.producto.codigo_interno}'. Stock ajustado a {conteo_db.cantidad_contada} unid.",
             )
         except Exception as exc:
-            messages.error(request, str(exc))
+            messages.error(request, _formatear_error_excepcion(exc))
         return redirect(next_url or "inventario:conteo-lista")
 
 
@@ -2720,7 +2789,7 @@ class MovimientoRevertirView(LoginRequiredMixin, View):
                 )
                 return redirect("inventario:movimiento-lista")
             except Exception as exc:
-                form.add_error(None, str(exc))
+                _procesar_error_formulario(form, exc)
         return render(request, "inventario/movimiento_revertir.html", {"movimiento": movimiento, "form": form})
 
 

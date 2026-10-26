@@ -16,6 +16,12 @@
         border: 1px solid var(--border);
         border-radius: var(--radius-sm);
     }
+    .mov-type-selector.cols-4 {
+        grid-template-columns: repeat(4, 1fr);
+    }
+    .mov-type-selector.cols-5 {
+        grid-template-columns: repeat(5, 1fr);
+    }
     .mov-type-btn {
         display: inline-flex;
         align-items: center;
@@ -111,8 +117,17 @@
         }
     }
     @media (max-width: 820px) {
-        .mov-type-selector {
+        .mov-type-selector,
+        .mov-type-selector.cols-4,
+        .mov-type-selector.cols-5 {
             grid-template-columns: repeat(2, 1fr);
+        }
+    }
+    @media (max-width: 480px) {
+        .mov-type-selector,
+        .mov-type-selector.cols-4,
+        .mov-type-selector.cols-5 {
+            grid-template-columns: 1fr;
         }
     }
 </style>
@@ -299,7 +314,7 @@
                             </td>
                             <td>
                                 {% if p.estado == 'ABIERTO' %}
-                                    <span class="badge badge-purple">En Préstamo</span>
+                                    <span class="badge badge-purple">Préstamo</span>
                                 {% elif p.estado == 'DEVUELTO_PARCIAL' %}
                                     <span class="badge badge-warn">Parcial</span>
                                 {% elif p.estado == 'CERRADO' %}
@@ -627,7 +642,7 @@
         <label style="font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-faint); margin-bottom: 6px;">
             1. Selecciona el tipo de operación
         </label>
-        <div class="mov-type-selector">
+        <div class="mov-type-selector {% if es_usuario_normal %}cols-4{% else %}cols-5{% endif %}">
             <button type="button" class="mov-type-btn" data-target-form="secFormPrestamo">
                 <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                 Préstamo
@@ -724,7 +739,7 @@
                 <label>Producto a Entregar en Dotación *</label>
                 {{ salida_form.producto }}
             </div>
-            <div id="alertSinStockSalida" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid var(--accent-danger); color: #fca5a5; padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 14px; display: flex; align-items: center; gap: 8px;">
+            <div id="alertSinStockSalida" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid var(--accent-danger); color: #fca5a5; padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 14px; align-items: center; gap: 8px;">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0; color: var(--crit);"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                 <span>Este producto no tiene existencias disponibles (Stock: 0). No es posible realizar dotaciones.</span>
             </div>
@@ -777,7 +792,7 @@
                 <label>Producto a Entregar en Préstamo *</label>
                 {{ prestamo_form.producto }}
             </div>
-            <div id="alertSinStockPrestamo" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid var(--accent-danger); color: #fca5a5; padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 14px; display: flex; align-items: center; gap: 8px;">
+            <div id="alertSinStockPrestamo" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid var(--accent-danger); color: #fca5a5; padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 14px; align-items: center; gap: 8px;">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0; color: var(--crit);"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                 <span>Este producto no tiene existencias disponibles (Stock: 0). No es posible entregarlo en préstamo.</span>
             </div>
@@ -831,7 +846,7 @@
                 <label>Producto a Trasladar *</label>
                 {{ traslado_form.producto }}
             </div>
-            <div id="alertSinStockTraslado" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid var(--accent-danger); color: #fca5a5; padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 14px; display: flex; align-items: center; gap: 8px;">
+            <div id="alertSinStockTraslado" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid var(--accent-danger); color: #fca5a5; padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 14px; align-items: center; gap: 8px;">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0; color: var(--crit);"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                 <span>Este producto no tiene existencias disponibles (Stock: 0). No es posible realizar traslados.</span>
             </div>
@@ -1090,6 +1105,15 @@ document.addEventListener("DOMContentLoaded", function() {
         document.querySelectorAll(".idem-token-input").forEach(function(inp) {
             inp.value = generarClaveIdempotencia();
         });
+        if (targetId === "secFormSalida") {
+            actualizarProductoSalida(selectProductoSalida ? selectProductoSalida.value : null);
+        } else if (targetId === "secFormPrestamo") {
+            actualizarProductoPrestamo(selectProductoPrestamo ? selectProductoPrestamo.value : null);
+        } else if (targetId === "secFormTraslado") {
+            if (typeof actualizarProductoTraslado === "function" && selectProductoTraslado) {
+                actualizarProductoTraslado(selectProductoTraslado.value);
+            }
+        }
     }
 
     typeBtns.forEach(function(btn) {
@@ -1356,10 +1380,36 @@ document.addEventListener("DOMContentLoaded", function() {
     var bodyCamposSalida = document.getElementById("bodyCamposSalida");
 
     function actualizarProductoSalida(prodId) {
+        if (!prodId || prodId === "") {
+            if (alertSinStockSalida) alertSinStockSalida.style.display = "none";
+            if (btnSubmitSalida) btnSubmitSalida.disabled = false;
+            if (bodyCamposSalida) {
+                bodyCamposSalida.style.opacity = "1";
+                bodyCamposSalida.style.pointerEvents = "auto";
+                bodyCamposSalida.style.filter = "none";
+            }
+            if (inputCantSalida) {
+                inputCantSalida.disabled = false;
+                inputCantSalida.removeAttribute("max");
+            }
+            if (txtAlmacenSalida) {
+                if (usuarioAlmacenesCount === 1 && usuarioAlmacenUnicoNombre) {
+                    txtAlmacenSalida.innerHTML = '<strong style="color: var(--text);">' + usuarioAlmacenUnicoNombre + '</strong>';
+                    if (inputAlmSalida && usuarioAlmacenUnicoId) inputAlmSalida.value = usuarioAlmacenUnicoId;
+                } else {
+                    txtAlmacenSalida.textContent = "Selecciona un producto para cargar su almacén";
+                }
+            }
+            if (valStockSalida) {
+                valStockSalida.textContent = "—";
+                valStockSalida.style.color = "var(--text)";
+            }
+            return;
+        }
         var info = mapaUbicacionesStock[String(prodId)];
         if (info) {
             var sinStock = info.stock_disponible <= 0;
-            if (alertSinStockSalida) alertSinStockSalida.style.display = sinStock ? "block" : "none";
+            if (alertSinStockSalida) alertSinStockSalida.style.display = sinStock ? "flex" : "none";
             if (btnSubmitSalida) btnSubmitSalida.disabled = sinStock;
             if (bodyCamposSalida) {
                 bodyCamposSalida.style.opacity = sinStock ? "0.35" : "1";
@@ -1410,9 +1460,7 @@ document.addEventListener("DOMContentLoaded", function() {
         selectProductoSalida.addEventListener("change", function() {
             actualizarProductoSalida(selectProductoSalida.value);
         });
-        if (selectProductoSalida.value) {
-            actualizarProductoSalida(selectProductoSalida.value);
-        }
+        actualizarProductoSalida(selectProductoSalida.value);
     }
 
     // 3. Sincronización Préstamo con validación de Stock 0 (Puntos 5 y 8)
@@ -1426,10 +1474,36 @@ document.addEventListener("DOMContentLoaded", function() {
     var bodyCamposPrestamo = document.getElementById("bodyCamposPrestamo");
 
     function actualizarProductoPrestamo(prodId) {
+        if (!prodId || prodId === "") {
+            if (alertSinStockPrestamo) alertSinStockPrestamo.style.display = "none";
+            if (btnSubmitPrestamo) btnSubmitPrestamo.disabled = false;
+            if (bodyCamposPrestamo) {
+                bodyCamposPrestamo.style.opacity = "1";
+                bodyCamposPrestamo.style.pointerEvents = "auto";
+                bodyCamposPrestamo.style.filter = "none";
+            }
+            if (inputCantPrestamo) {
+                inputCantPrestamo.disabled = false;
+                inputCantPrestamo.removeAttribute("max");
+            }
+            if (txtAlmacenPrestamo) {
+                if (usuarioAlmacenesCount === 1 && usuarioAlmacenUnicoNombre) {
+                    txtAlmacenPrestamo.innerHTML = '<strong style="color: var(--text);">' + usuarioAlmacenUnicoNombre + '</strong>';
+                    if (inputAlmPrestamo && usuarioAlmacenUnicoId) inputAlmPrestamo.value = usuarioAlmacenUnicoId;
+                } else {
+                    txtAlmacenPrestamo.textContent = "Selecciona un producto para cargar su almacén";
+                }
+            }
+            if (valStockPrestamo) {
+                valStockPrestamo.textContent = "—";
+                valStockPrestamo.style.color = "var(--text)";
+            }
+            return;
+        }
         var info = mapaUbicacionesStock[String(prodId)];
         if (info) {
             var sinStock = info.stock_disponible <= 0;
-            if (alertSinStockPrestamo) alertSinStockPrestamo.style.display = sinStock ? "block" : "none";
+            if (alertSinStockPrestamo) alertSinStockPrestamo.style.display = sinStock ? "flex" : "none";
             if (btnSubmitPrestamo) btnSubmitPrestamo.disabled = sinStock;
             if (bodyCamposPrestamo) {
                 bodyCamposPrestamo.style.opacity = sinStock ? "0.35" : "1";
@@ -1480,9 +1554,7 @@ document.addEventListener("DOMContentLoaded", function() {
         selectProductoPrestamo.addEventListener("change", function() {
             actualizarProductoPrestamo(selectProductoPrestamo.value);
         });
-        if (selectProductoPrestamo.value) {
-            actualizarProductoPrestamo(selectProductoPrestamo.value);
-        }
+        actualizarProductoPrestamo(selectProductoPrestamo.value);
     }
 
     // 4. Sincronización Traslado: 2 Opciones Claras (Interno vs Entre Almacenes)
@@ -1758,10 +1830,26 @@ document.addEventListener("DOMContentLoaded", function() {
 
     function actualizarProductoTraslado(prodId) {
         ocultarFeedbackTraslado();
+        if (!prodId || prodId === "") {
+            if (alertSinStockTraslado) alertSinStockTraslado.style.display = "none";
+            if (bodyCamposTraslado) {
+                bodyCamposTraslado.style.opacity = "0.35";
+                bodyCamposTraslado.style.pointerEvents = "none";
+            }
+            if (valStockTraslado) {
+                valStockTraslado.textContent = "—";
+                valStockTraslado.style.color = "var(--text)";
+            }
+            var msgDefault = "Selecciona un producto primero";
+            if (txtAlmacenInterno) txtAlmacenInterno.textContent = msgDefault;
+            if (txtAlmacenEntreOrigen) txtAlmacenEntreOrigen.textContent = msgDefault;
+            if (txtUbicacionActualInterno) txtUbicacionActualInterno.textContent = "—";
+            return;
+        }
         var info = mapaUbicacionesStock[String(prodId)];
         if (info) {
             var sinStock = info.stock_disponible <= 0;
-            if (alertSinStockTraslado) alertSinStockTraslado.style.display = sinStock ? "block" : "none";
+            if (alertSinStockTraslado) alertSinStockTraslado.style.display = sinStock ? "flex" : "none";
 
             if (sinStock) {
                 if (bodyCamposTraslado) {

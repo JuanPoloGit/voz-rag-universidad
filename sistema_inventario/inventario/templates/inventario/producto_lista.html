@@ -119,7 +119,7 @@
         </div>
 
         <!-- 2. Almacén -->
-        {% if not request.user.es_usuario_normal %}
+        {% if not request.user.es_usuario_normal or almacenes.count > 1 %}
         <div style="flex: 1 1 150px; min-width: 135px;">
             <select name="almacen_id" id="filtro_almacen_id" class="form-control" style="height: 38px; font-size: 13px; padding: 6px 10px;" aria-label="Filtrar por almacén">
                 <option value="">Todos los almacenes</option>
@@ -130,6 +130,8 @@
                 {% endfor %}
             </select>
         </div>
+        {% elif almacen_seleccionado %}
+        <input type="hidden" name="almacen_id" value="{{ almacen_seleccionado }}">
         {% endif %}
 
         <!-- 3. Categoría (filtrada por almacén) -->

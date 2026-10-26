@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block page_title %}Categorías y Bodegas{% endblock %}
+{% block page_title %}Categorías y Almacenes{% endblock %}
 {% block sidebar_almacenes %}active{% endblock %}
 
 {% block title %}Almacenes — Inventario AudacIA{% endblock %}
@@ -56,7 +56,16 @@
             <tbody>
                 {% for almacen in almacenes %}
                     <tr {% if not almacen.activo %}style="opacity: 0.62;"{% endif %}>
-                        <td><strong>{{ almacen.nombre }}</strong></td>
+                        <td>
+                            <a href="{% url 'inventario:producto-lista' %}?almacen_id={{ almacen.id }}"
+                               class="table-item-link"
+                               title="Ver productos en {{ almacen.nombre }}">
+                                <strong>{{ almacen.nombre }}</strong>
+                            </a>
+                            <div style="font-size: 11px; color: var(--text-faint);">
+                                {{ almacen.total_articulos }} artículo(s)
+                            </div>
+                        </td>
                         <td>{{ almacen.descripcion|default:"—" }}</td>
                         <td>
                             {% if almacen.activo %}
