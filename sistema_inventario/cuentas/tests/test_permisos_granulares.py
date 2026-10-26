@@ -41,23 +41,24 @@ class PermisosGranularesModelTest(TestCase):
     def test_catalogo_permisos_completo(self):
         """Verifica que el catálogo inicial tenga los permisos cargados."""
         total = PermisoAudacIA.objects.count()
-        self.assertGreaterEqual(total, 20)
+        self.assertGreaterEqual(total, 19)
         # Verificar permisos clave
         codigos = PermisoAudacIA.get_todos_codigos()
         self.assertIn("catalogo.ver", codigos)
         self.assertIn("catalogo.crear", codigos)
-        self.assertIn("catalogo.trasladar_almacen", codigos)
         self.assertIn("movimientos.entrada", codigos)
         self.assertIn("movimientos.prestamo", codigos)
-        self.assertIn("movimientos.traslado", codigos)
+        self.assertIn("movimientos.traslado_interno", codigos)
+        self.assertIn("movimientos.traslado_almacen", codigos)
 
     def test_bypass_administrador_y_superusuario(self):
         """El administrador y superusuario tienen todos los permisos sin necesidad de M2M."""
-        self.assertTrue(self.admin.tiene_permiso("movimientos.traslado"))
-        self.assertTrue(self.admin.tiene_permiso("catalogo.trasladar_almacen"))
+        self.assertTrue(self.admin.tiene_permiso("movimientos.traslado_interno"))
+        self.assertTrue(self.admin.tiene_permiso("movimientos.traslado_almacen"))
         self.assertTrue(self.admin.tiene_permiso("seguridad.gestionar_usuarios"))
 
-        self.assertTrue(self.superadmin.tiene_permiso("movimientos.traslado"))
+        self.assertTrue(self.superadmin.tiene_permiso("movimientos.traslado_interno"))
+        self.assertTrue(self.superadmin.tiene_permiso("movimientos.traslado_almacen"))
         self.assertTrue(self.superadmin.tiene_permiso("seguridad.gestionar_usuarios"))
 
     def test_usuario_operativo_permisos_personalizados(self):
@@ -65,7 +66,7 @@ class PermisosGranularesModelTest(TestCase):
         # Limpiar permisos
         self.operario.permisos_personalizados.clear()
         self.assertFalse(self.operario.tiene_permiso("movimientos.entrada"))
-        self.assertFalse(self.operario.tiene_permiso("movimientos.traslado"))
+        self.assertFalse(self.operario.tiene_permiso("movimientos.traslado_interno"))
 
         # Asignar únicamente movimientos.entrada
         p_entrada = PermisoAudacIA.objects.get(codigo="movimientos.entrada")
@@ -77,7 +78,7 @@ class PermisosGranularesModelTest(TestCase):
 
         self.assertTrue(self.operario.tiene_permiso("movimientos.entrada"))
         self.assertFalse(self.operario.tiene_permiso("movimientos.dotacion"))
-        self.assertFalse(self.operario.tiene_permiso("movimientos.traslado"))
+        self.assertFalse(self.operario.tiene_permiso("movimientos.traslado_interno"))
 
     def test_versionamiento_permisos_incrementa_al_modificar(self):
         """Al modificar los permisos de un usuario, su version de permisos se incrementa."""

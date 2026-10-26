@@ -291,8 +291,8 @@ class UsuarioForm(forms.ModelForm):
             else:
                 user.permisos_personalizados.clear()
 
-            # Purgar sesiones activas en la BD si el usuario fue desactivado o cambió de rol
-            if es_edicion and (desactivado or rol_cambio):
+            # Purgar sesiones activas en la BD si el usuario fue desactivado, cambió de rol o cambiaron sus permisos
+            if es_edicion and (desactivado or rol_cambio or permisos_cambiaron):
                 from .services import purgar_sesiones_activas
                 purgar_sesiones_activas(user)
 

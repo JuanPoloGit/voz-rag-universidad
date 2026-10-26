@@ -1020,31 +1020,25 @@ def actualizar_producto(
     usuario: Any,
     ip_origen: Optional[str] = None,
 ) -> Producto:
-    """Actualiza datos operativos de un producto.
+    """Actualiza datos operativos y descriptivos de un producto.
     
-    Nota: codigo_interno y stock_inicial son inmutables por especificación (§8.1).
+    Nota: El almacén, ubicación física, categoría y stock son inmutables en este formulario;
+    únicamente se modifican mediante movimientos operativos explícitos (Kardex/Traslados).
     """
     if not getattr(usuario, "is_authenticated", False):
         raise PermissionDenied("Se requiere autenticación para modificar productos.")
 
-    producto_db = Producto.objects.select_related("categoria", "tipo").get(pk=producto.pk)
+    producto_db = Producto.objects.select_related("categoria").get(pk=producto.pk)
 
     if getattr(usuario, "es_usuario_normal", False):
         if not usuario.tiene_permiso("catalogo.editar"):
             raise PermissionDenied("No tienes permisos para modificar la información de productos.")
         if not usuario.tiene_acceso_almacen(producto_db.categoria.almacen_principal):
             raise PermissionDenied("No tienes permisos para modificar productos de otros almacenes.")
-        if categoria and not usuario.tiene_acceso_almacen(categoria.almacen_principal):
-            raise PermissionDenied("Solo puedes asignar categorías pertenecientes a tus almacenes asignados.")
-
-    categoria_efectiva = categoria or producto_db.categoria
 
     nombre = (nombre or "").strip()
     if not nombre:
         raise ValidationError({"nombre": "El nombre del producto no puede estar vacío."})
-
-    if actualizar_tipo and tipo is not None and tipo.categoria_id != categoria_efectiva.id:
-        raise ValidationError({"tipo": "El tipo seleccionado no pertenece a la categoría del producto."})
 
     codigo_barras = (codigo_barras or "").strip() or None
     if codigo_barras:
@@ -1058,8 +1052,6 @@ def actualizar_producto(
 
     valores_anteriores = {
         "nombre": producto_db.nombre,
-        "categoria_id": producto_db.categoria_id,
-        "tipo_id": producto_db.tipo_id,
         "stock_minimo": producto_db.stock_minimo,
         "codigo_barras": producto_db.codigo_barras,
         "nombre_empaque": producto_db.nombre_empaque,
@@ -1067,21 +1059,8 @@ def actualizar_producto(
         "descripcion": producto_db.descripcion,
     }
 
-    ubicacion_ant = producto_db.ubicaciones.first()
-    almacen_ant = producto_db.categoria.almacen_principal
-    almacen_nuevo = categoria.almacen_principal if categoria is not None else almacen_ant
-
     with transaction.atomic():
         producto_db.nombre = nombre
-        if categoria is not None:
-            producto_db.categoria = categoria
-            Existencia.objects.get_or_create(
-                producto=producto_db,
-                almacen=categoria.almacen_principal,
-                defaults={"stock_disponible": 0, "stock_en_prestamo": 0},
-            )
-        if actualizar_tipo:
-            producto_db.tipo = tipo
         producto_db.stock_minimo = max(0, int(stock_minimo or 0))
         producto_db.codigo_barras = codigo_barras
         producto_db.nombre_empaque = (nombre_empaque or "").strip()
@@ -1089,52 +1068,6 @@ def actualizar_producto(
         producto_db.descripcion = (descripcion or "").strip()
         producto_db.full_clean()
         producto_db.save()
-
-        ubicacion_nueva = None
-        if ubicaciones is not None:
-            ProductoUbicacion.objects.filter(producto=producto_db).exclude(ubicacion_id__in=ubicaciones).delete()
-            for uid in ubicaciones:
-                ProductoUbicacion.objects.get_or_create(producto=producto_db, ubicacion_id=uid)
-            ubicacion_nueva = Ubicacion.objects.filter(id__in=ubicaciones).first()
-
-        # Registro automático de traslado en caso de cambio de almacén o ubicación (§Punto 12)
-        if almacen_nuevo.id != almacen_ant.id:
-            if getattr(usuario, "es_usuario_normal", False) and not usuario.tiene_permiso("catalogo.trasladar_almacen"):
-                raise PermissionDenied("No tienes permisos para trasladar productos entre almacenes.")
-            from inventario.servicios.operaciones import registrar_traslado_entre_almacenes
-            ex_origen = Existencia.objects.filter(producto=producto_db, almacen=almacen_ant).first()
-            cant_traslado = ex_origen.stock_disponible if ex_origen and ex_origen.stock_disponible > 0 else 0
-            if cant_traslado > 0:
-                registrar_traslado_entre_almacenes(
-                    producto=producto_db,
-                    almacen_origen=almacen_ant,
-                    almacen_destino=almacen_nuevo,
-                    cantidad=cant_traslado,
-                    usuario=usuario,
-                    ubicacion_origen=ubicacion_ant,
-                    ubicacion_destino=ubicacion_nueva,
-                    motivo="Traslado por cambio de categoría/almacén en edición de producto",
-                    ip_origen=ip_origen,
-                )
-            else:
-                Existencia.objects.get_or_create(
-                    producto=producto_db,
-                    almacen=almacen_nuevo,
-                    defaults={"stock_disponible": 0, "stock_en_prestamo": 0},
-                )
-        elif ubicaciones is not None and ubicacion_nueva and ubicacion_ant and ubicacion_nueva.id != ubicacion_ant.id:
-            if getattr(usuario, "es_usuario_normal", False) and not usuario.tiene_permiso("catalogo.reubicar_interno"):
-                raise PermissionDenied("No tienes permisos para reubicar productos en el almacén.")
-            from inventario.servicios.operaciones import registrar_traslado_interno
-            registrar_traslado_interno(
-                producto=producto_db,
-                almacen=almacen_ant,
-                ubicacion_origen=ubicacion_ant,
-                ubicacion_destino=ubicacion_nueva,
-                usuario=usuario,
-                motivo="Traslado interno por reubicación física en edición de producto",
-                ip_origen=ip_origen,
-            )
 
         registrar_auditoria(
             usuario=usuario,
@@ -1144,8 +1077,6 @@ def actualizar_producto(
             valores_anteriores=valores_anteriores,
             valores_nuevos={
                 "nombre": producto_db.nombre,
-                "categoria_id": producto_db.categoria_id,
-                "tipo_id": producto_db.tipo_id,
                 "stock_minimo": producto_db.stock_minimo,
                 "codigo_barras": producto_db.codigo_barras,
                 "nombre_empaque": producto_db.nombre_empaque,

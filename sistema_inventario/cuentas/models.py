@@ -271,6 +271,15 @@ class UsuarioAudacIA(AbstractUser):
             )
         return self._permisos_cache
 
+    def limpiar_permisos_cache(self):
+        """Limpia la caché de permisos en memoria de esta instancia."""
+        if hasattr(self, "_permisos_cache"):
+            delattr(self, "_permisos_cache")
+
+    def refresh_from_db(self, using=None, fields=None):
+        self.limpiar_permisos_cache()
+        super().refresh_from_db(using=using, fields=fields)
+
     def tiene_permiso(self, codigo_permiso: str) -> bool:
         """Verifica si el usuario cuenta con un permiso específico en tiempo O(1)."""
         if not self.is_authenticated or not self.is_active or self.eliminado_logicamente:
@@ -338,25 +347,11 @@ PERMISOS_CATALOGO = [
         "orden": 3,
     },
     {
-        "codigo": "catalogo.reubicar_interno",
-        "modulo": "CATALOGO",
-        "nombre": "Reubicar productos internamente",
-        "descripcion": "Cambiar estantes o ubicaciones físicas dentro del mismo almacén.",
-        "orden": 4,
-    },
-    {
-        "codigo": "catalogo.trasladar_almacen",
-        "modulo": "CATALOGO",
-        "nombre": "Cambiar almacén principal (Traslado)",
-        "descripcion": "Cambiar la categoría o almacén principal de un producto con stock activo.",
-        "orden": 5,
-    },
-    {
         "codigo": "catalogo.eliminar",
         "modulo": "CATALOGO",
         "nombre": "Archivar o eliminar productos",
         "descripcion": "Archivar o retirar productos del catálogo de inventario.",
-        "orden": 6,
+        "orden": 4,
     },
 
     # Módulo 2: MOVIMIENTOS
@@ -403,11 +398,18 @@ PERMISOS_CATALOGO = [
         "orden": 6,
     },
     {
-        "codigo": "movimientos.traslado",
+        "codigo": "movimientos.traslado_interno",
         "modulo": "MOVIMIENTOS",
-        "nombre": "Ejecutar traslados explícitos",
-        "descripcion": "Registrar traslados explícitos internos o entre almacenes.",
+        "nombre": "Ejecutar traslados internos",
+        "descripcion": "Reubicar productos físicamente entre estantes o ubicaciones del mismo almacén.",
         "orden": 7,
+    },
+    {
+        "codigo": "movimientos.traslado_almacen",
+        "modulo": "MOVIMIENTOS",
+        "nombre": "Ejecutar traslados entre almacenes",
+        "descripcion": "Transferir productos y existencias entre distintos almacenes del sistema.",
+        "orden": 8,
     },
 
     # Módulo 3: INFRAESTRUCTURA
@@ -431,13 +433,6 @@ PERMISOS_CATALOGO = [
         "nombre": "Gestionar categorías y tipos",
         "descripcion": "Crear, editar o clasificar categorías y tipos de productos.",
         "orden": 3,
-    },
-    {
-        "codigo": "infraestructura.gestionar_almacenes",
-        "modulo": "INFRAESTRUCTURA",
-        "nombre": "Gestionar almacenes y bodegas",
-        "descripcion": "Crear, editar o trasladar inventarios completos de almacenes.",
-        "orden": 4,
     },
 
     # Módulo 4: ANALITICA
@@ -483,7 +478,6 @@ PRESETS_PERMISOS = {
             "catalogo.ver",
             "catalogo.crear",
             "catalogo.editar",
-            "catalogo.reubicar_interno",
             "movimientos.ver",
             "movimientos.entrada",
             "movimientos.prestamo",
@@ -533,7 +527,6 @@ PRESETS_PERMISOS = {
             "catalogo.ver",
             "catalogo.crear",
             "catalogo.editar",
-            "catalogo.reubicar_interno",
             "infraestructura.ver",
             "infraestructura.gestionar_ubicaciones",
             "infraestructura.gestionar_categorias",

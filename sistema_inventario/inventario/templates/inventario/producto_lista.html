@@ -293,7 +293,9 @@
                                         data-codigo="{{ prod.codigo_interno }}"
                                         data-nombre="{{ prod.nombre }}"
                                         data-almacen="{{ prod.categoria.almacen_principal_id }}"
+                                        data-almacen-nombre="{{ prod.categoria.almacen_principal.nombre }}"
                                         data-categoria="{{ prod.categoria_id }}"
+                                        data-categoria-nombre="{{ prod.categoria.nombre }}{% if prod.tipo %} · {{ prod.tipo.nombre }}{% endif %}"
                                         data-tipo="{{ prod.tipo_id|default:'' }}"
                                         data-stock-inicial="{{ prod.stock_inicial }}"
                                         data-stock-minimo="{{ prod.stock_minimo }}"
@@ -302,6 +304,7 @@
                                         data-unidades-empaque="{{ prod.unidades_por_empaque|default:'' }}"
                                         data-descripcion="{{ prod.descripcion|default:'' }}"
                                         data-ubicacion="{% with ub=prod.ubicaciones.first %}{{ ub.id|default:'' }}{% endwith %}"
+                                        data-ubicacion-nombre="{% with ub=prod.ubicaciones.first %}{{ ub.nombre|default:'Sin asignar' }}{% endwith %}"
                                         data-ubicaciones="{% for u in prod.ubicaciones.all %}{{ u.id }}{% if not forloop.last %},{% endif %}{% endfor %}">
                                     Editar
                                 </button>
@@ -370,6 +373,30 @@
         </div>
 
         <div class="app-modal-body">
+            <!-- Bloque Informativo Estructural en Modo Edición -->
+            <div id="bloqueInfoEstructuralEdicion" style="display: none; background: var(--bg-panel-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 14px;">
+                <div style="font-size: 10.5px; font-weight: 700; color: var(--accent-bright); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">
+                    Estructura Operativa (Inmutable en Edición)
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; font-size: 12.5px;">
+                    <div>
+                        <span style="color: var(--text-faint); font-size: 10.5px; display: block;">Sede / Almacén:</span>
+                        <strong style="color: var(--text);" id="txtEdicionAlmacen"></strong>
+                    </div>
+                    <div>
+                        <span style="color: var(--text-faint); font-size: 10.5px; display: block;">Ubicación Física:</span>
+                        <strong style="color: var(--text);" id="txtEdicionUbicacion"></strong>
+                    </div>
+                    <div>
+                        <span style="color: var(--text-faint); font-size: 10.5px; display: block;">Categoría y Tipo:</span>
+                        <strong style="color: var(--text);" id="txtEdicionCategoria"></strong>
+                    </div>
+                </div>
+                <div style="margin-top: 8px; font-size: 11px; color: var(--warn); background: rgba(255, 189, 92, 0.08); padding: 5px 8px; border-radius: 5px; border: 1px solid rgba(255, 189, 92, 0.2);">
+                    Para cambiar la sede o reubicar físicamente este producto, utiliza el módulo de <a href="{% url 'inventario:movimiento-lista' %}" style="text-decoration: underline; font-weight: 600; color: var(--warn);">Movimientos y Traslados</a>.
+                </div>
+            </div>
+
             <div class="form-group">
                 <label for="id_nombre">Nombre del Producto *</label>
                 {{ producto_form.nombre }}
@@ -379,69 +406,68 @@
                 </div>
             </div>
 
-            <div class="form-grid-2">
-                <div class="form-group">
-                    <label for="id_almacen">Almacén *</label>
-                    {{ producto_form.almacen }}
-                    <div class="form-help">Almacén donde residirá el producto.</div>
+            <!-- Campos Estructurales exclusivos del modo Nuevo Producto -->
+            <div id="bloqueCamposEstructuralesNuevo">
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label for="id_almacen">Almacén *</label>
+                        {{ producto_form.almacen }}
+                        <div class="form-help">Almacén donde residirá el producto.</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="id_ubicacion">Ubicación Física Única *</label>
+                        {{ producto_form.ubicacion }}
+                        <div class="form-help">Ubicación física obligatoria dentro del almacén.</div>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label for="id_ubicacion">Ubicación Física Única *</label>
-                    {{ producto_form.ubicacion }}
-                    <div class="form-help">Ubicación física obligatoria dentro del almacén.</div>
-                </div>
-            </div>
 
-            <div class="form-grid-2">
-                <div class="form-group">
-                    <label for="id_categoria">Categoría *</label>
-                    {{ producto_form.categoria }}
-                    <div class="form-help">Categoría perteneciente al almacén.</div>
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label for="id_categoria">Categoría *</label>
+                        {{ producto_form.categoria }}
+                        <div class="form-help">Categoría perteneciente al almacén.</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="id_tipo">Tipo asociado (opcional)</label>
+                        {{ producto_form.tipo }}
+                        <div class="form-help">Subtipo perteneciente a la categoría seleccionada.</div>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label for="id_tipo">Tipo asociado (opcional)</label>
-                    {{ producto_form.tipo }}
-                    <div class="form-help">Subtipo perteneciente a la categoría seleccionada.</div>
-                </div>
-            </div>
 
-            <div class="form-grid-2">
                 <div class="form-group" id="grupoStockInicial">
                     <label for="id_stock_inicial">Stock Inicial (Unidades Base)</label>
                     {{ producto_form.stock_inicial }}
-                    <div class="form-help" id="ayudaStockInicialNuevo">Total de unidades que ingresan inicialmente. Inmutable.</div>
-                    <div class="form-help" id="ayudaStockInicialEdicion" style="display: none; margin-top: 6px; font-size: 0.82rem; color: #f59e0b; background: rgba(245, 158, 11, 0.1); padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(245, 158, 11, 0.25);">
-                        🔒 El stock inicial no se puede modificar desde el catálogo. Para aumentar existencias, registra una <a href="{% url 'inventario:movimiento-lista' %}?tab=ENTRADA" style="text-decoration: underline; font-weight: 600; color: #f59e0b;">Entrada de Stock</a> o un <a href="{% url 'inventario:movimiento-lista' %}?tab=CONTEOS" style="text-decoration: underline; font-weight: 600; color: #f59e0b;">Conteo Físico</a>.
-                    </div>
+                    <div class="form-help" id="ayudaStockInicialNuevo">Total de unidades que ingresan inicialmente. Inmutable tras la creación.</div>
                 </div>
+            </div>
+
+            <div class="form-grid-2">
                 <div class="form-group">
                     <label for="id_stock_minimo">Stock Mínimo (Umbral Alerta)</label>
                     {{ producto_form.stock_minimo }}
                 </div>
-            </div>
-
-            <div class="form-grid-2">
                 <div class="form-group">
                     <label for="id_codigo_barras">Código de Barras (EAN/UPC)</label>
                     {{ producto_form.codigo_barras }}
                 </div>
+            </div>
+
+            <div class="form-grid-2">
                 <div class="form-group">
                     <label for="id_nombre_empaque">Nombre de Empaque (opcional)</label>
                     {{ producto_form.nombre_empaque }}
                     <div class="form-help">Ej. Caja, Paquete, Bulto.</div>
                 </div>
-            </div>
-
-            <div class="form-grid-2">
                 <div class="form-group">
                     <label for="id_unidades_por_empaque">Unidades por Empaque (Factor)</label>
                     {{ producto_form.unidades_por_empaque }}
-                    <div class="form-help">Cuántas unidades contiene 1 empaque (ej. 50). Nota: no suma unidades al stock inicial.</div>
+                    <div class="form-help">Unidades base por empaque.</div>
                 </div>
-                <div class="form-group" style="margin-bottom: 0;">
-                    <label for="id_descripcion">Descripción / Notas</label>
-                    {{ producto_form.descripcion }}
-                </div>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="id_descripcion">Descripción / Especificaciones</label>
+                {{ producto_form.descripcion }}
             </div>
         </div>
 
@@ -589,22 +615,21 @@ document.addEventListener("DOMContentLoaded", function() {
             formModal.action = urlCrear;
             tituloModal.textContent = "Nuevo Producto en Catálogo";
             btnSubmit.textContent = "Registrar Producto";
-            if (inputStockIni) {
-                inputStockIni.disabled = false;
-                inputStockIni.value = "0";
+
+            var bloqueEdicion = document.getElementById("bloqueInfoEstructuralEdicion");
+            if (bloqueEdicion) bloqueEdicion.style.display = "none";
+
+            var bloqueNuevo = document.getElementById("bloqueCamposEstructuralesNuevo");
+            if (bloqueNuevo) {
+                bloqueNuevo.style.display = "";
+                bloqueNuevo.querySelectorAll("input, select").forEach(function(el) {
+                    el.disabled = false;
+                });
             }
-            var elAyudaNuevo = document.getElementById("ayudaStockInicialNuevo");
-            var elAyudaEdicion = document.getElementById("ayudaStockInicialEdicion");
-            if (elAyudaNuevo) elAyudaNuevo.style.display = "block";
-            if (elAyudaEdicion) elAyudaEdicion.style.display = "none";
+
+            if (inputStockIni) inputStockIni.value = "0";
             if (inputStockMin) inputStockMin.value = "0";
-            if (selectAlmacen) {
-                selectAlmacen.value = "";
-                selectAlmacen.disabled = false;
-                selectAlmacen.removeAttribute("title");
-            }
-            var hiddenAlm = document.getElementById("hiddenAlmacenEdit");
-            if (hiddenAlm) hiddenAlm.disabled = true;
+            if (selectAlmacen) selectAlmacen.value = "";
 
             filtrarCategoriasPorAlmacen("", "");
             filtrarUbicacionesPorAlmacen("", "");
@@ -621,46 +646,26 @@ document.addEventListener("DOMContentLoaded", function() {
             tituloModal.textContent = "Editar Producto (" + btn.getAttribute("data-codigo") + ")";
             btnSubmit.textContent = "Guardar Cambios";
 
+            var bloqueEdicion = document.getElementById("bloqueInfoEstructuralEdicion");
+            if (bloqueEdicion) {
+                bloqueEdicion.style.display = "block";
+                var txtAlm = document.getElementById("txtEdicionAlmacen");
+                var txtUb = document.getElementById("txtEdicionUbicacion");
+                var txtCat = document.getElementById("txtEdicionCategoria");
+                if (txtAlm) txtAlm.textContent = btn.getAttribute("data-almacen-nombre") || "—";
+                if (txtUb) txtUb.textContent = btn.getAttribute("data-ubicacion-nombre") || "Sin asignar";
+                if (txtCat) txtCat.textContent = btn.getAttribute("data-categoria-nombre") || "—";
+            }
+
+            var bloqueNuevo = document.getElementById("bloqueCamposEstructuralesNuevo");
+            if (bloqueNuevo) {
+                bloqueNuevo.style.display = "none";
+                bloqueNuevo.querySelectorAll("input, select").forEach(function(el) {
+                    el.disabled = true;
+                });
+            }
+
             if (inputNombre) inputNombre.value = btn.getAttribute("data-nombre") || "";
-            var almId = btn.getAttribute("data-almacen") || "";
-            var catId = btn.getAttribute("data-categoria") || "";
-            var tipoId = btn.getAttribute("data-tipo") || "";
-            var ubId = btn.getAttribute("data-ubicacion") || "";
-
-            if (selectAlmacen && almId) {
-                selectAlmacen.value = almId;
-                if (!puedeTrasladarAlmacen) {
-                    selectAlmacen.disabled = true;
-                    selectAlmacen.title = "No tienes permiso para trasladar productos entre almacenes.";
-                    var hAlm = document.getElementById("hiddenAlmacenEdit");
-                    if (!hAlm) {
-                        hAlm = document.createElement("input");
-                        hAlm.type = "hidden";
-                        hAlm.name = "almacen";
-                        hAlm.id = "hiddenAlmacenEdit";
-                        formModal.appendChild(hAlm);
-                    }
-                    hAlm.value = almId;
-                    hAlm.disabled = false;
-                } else {
-                    selectAlmacen.disabled = false;
-                    selectAlmacen.removeAttribute("title");
-                    var hAlm = document.getElementById("hiddenAlmacenEdit");
-                    if (hAlm) hAlm.disabled = true;
-                }
-            }
-            filtrarCategoriasPorAlmacen(almId, catId);
-            filtrarUbicacionesPorAlmacen(almId, ubId);
-            filtrarTiposPorCategoria(catId, tipoId);
-
-            if (inputStockIni) {
-                inputStockIni.value = btn.getAttribute("data-stock-inicial") || "0";
-                inputStockIni.disabled = true;
-            }
-            var elAyudaNuevo = document.getElementById("ayudaStockInicialNuevo");
-            var elAyudaEdicion = document.getElementById("ayudaStockInicialEdicion");
-            if (elAyudaNuevo) elAyudaNuevo.style.display = "none";
-            if (elAyudaEdicion) elAyudaEdicion.style.display = "block";
             if (inputStockMin) inputStockMin.value = btn.getAttribute("data-stock-minimo") || "0";
             if (inputBarras) inputBarras.value = btn.getAttribute("data-codigo-barras") || "";
             if (inputEmpaque) inputEmpaque.value = btn.getAttribute("data-nombre-empaque") || "";

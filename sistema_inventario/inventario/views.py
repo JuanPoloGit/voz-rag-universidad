@@ -199,9 +199,10 @@ class AjaxModalFormMixin:
 # 1. ALMACENES
 # ─────────────────────────────────────────────────────────────────────────────
 
-class AlmacenListaView(LoginRequiredMixin, ListView):
+class AlmacenListaView(LoginRequiredMixin, PermisoRequeridoMixin, ListView):
     """Lista de almacenes registrados."""
 
+    permiso_requerido = "infraestructura.ver"
     model = Almacen
     template_name = "inventario/almacen_lista.html"
     context_object_name = "almacenes"
@@ -313,9 +314,10 @@ class AlmacenEditarView(LoginRequiredMixin, RolRequeridoMixin, AjaxModalFormMixi
 # 2. UBICACIONES
 # ─────────────────────────────────────────────────────────────────────────────
 
-class UbicacionListaView(LoginRequiredMixin, ListView):
+class UbicacionListaView(LoginRequiredMixin, PermisoRequeridoMixin, ListView):
     """Lista de ubicaciones físicas accesibles por el usuario."""
 
+    permiso_requerido = "infraestructura.ver"
     model = Ubicacion
     template_name = "inventario/ubicacion_lista.html"
     context_object_name = "ubicaciones"
@@ -354,8 +356,10 @@ class UbicacionListaView(LoginRequiredMixin, ListView):
         return context
 
 
-class UbicacionReactivarView(LoginRequiredMixin, View):
+class UbicacionReactivarView(LoginRequiredMixin, PermisoRequeridoMixin, View):
     """Reactivación de ubicación física inhabilitada."""
+
+    permiso_requerido = "infraestructura.gestionar_ubicaciones"
 
     def dispatch(self, request, *args, **kwargs):
         ubicacion = get_object_or_404(Ubicacion, pk=kwargs.get("pk"), eliminado=False)
@@ -374,8 +378,10 @@ class UbicacionReactivarView(LoginRequiredMixin, View):
         return redirect(request.POST.get("next") or "inventario:ubicacion-lista")
 
 
-class UbicacionEliminarView(LoginRequiredMixin, View):
+class UbicacionEliminarView(LoginRequiredMixin, PermisoRequeridoMixin, View):
     """Eliminación lógica de ubicación física (o redirección a traslado si tiene productos)."""
+
+    permiso_requerido = "infraestructura.gestionar_ubicaciones"
 
     def dispatch(self, request, *args, **kwargs):
         ubicacion = get_object_or_404(Ubicacion, pk=kwargs.get("pk"), eliminado=False)
@@ -398,9 +404,10 @@ class UbicacionEliminarView(LoginRequiredMixin, View):
         return redirect(request.POST.get("next") or "inventario:ubicacion-lista")
 
 
-class UbicacionCrearView(LoginRequiredMixin, AjaxModalFormMixin, CreateView):
+class UbicacionCrearView(LoginRequiredMixin, PermisoRequeridoMixin, AjaxModalFormMixin, CreateView):
     """Creación de ubicación en almacén autorizado."""
 
+    permiso_requerido = "infraestructura.gestionar_ubicaciones"
     model = Ubicacion
     form_class = UbicacionForm
     template_name = "inventario/ubicacion_form.html"
@@ -433,9 +440,10 @@ class UbicacionCrearView(LoginRequiredMixin, AjaxModalFormMixin, CreateView):
             return self.form_invalid(form)
 
 
-class UbicacionEditarView(LoginRequiredMixin, AjaxModalFormMixin, UpdateView):
+class UbicacionEditarView(LoginRequiredMixin, PermisoRequeridoMixin, AjaxModalFormMixin, UpdateView):
     """Edición de ubicación física conservando historial del nombre previo y permitiendo cambio de almacén (§Punto 4)."""
 
+    permiso_requerido = "infraestructura.gestionar_ubicaciones"
     model = Ubicacion
     form_class = UbicacionForm
     template_name = "inventario/ubicacion_form.html"
@@ -487,9 +495,10 @@ class UbicacionEditarView(LoginRequiredMixin, AjaxModalFormMixin, UpdateView):
 # 3. CATEGORÍAS Y TIPOS OPCIONALES
 # ─────────────────────────────────────────────────────────────────────────────
 
-class CategoriaListaView(LoginRequiredMixin, ListView):
+class CategoriaListaView(LoginRequiredMixin, PermisoRequeridoMixin, ListView):
     """Lista de categorías de productos accesibles por el usuario con sus tipos opcionales."""
 
+    permiso_requerido = "infraestructura.ver"
     model = Categoria
     template_name = "inventario/categoria_lista.html"
     context_object_name = "categorias"
@@ -533,13 +542,15 @@ class CategoriaListaView(LoginRequiredMixin, ListView):
         return context
 
 
-class CategoriaReactivarView(LoginRequiredMixin, View):
+class CategoriaReactivarView(LoginRequiredMixin, PermisoRequeridoMixin, View):
     """Reactivación de categoría previamente inhabilitada."""
 
+    permiso_requerido = "infraestructura.gestionar_categorias"
+
     def dispatch(self, request, *args, **kwargs):
-        categoria = get_object_or_404(Categoria, pk=kwargs.get("pk"), eliminado=False)
+        ubicacion = get_object_or_404(Categoria, pk=kwargs.get("pk"), eliminado=False)
         if getattr(request.user, "es_usuario_normal", False):
-            if not request.user.tiene_acceso_almacen(categoria.almacen_principal):
+            if not request.user.tiene_acceso_almacen(ubicacion.almacen_principal):
                 raise PermissionDenied("No tienes permisos para modificar categorías de otro almacén.")
         return super().dispatch(request, *args, **kwargs)
 
@@ -553,8 +564,10 @@ class CategoriaReactivarView(LoginRequiredMixin, View):
         return redirect(request.POST.get("next") or "inventario:categoria-lista")
 
 
-class CategoriaEliminarView(LoginRequiredMixin, View):
+class CategoriaEliminarView(LoginRequiredMixin, PermisoRequeridoMixin, View):
     """Eliminación lógica de una categoría sin productos activos."""
+
+    permiso_requerido = "infraestructura.gestionar_categorias"
 
     def dispatch(self, request, *args, **kwargs):
         categoria = get_object_or_404(Categoria, pk=kwargs.get("pk"), eliminado=False)
@@ -577,9 +590,10 @@ class CategoriaEliminarView(LoginRequiredMixin, View):
         return redirect(request.POST.get("next") or "inventario:categoria-lista")
 
 
-class CategoriaCrearView(LoginRequiredMixin, AjaxModalFormMixin, CreateView):
+class CategoriaCrearView(LoginRequiredMixin, PermisoRequeridoMixin, AjaxModalFormMixin, CreateView):
     """Creación de una categoría con almacén principal obligatorio y tipos opcionales."""
 
+    permiso_requerido = "infraestructura.gestionar_categorias"
     model = Categoria
     form_class = CategoriaForm
     template_name = "inventario/categoria_form.html"
@@ -619,9 +633,10 @@ class CategoriaCrearView(LoginRequiredMixin, AjaxModalFormMixin, CreateView):
             return self.form_invalid(form)
 
 
-class CategoriaEditarView(LoginRequiredMixin, AjaxModalFormMixin, UpdateView):
+class CategoriaEditarView(LoginRequiredMixin, PermisoRequeridoMixin, AjaxModalFormMixin, UpdateView):
     """Edición de categoría y sus tipos opcionales."""
 
+    permiso_requerido = "infraestructura.gestionar_categorias"
     model = Categoria
     form_class = CategoriaForm
     template_name = "inventario/categoria_form.html"
@@ -686,8 +701,10 @@ class CategoriaEditarView(LoginRequiredMixin, AjaxModalFormMixin, UpdateView):
             return self.form_invalid(form)
 
 
-class TipoCategoriaCrearView(LoginRequiredMixin, View):
+class TipoCategoriaCrearView(LoginRequiredMixin, PermisoRequeridoMixin, View):
     """Agrega un tipo opcional ligado a una categoría existente."""
+
+    permiso_requerido = "infraestructura.gestionar_categorias"
 
     def post(self, request):
         categoria_id = request.POST.get("categoria")
@@ -722,8 +739,10 @@ class TipoCategoriaCrearView(LoginRequiredMixin, View):
         return redirect(next_url)
 
 
-class TipoCategoriaEditarView(LoginRequiredMixin, View):
+class TipoCategoriaEditarView(LoginRequiredMixin, PermisoRequeridoMixin, View):
     """Renombra un tipo de categoría conservando los productos e historial."""
+
+    permiso_requerido = "infraestructura.gestionar_categorias"
 
     def dispatch(self, request, *args, **kwargs):
         tipo = get_object_or_404(TipoCategoria, pk=kwargs.get("pk"))
@@ -755,8 +774,10 @@ class TipoCategoriaEditarView(LoginRequiredMixin, View):
         return redirect(next_url)
 
 
-class TipoCategoriaEliminarView(LoginRequiredMixin, View):
+class TipoCategoriaEliminarView(LoginRequiredMixin, PermisoRequeridoMixin, View):
     """Elimina un tipo de categoría opcional (los productos quedan sin tipo)."""
+
+    permiso_requerido = "infraestructura.gestionar_categorias"
 
     def dispatch(self, request, *args, **kwargs):
         tipo = get_object_or_404(TipoCategoria, pk=kwargs.get("pk"))
@@ -788,9 +809,10 @@ class TipoCategoriaEliminarView(LoginRequiredMixin, View):
 # 4. PRODUCTOS
 # ─────────────────────────────────────────────────────────────────────────────
 
-class ProductoListaView(LoginRequiredMixin, ListView):
+class ProductoListaView(LoginRequiredMixin, PermisoRequeridoMixin, ListView):
     """Catálogo y lista operativa de productos."""
 
+    permiso_requerido = "catalogo.ver"
     model = Producto
     template_name = "inventario/producto_lista.html"
     context_object_name = "productos"
@@ -1104,17 +1126,6 @@ class ProductoEditarView(LoginRequiredMixin, PermisoRequeridoMixin, AjaxModalFor
         kwargs["usuario"] = self.request.user
         return kwargs
 
-    def get_form(self, form_class=None):
-        form = super().get_form(form_class)
-        user = self.request.user
-        if not user.es_administrador and not user.tiene_permiso("catalogo.trasladar_almacen"):
-            if "almacen" in form.fields:
-                form.fields["almacen"].disabled = True
-        if not user.es_administrador and not user.tiene_permiso("catalogo.reubicar_interno"):
-            if "ubicacion" in form.fields:
-                form.fields["ubicacion"].disabled = True
-        return form
-
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         user = self.request.user
@@ -1163,9 +1174,10 @@ class ProductoEditarView(LoginRequiredMixin, PermisoRequeridoMixin, AjaxModalFor
             return self.form_invalid(form)
 
 
-class ProductoDetalleView(LoginRequiredMixin, DetailView):
+class ProductoDetalleView(LoginRequiredMixin, PermisoRequeridoMixin, DetailView):
     """Detalle completo del producto: stock por almacén, ubicaciones e historial de movimientos."""
 
+    permiso_requerido = "catalogo.ver"
     model = Producto
     template_name = "inventario/producto_detalle.html"
     context_object_name = "producto"
@@ -1216,8 +1228,10 @@ class ProductoDetalleView(LoginRequiredMixin, DetailView):
         return context
 
 
-class ProductoToggleActivoView(LoginRequiredMixin, View):
+class ProductoToggleActivoView(LoginRequiredMixin, PermisoRequeridoMixin, View):
     """Inhabilita o reactiva un producto sin eliminarlo del catálogo."""
+
+    permiso_requerido = "catalogo.editar"
 
     def post(self, request, pk):
         producto = get_object_or_404(Producto, pk=pk, archivado=False)
@@ -1243,10 +1257,11 @@ class ProductoToggleActivoView(LoginRequiredMixin, View):
         return redirect(request.POST.get("next") or "inventario:producto-lista")
 
 
-class ProductoArchivarView(LoginRequiredMixin, RolRequeridoMixin, View):
+class ProductoArchivarView(LoginRequiredMixin, RolRequeridoMixin, PermisoRequeridoMixin, View):
     """Eliminación / Archivado lógico de un producto (solo Administrador o Superusuario)."""
 
     roles_permitidos = (UsuarioAudacIA.Rol.ADMINISTRADOR, UsuarioAudacIA.Rol.SUPERUSUARIO)
+    permiso_requerido = "catalogo.eliminar"
 
     def post(self, request, pk):
         producto = get_object_or_404(Producto, pk=pk)
@@ -1741,8 +1756,10 @@ class ProductoFusionarView(LoginRequiredMixin, RolRequeridoMixin, View):
 # 7. ALERTAS Y NOTIFICACIONES DE STOCK
 # ─────────────────────────────────────────────────────────────────────────────
 
-class AlertasStockListaView(LoginRequiredMixin, View):
+class AlertasStockListaView(LoginRequiredMixin, PermisoRequeridoMixin, View):
     """Centro de Notificaciones y Alertas de Stock Bajo y Crítico."""
+
+    permiso_requerido = "analitica.ver_alertas"
 
     def get(self, request):
         user = request.user
@@ -1920,8 +1937,10 @@ class ActualizarNombrePerfilView(LoginRequiredMixin, View):
         return redirect(next_url)
 
 
-class AlertasStockJSONView(LoginRequiredMixin, View):
+class AlertasStockJSONView(LoginRequiredMixin, PermisoRequeridoMixin, View):
     """Endpoint AJAX / JSON para consultar el estado de alertas en vivo."""
+
+    permiso_requerido = "analitica.ver_alertas"
 
     def get(self, request):
         alertas = obtener_alertas_stock(usuario=request.user)
@@ -1955,9 +1974,10 @@ class AlertasStockJSONView(LoginRequiredMixin, View):
 # 8. MOVIMIENTOS: LISTA, ENTRADAS Y SALIDAS
 # ─────────────────────────────────────────────────────────────────────────────
 
-class MovimientoListaView(LoginRequiredMixin, ListView):
+class MovimientoListaView(LoginRequiredMixin, PermisoRequeridoMixin, ListView):
     """Centro unificado de Movimientos: Entradas, Salidas, Préstamos (con Antigüedad), Traslados y Conteos Físicos."""
 
+    permiso_requerido = "movimientos.ver"
     model = Movimiento
     template_name = "inventario/movimiento_lista.html"
     context_object_name = "movimientos"
@@ -2282,8 +2302,10 @@ class MovimientoListaView(LoginRequiredMixin, ListView):
         return context
 
 
-class EntradaCrearView(LoginRequiredMixin, View):
+class EntradaCrearView(LoginRequiredMixin, PermisoRequeridoMixin, View):
     """Registro operativo de entrada de mercancía (con soporte de empaques e idempotencia)."""
+
+    permiso_requerido = "movimientos.entrada"
 
     def get(self, request):
         form = EntradaForm(usuario=request.user)
@@ -2334,8 +2356,10 @@ class EntradaCrearView(LoginRequiredMixin, View):
         return render(request, "inventario/movimiento_entrada.html", {"form": form})
 
 
-class SalidaCrearView(LoginRequiredMixin, View):
+class SalidaCrearView(LoginRequiredMixin, PermisoRequeridoMixin, View):
     """Registro operativo de salida de stock con verificación y alerta inmediata."""
+
+    permiso_requerido = "movimientos.dotacion"
 
     def get(self, request):
         form = SalidaForm(usuario=request.user)
@@ -2386,9 +2410,10 @@ class SalidaCrearView(LoginRequiredMixin, View):
 # 9. PRÉSTAMOS, DEVOLUCIONES Y BAJAS
 # ─────────────────────────────────────────────────────────────────────────────
 
-class PrestamoListaView(LoginRequiredMixin, ListView):
+class PrestamoListaView(LoginRequiredMixin, PermisoRequeridoMixin, ListView):
     """Listado y seguimiento de préstamos."""
 
+    permiso_requerido = "movimientos.ver"
     model = Prestamo
     template_name = "inventario/prestamo_lista.html"
     context_object_name = "prestamos"
@@ -2425,8 +2450,10 @@ class PrestamoListaView(LoginRequiredMixin, ListView):
         return context
 
 
-class PrestamoCrearView(LoginRequiredMixin, View):
+class PrestamoCrearView(LoginRequiredMixin, PermisoRequeridoMixin, View):
     """Registro de entrega de artículos en préstamo."""
+
+    permiso_requerido = "movimientos.prestamo"
 
     def get(self, request):
         form = PrestamoForm(usuario=request.user)
@@ -2473,8 +2500,10 @@ class PrestamoCrearView(LoginRequiredMixin, View):
         return render(request, "inventario/prestamo_form.html", {"form": form})
 
 
-class PrestamoDevolucionView(LoginRequiredMixin, View):
+class PrestamoDevolucionView(LoginRequiredMixin, PermisoRequeridoMixin, View):
     """Registro de devolución total o parcial de un préstamo."""
+
+    permiso_requerido = "movimientos.devolucion"
 
     def dispatch(self, request, *args, **kwargs):
         prestamo = get_object_or_404(Prestamo, pk=kwargs.get("pk"))
@@ -2525,8 +2554,10 @@ class PrestamoDevolucionView(LoginRequiredMixin, View):
         return render(request, "inventario/prestamo_devolucion.html", {"prestamo": prestamo, "form": form})
 
 
-class PrestamoBajaView(LoginRequiredMixin, View):
+class PrestamoBajaView(LoginRequiredMixin, PermisoRequeridoMixin, View):
     """Registro de baja por daño o pérdida de un préstamo (§9.4)."""
+
+    permiso_requerido = "movimientos.baja"
 
     def dispatch(self, request, *args, **kwargs):
         prestamo = get_object_or_404(Prestamo, pk=kwargs.get("pk"))
@@ -2581,10 +2612,18 @@ class PrestamoBajaView(LoginRequiredMixin, View):
 # 10. TRASLADOS OPERATIVOS
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TrasladoCrearView(LoginRequiredMixin, RolRequeridoMixin, View):
-    """Registro de traslado operativo (interno o entre almacenes). Exclusivo de Administrador y Superusuario."""
+class TrasladoCrearView(LoginRequiredMixin, View):
+    """Registro de traslado operativo (interno o entre almacenes)."""
 
-    roles_permitidos = (UsuarioAudacIA.Rol.ADMINISTRADOR, UsuarioAudacIA.Rol.SUPERUSUARIO)
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            raise PermissionDenied("Debe iniciar sesión para realizar traslados.")
+        if getattr(request.user, "es_usuario_normal", False):
+            tiene_int = request.user.tiene_permiso("movimientos.traslado_interno")
+            tiene_alm = request.user.tiene_permiso("movimientos.traslado_almacen")
+            if not tiene_int and not tiene_alm:
+                raise PermissionDenied("No tienes permisos para registrar traslados.")
+        return super().dispatch(request, *args, **kwargs)
 
     def get(self, request):
         form = TrasladoForm(usuario=request.user)
@@ -2609,6 +2648,8 @@ class TrasladoCrearView(LoginRequiredMixin, RolRequeridoMixin, View):
             try:
                 if alm_dest and alm_dest.id != alm_orig.id:
                     # Traslado entre almacenes
+                    if getattr(request.user, "es_usuario_normal", False) and not request.user.tiene_permiso("movimientos.traslado_almacen"):
+                        raise PermissionDenied("No tienes permisos para realizar traslados entre almacenes.")
                     cat_dest = form.cleaned_data.get("categoria_destino")
                     ex_o, ex_d, mov = registrar_traslado_entre_almacenes(
                         producto=prod,
@@ -2629,6 +2670,8 @@ class TrasladoCrearView(LoginRequiredMixin, RolRequeridoMixin, View):
                     )
                 else:
                     # Traslado interno
+                    if getattr(request.user, "es_usuario_normal", False) and not request.user.tiene_permiso("movimientos.traslado_interno"):
+                        raise PermissionDenied("No tienes permisos para realizar traslados internos de ubicación.")
                     current_ub = prod.ubicaciones.filter(almacen=alm_orig).first()
                     nueva_ub = ub_dest or ub_orig
                     if not nueva_ub:
@@ -2675,9 +2718,10 @@ class TrasladoCrearView(LoginRequiredMixin, RolRequeridoMixin, View):
 # 11. CONTEO FÍSICO Y AJUSTES
 # ─────────────────────────────────────────────────────────────────────────────
 
-class ConteoFisicoListaView(LoginRequiredMixin, ListView):
+class ConteoFisicoListaView(LoginRequiredMixin, PermisoRequeridoMixin, ListView):
     """Listado de conteos físicos y solicitudes de ajuste."""
 
+    permiso_requerido = "movimientos.ver"
     model = ConteoFisico
     template_name = "inventario/conteo_lista.html"
     context_object_name = "conteos"
@@ -2695,8 +2739,10 @@ class ConteoFisicoListaView(LoginRequiredMixin, ListView):
         return qs
 
 
-class ConteoFisicoCrearView(LoginRequiredMixin, View):
+class ConteoFisicoCrearView(LoginRequiredMixin, PermisoRequeridoMixin, View):
     """Registro de conteo físico preliminar."""
+
+    permiso_requerido = "movimientos.ver"
 
     def get(self, request):
         form = ConteoFisicoForm(usuario=request.user)

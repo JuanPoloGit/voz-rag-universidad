@@ -39,6 +39,32 @@
                 </div>
             {% endif %}
 
+            {% if object %}
+                <!-- Ficha informativa estructural (Inmutable en este formulario) -->
+                <div style="background: var(--bg-panel-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 16px; margin-bottom: 1.5rem;">
+                    <div style="font-size: 11px; font-weight: 700; color: var(--accent-bright); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 8px;">
+                        Estructura Operativa (Inmutable en Edición)
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; font-size: 13px;">
+                        <div>
+                            <span style="color: var(--text-faint); font-size: 11px; display: block;">Sede / Almacén:</span>
+                            <strong style="color: var(--text);">{{ object.categoria.almacen_principal.nombre }}</strong>
+                        </div>
+                        <div>
+                            <span style="color: var(--text-faint); font-size: 11px; display: block;">Ubicación Física:</span>
+                            <strong style="color: var(--text);">{{ object.ubicaciones.first.nombre|default:"Sin asignar" }}</strong>
+                        </div>
+                        <div>
+                            <span style="color: var(--text-faint); font-size: 11px; display: block;">Categoría y Tipo:</span>
+                            <strong style="color: var(--text);">{{ object.categoria.nombre }}{% if object.tipo %} · {{ object.tipo.nombre }}{% endif %}</strong>
+                        </div>
+                    </div>
+                    <div style="margin-top: 10px; font-size: 11.5px; color: var(--warn); background: rgba(255, 189, 92, 0.08); padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255, 189, 92, 0.2);">
+                        Para cambiar la sede, transferir existencias o reubicar físicamente este producto, utiliza el módulo de <a href="{% url 'inventario:movimiento-lista' %}" style="text-decoration: underline; font-weight: 600; color: var(--warn);">Movimientos y Traslados</a>.
+                    </div>
+                </div>
+            {% endif %}
+
             <!-- Sección: Identificación -->
             <div style="margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--border);">
                 <h3 style="font-size: 1.1rem; margin-bottom: 1rem; color: var(--text);">Identificación del Producto</h3>
@@ -57,53 +83,55 @@
                     </div>
                 </div>
 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                    <div class="form-group">
-                        <label for="{{ form.almacen.id_for_label }}">Almacén *</label>
-                        {{ form.almacen }}
-                        {% if form.almacen.errors %}
-                            <div class="form-error">
-                                {% for error in form.almacen.errors %}{{ error }}{% endfor %}
-                            </div>
-                        {% endif %}
-                        <div class="form-help">Almacén principal donde residirá el producto y sus ubicaciones.</div>
+                {% if not object %}
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div class="form-group">
+                            <label for="{{ form.almacen.id_for_label }}">Almacén *</label>
+                            {{ form.almacen }}
+                            {% if form.almacen.errors %}
+                                <div class="form-error">
+                                    {% for error in form.almacen.errors %}{{ error }}{% endfor %}
+                                </div>
+                            {% endif %}
+                            <div class="form-help">Almacén principal donde residirá el producto y sus ubicaciones.</div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="{{ form.ubicacion.id_for_label }}">Ubicación Física Única *</label>
+                            {{ form.ubicacion }}
+                            {% if form.ubicacion.errors %}
+                                <div class="form-error">
+                                    {% for error in form.ubicacion.errors %}{{ error }}{% endfor %}
+                                </div>
+                            {% endif %}
+                            <div class="form-help">Ubicación física obligatoria dentro del almacén.</div>
+                        </div>
                     </div>
 
-                    <div class="form-group">
-                        <label for="{{ form.ubicacion.id_for_label }}">Ubicación Física Única *</label>
-                        {{ form.ubicacion }}
-                        {% if form.ubicacion.errors %}
-                            <div class="form-error">
-                                {% for error in form.ubicacion.errors %}{{ error }}{% endfor %}
-                            </div>
-                        {% endif %}
-                        <div class="form-help">Ubicación física obligatoria dentro del almacén.</div>
-                    </div>
-                </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div class="form-group">
+                            <label for="{{ form.categoria.id_for_label }}">Categoría *</label>
+                            {{ form.categoria }}
+                            {% if form.categoria.errors %}
+                                <div class="form-error">
+                                    {% for error in form.categoria.errors %}{{ error }}{% endfor %}
+                                </div>
+                            {% endif %}
+                            <div class="form-help">Categoría perteneciente al almacén seleccionado.</div>
+                        </div>
 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                    <div class="form-group">
-                        <label for="{{ form.categoria.id_for_label }}">Categoría *</label>
-                        {{ form.categoria }}
-                        {% if form.categoria.errors %}
-                            <div class="form-error">
-                                {% for error in form.categoria.errors %}{{ error }}{% endfor %}
-                            </div>
-                        {% endif %}
-                        <div class="form-help">Categoría perteneciente al almacén seleccionado.</div>
+                        <div class="form-group">
+                            <label for="{{ form.tipo.id_for_label }}">Tipo (Opcional)</label>
+                            {{ form.tipo }}
+                            {% if form.tipo.errors %}
+                                <div class="form-error">
+                                    {% for error in form.tipo.errors %}{{ error }}{% endfor %}
+                                </div>
+                            {% endif %}
+                            <div class="form-help">Subclasificación ligada a la categoría seleccionada.</div>
+                        </div>
                     </div>
-
-                    <div class="form-group">
-                        <label for="{{ form.tipo.id_for_label }}">Tipo (Opcional)</label>
-                        {{ form.tipo }}
-                        {% if form.tipo.errors %}
-                            <div class="form-error">
-                                {% for error in form.tipo.errors %}{{ error }}{% endfor %}
-                            </div>
-                        {% endif %}
-                        <div class="form-help">Subclasificación ligada a la categoría seleccionada.</div>
-                    </div>
-                </div>
+                {% endif %}
 
                 <div class="form-group">
                     <label for="{{ form.codigo_barras.id_for_label }}">Código de barras (EAN/UPC)</label>
@@ -120,30 +148,21 @@
             <div style="margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--border);">
                 <h3 style="font-size: 1.1rem; margin-bottom: 1rem; color: var(--text);">Control de Stock</h3>
 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                    <div class="form-group">
-                        <label for="{{ form.stock_inicial.id_for_label }}">
-                            Stock inicial (unidades)
-                            {% if object %}
-                                <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">(Inmutable)</span>
-                            {% endif %}
-                        </label>
-                        {{ form.stock_inicial }}
-                        {% if form.stock_inicial.errors %}
-                            <div class="form-error">
-                                {% for error in form.stock_inicial.errors %}{{ error }}{% endfor %}
-                            </div>
-                        {% endif %}
-                        <div class="form-help">
-                            {% if object %}
-                                <div style="margin-top: 4px; font-size: 0.82rem; color: #f59e0b; background: rgba(245, 158, 11, 0.1); padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(245, 158, 11, 0.25);">
-                                    🔒 El stock inicial no se puede modificar desde el catálogo. Para aumentar existencias, registra una <a href="{% url 'inventario:movimiento-lista' %}?tab=ENTRADA" style="text-decoration: underline; font-weight: 600; color: #f59e0b;">Entrada de Stock</a> o un <a href="{% url 'inventario:movimiento-lista' %}?tab=CONTEOS" style="text-decoration: underline; font-weight: 600; color: #f59e0b;">Conteo Físico</a>.
+                <div style="display: grid; grid-template-columns: {% if not object %}1fr 1fr{% else %}1fr{% endif %}; gap: 1rem;">
+                    {% if not object %}
+                        <div class="form-group">
+                            <label for="{{ form.stock_inicial.id_for_label }}">Stock inicial (unidades)</label>
+                            {{ form.stock_inicial }}
+                            {% if form.stock_inicial.errors %}
+                                <div class="form-error">
+                                    {% for error in form.stock_inicial.errors %}{{ error }}{% endfor %}
                                 </div>
-                            {% else %}
-                                Genera el movimiento inicial de existencias en el almacén principal. Inmutable tras la creación.
                             {% endif %}
+                            <div class="form-help">
+                                Genera el movimiento inicial de existencias en el almacén principal. Inmutable tras la creación.
+                            </div>
                         </div>
-                    </div>
+                    {% endif %}
 
                     <div class="form-group">
                         <label for="{{ form.stock_minimo.id_for_label }}">Stock mínimo (Alerta)</label>

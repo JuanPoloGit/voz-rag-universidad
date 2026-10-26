@@ -15,6 +15,7 @@ from inventario.servicios.operaciones import (
     registrar_devolucion_prestamo,
     registrar_baja_prestamo,
     registrar_traslado_entre_almacenes,
+    registrar_traslado_interno,
 )
 from inventario.servicios.datos_maestros import (
     crear_producto,
@@ -132,70 +133,82 @@ class PermisosOperativosTest(TestCase):
                 clave_idempotencia="TEST-PRES-1",
             )
 
-    def test_vulnerabilidad_traslado_implicito_bloqueado(self):
-        """
-        VULNERABILIDAD RESUELTA:
-        Un usuario con permiso de editar catálogo pero SIN permiso de trasladar almacén
-        NO debe poder cambiar la categoría del producto a una categoría de otro almacén.
-        """
-        # Conceder editar catálogo pero NO trasladar almacén
-        p_editar = PermisoAudacIA.objects.get(codigo="catalogo.editar")
-        self.user_op.permisos_personalizados.add(p_editar)
-
-        # Intento de trasladar de Almacén A a Almacén B mediante actualizar_producto
-        with self.assertRaises(PermissionDenied) as ctx:
-            actualizar_producto(
-                producto=self.prod,
-                nombre=self.prod.nombre,
-                categoria=self.cat_b,  # Perteneciente a Almacén B
-                tipo=None,
-                stock_minimo=2,
-                codigo_barras="",
-                nombre_empaque="",
-                unidades_por_empaque=None,
-                descripcion="",
-                ubicaciones=[self.ub_b1.id],
-                usuario=self.user_op,
-            )
-        self.assertIn("trasladar productos", str(ctx.exception))
-
-    def test_vulnerabilidad_reubicacion_interna_bloqueada(self):
-        """
-        Un usuario con permiso de editar catálogo pero SIN catalogo.reubicar_interno
-        NO debe poder modificar las ubicaciones físicas en los estantes.
-        """
-        p_editar = PermisoAudacIA.objects.get(codigo="catalogo.editar")
-        self.user_op.permisos_personalizados.add(p_editar)
-
-        with self.assertRaises(PermissionDenied) as ctx:
-            actualizar_producto(
-                producto=self.prod,
-                nombre=self.prod.nombre,
-                categoria=self.cat_a,
-                tipo=None,
-                stock_minimo=2,
-                codigo_barras="",
-                nombre_empaque="",
-                unidades_por_empaque=None,
-                descripcion="",
-                ubicaciones=[self.ub_a2.id],  # Cambio de estante interno sin permiso
-                usuario=self.user_op,
-            )
-        self.assertIn("reubicar productos", str(ctx.exception))
-
-    def test_traslado_permitido_para_administrador(self):
-        """El administrador sí puede realizar traslados y cambiar categorías de almacén."""
-        producto_actualizado = actualizar_producto(
+    def test_traslado_entre_almacenes_denegado_sin_permiso(self):
+        """No se puede trasladar entre almacenes sin movimientos.traslado_almacen."""
+        registrar_entrada(
             producto=self.prod,
-            nombre=self.prod.nombre,
-            categoria=self.cat_b,
-            tipo=None,
-            stock_minimo=2,
-            codigo_barras="",
-            nombre_empaque="",
-            unidades_por_empaque=None,
-            descripcion="",
-            ubicaciones=[self.ub_b1.id],
+            almacen=self.almacen_a,
+            cantidad=10,
             usuario=self.admin,
+            clave_idempotencia="TEST-ENT-ADMIN-3",
         )
-        self.assertEqual(producto_actualizado.categoria.almacen_principal, self.almacen_b)
+        with self.assertRaises(PermissionDenied):
+            registrar_traslado_entre_almacenes(
+                producto=self.prod,
+                almacen_origen=self.almacen_a,
+                almacen_destino=self.almacen_b,
+                cantidad=2,
+                usuario=self.user_op,
+            )
+
+    def test_traslado_entre_almacenes_permitido_con_permiso(self):
+        """Se puede trasladar entre almacenes si se concede movimientos.traslado_almacen."""
+        registrar_entrada(
+            producto=self.prod,
+            almacen=self.almacen_a,
+            cantidad=10,
+            usuario=self.admin,
+            clave_idempotencia="TEST-ENT-ADMIN-4",
+        )
+        p_tras = PermisoAudacIA.objects.get(codigo="movimientos.traslado_almacen")
+        self.user_op.permisos_personalizados.add(p_tras)
+
+        ex_orig, ex_dest, mov = registrar_traslado_entre_almacenes(
+            producto=self.prod,
+            almacen_origen=self.almacen_a,
+            almacen_destino=self.almacen_b,
+            cantidad=3,
+            usuario=self.user_op,
+        )
+        self.assertEqual(ex_orig.stock_disponible, 7)
+        self.assertEqual(ex_dest.stock_disponible, 3)
+
+    def test_traslado_interno_denegado_sin_permiso(self):
+        """No se puede realizar traslado interno de ubicación sin movimientos.traslado_interno."""
+        registrar_entrada(
+            producto=self.prod,
+            almacen=self.almacen_a,
+            cantidad=10,
+            usuario=self.admin,
+            clave_idempotencia="TEST-ENT-ADMIN-5",
+        )
+        with self.assertRaises(PermissionDenied):
+            registrar_traslado_interno(
+                producto=self.prod,
+                almacen=self.almacen_a,
+                ubicacion_origen=self.ub_a1,
+                ubicacion_destino=self.ub_a2,
+                usuario=self.user_op,
+            )
+
+    def test_traslado_interno_permitido_con_permiso(self):
+        """Se puede realizar traslado interno si se concede movimientos.traslado_interno."""
+        registrar_entrada(
+            producto=self.prod,
+            almacen=self.almacen_a,
+            cantidad=10,
+            usuario=self.admin,
+            clave_idempotencia="TEST-ENT-ADMIN-6",
+        )
+        p_int = PermisoAudacIA.objects.get(codigo="movimientos.traslado_interno")
+        self.user_op.permisos_personalizados.add(p_int)
+
+        ex, mov = registrar_traslado_interno(
+            producto=self.prod,
+            almacen=self.almacen_a,
+            ubicacion_origen=self.ub_a1,
+            ubicacion_destino=self.ub_a2,
+            usuario=self.user_op,
+        )
+        self.prod.refresh_from_db()
+        self.assertEqual(self.prod.ubicaciones.first(), self.ub_a2)

@@ -22,6 +22,22 @@ from web.servicios.reportes import (
 class DashboardView(LoginRequiredMixin, View):
     """Panel de Control y visualización general operativa (§11)."""
 
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
+        if not getattr(request.user, "es_administrador", False):
+            if not request.user.tiene_permiso("analitica.ver_reportes"):
+                from django.shortcuts import redirect
+                from django.core.exceptions import PermissionDenied
+                if request.user.tiene_permiso("catalogo.ver"):
+                    return redirect("inventario:producto-lista")
+                if request.user.tiene_permiso("movimientos.ver"):
+                    return redirect("inventario:movimiento-lista")
+                if request.user.tiene_permiso("infraestructura.ver"):
+                    return redirect("inventario:categoria-lista")
+                raise PermissionDenied("No tienes permisos suficientes para visualizar el panel de control.")
+        return super().dispatch(request, *args, **kwargs)
+
     def get(self, request):
         if "almacen_id" in request.GET and not request.GET.get("almacen_id", "").strip():
             from django.shortcuts import redirect
@@ -62,8 +78,10 @@ class DashboardView(LoginRequiredMixin, View):
         )
 
 
-class GraficoCategoriasJSONView(LoginRequiredMixin, View):
+class GraficoCategoriasJSONView(LoginRequiredMixin, PermisoRequeridoMixin, View):
     """Endpoint AJAX que retorna la distribución de productos por categoría."""
+
+    permiso_requerido = "analitica.ver_reportes"
 
     def get(self, request):
         user = request.user
@@ -81,8 +99,10 @@ class GraficoCategoriasJSONView(LoginRequiredMixin, View):
         return JsonResponse(datos)
 
 
-class GraficoBalanceJSONView(LoginRequiredMixin, View):
+class GraficoBalanceJSONView(LoginRequiredMixin, PermisoRequeridoMixin, View):
     """Endpoint AJAX que retorna el balance de entradas vs. dotación (salidas) en los últimos N días."""
+
+    permiso_requerido = "analitica.ver_reportes"
 
     def get(self, request):
         user = request.user

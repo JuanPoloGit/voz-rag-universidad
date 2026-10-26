@@ -378,6 +378,10 @@ class ProductoForm(forms.ModelForm):
         if self.instance and self.instance.pk:
             self.fields["stock_inicial"].disabled = True
             self.fields["stock_inicial"].required = False
+            self.fields["almacen"].required = False
+            self.fields["ubicacion"].required = False
+            self.fields["categoria"].required = False
+            self.fields["tipo"].required = False
             ub_actual = self.instance.ubicaciones.first()
             if ub_actual and ub_actual.almacen_id:
                 self.fields["almacen"].initial = ub_actual.almacen_id
@@ -387,24 +391,28 @@ class ProductoForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
-        categoria = cleaned_data.get("categoria") or (self.instance.categoria if self.instance and self.instance.pk else None)
+
+        # En modo edición, la categoría, tipo, almacén y ubicación son inmutables en este formulario
+        if self.instance and self.instance.pk:
+            cleaned_data["categoria"] = self.instance.categoria
+            cleaned_data["tipo"] = self.instance.tipo
+            ub_actual = self.instance.ubicaciones.first()
+            cleaned_data["ubicaciones_seleccionadas"] = [ub_actual] if ub_actual else []
+            return cleaned_data
+
+        categoria = cleaned_data.get("categoria")
         almacen = cleaned_data.get("almacen")
         tipo = cleaned_data.get("tipo")
         ub = cleaned_data.get("ubicacion")
 
         if not ub:
-            self.add_error("ubicacion", "La ubicación física es obligatoria para registrar o editar el producto.")
+            self.add_error("ubicacion", "La ubicación física es obligatoria para registrar el producto.")
 
         if categoria:
-            if not (self.instance and self.instance.pk):
-                if almacen and categoria.almacen_principal_id != almacen.id:
-                    self.add_error("categoria", f"La categoría '{categoria.nombre}' pertenece a '{categoria.almacen_principal.nombre}', no al almacén '{almacen.nombre}'.")
-                if ub and ub.almacen_id != categoria.almacen_principal_id:
-                    self.add_error("ubicacion", f"La ubicación '{ub.nombre}' pertenece a '{ub.almacen.nombre}', pero la categoría del producto pertenece a '{categoria.almacen_principal.nombre}'.")
-            else:
-                if almacen and ub and ub.almacen_id != almacen.id:
-                    self.add_error("ubicacion", f"La ubicación '{ub.nombre}' pertenece al almacén '{ub.almacen.nombre}', pero seleccionaste '{almacen.nombre}'.")
-
+            if almacen and categoria.almacen_principal_id != almacen.id:
+                self.add_error("categoria", f"La categoría '{categoria.nombre}' pertenece a '{categoria.almacen_principal.nombre}', no al almacén '{almacen.nombre}'.")
+            if ub and ub.almacen_id != categoria.almacen_principal_id:
+                self.add_error("ubicacion", f"La ubicación '{ub.nombre}' pertenece a '{ub.almacen.nombre}', pero la categoría del producto pertenece a '{categoria.almacen_principal.nombre}'.")
             if tipo and tipo.categoria_id != categoria.id:
                 self.add_error("tipo", "El tipo seleccionado no pertenece a la categoría elegida.")
 

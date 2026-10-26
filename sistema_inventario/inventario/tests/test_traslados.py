@@ -31,8 +31,9 @@ class TrasladosTest(TestCase):
             rol=UsuarioAudacIA.Rol.USUARIO,
             almacen_asignado=self.almacen_origen,
         )
-        p_traslado = PermisoAudacIA.objects.get(codigo="movimientos.traslado")
-        self.user_origen.permisos_personalizados.add(p_traslado)
+        p_traslado_int = PermisoAudacIA.objects.get(codigo="movimientos.traslado_interno")
+        p_traslado_alm = PermisoAudacIA.objects.get(codigo="movimientos.traslado_almacen")
+        self.user_origen.permisos_personalizados.add(p_traslado_int, p_traslado_alm)
         self.user_ajeno = User.objects.create_user(
             username="user_ajeno",
             password="Password123",
@@ -40,6 +41,7 @@ class TrasladosTest(TestCase):
             rol=UsuarioAudacIA.Rol.USUARIO,
             almacen_asignado=self.almacen_destino,
         )
+        self.user_ajeno.permisos_personalizados.add(p_traslado_alm)
 
         self.categoria = Categoria.objects.create(
             nombre="Cables y Red",

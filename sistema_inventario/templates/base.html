@@ -1400,11 +1400,14 @@
             </div>
 
             <nav class="sidebar-nav" style="gap: 6px; padding-top: 16px;">
+                {% if user.es_administrador or 'analitica.ver_reportes' in user.get_permisos_codigos %}
                 <a href="{% url 'web:dashboard' %}" class="nav-item {% block sidebar_dashboard %}{% endblock %}">
                     <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
                     Resumen General
                 </a>
+                {% endif %}
 
+                {% if user.es_administrador or 'catalogo.ver' in user.get_permisos_codigos or 'analitica.ver_alertas' in user.get_permisos_codigos %}
                 <a href="{% url 'inventario:producto-lista' %}" class="nav-item {% block sidebar_productos %}{% endblock %}{% block sidebar_alertas %}{% endblock %}{% block sidebar_rep_existencias %}{% endblock %}">
                     <svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
                     Catálogo y Stock
@@ -1412,16 +1415,21 @@
                         <span class="badge {% if alertas_resumen.total_criticas > 0 %}badge-crit{% else %}badge-warn{% endif %}" style="margin-left: auto; font-size: 10px; padding: 2px 7px;" title="{{ alertas_resumen.total_alertas }} alertas de stock">{{ alertas_resumen.total_alertas }}</span>
                     {% endif %}
                 </a>
+                {% endif %}
 
+                {% if user.es_administrador or 'movimientos.ver' in user.get_permisos_codigos %}
                 <a href="{% url 'inventario:movimiento-lista' %}" class="nav-item {% block sidebar_movimientos %}{% endblock %}{% block sidebar_entrada %}{% endblock %}{% block sidebar_salida %}{% endblock %}{% block sidebar_prestamos %}{% endblock %}{% block sidebar_conteos %}{% endblock %}{% block sidebar_rep_prestamos %}{% endblock %}{% block sidebar_rep_movimientos %}{% endblock %}{% block sidebar_rep_estancados %}{% endblock %}">
                     <svg viewBox="0 0 24 24"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
                     Movimientos
                 </a>
+                {% endif %}
 
+                {% if user.es_administrador or 'infraestructura.ver' in user.get_permisos_codigos %}
                 <a href="{% url 'inventario:categoria-lista' %}" class="nav-item {% block sidebar_categorias %}{% endblock %}{% block sidebar_ubicaciones %}{% endblock %}{% block sidebar_almacenes %}{% endblock %}">
                     <svg viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z"/><circle cx="17" cy="17" r="3"/></svg>
                     Categorías y Almacenes
                 </a>
+                {% endif %}
 
                 {% if user.es_administrador %}
                 <a href="{% url 'cuentas:usuario_lista' %}" class="nav-item {% block sidebar_usuarios %}{% endblock %}">
@@ -1614,10 +1622,13 @@
                 {% with url_name=request.resolver_match.url_name %}
                     {% if url_name in 'producto-lista,producto-detalle,producto-editar,producto-fusionar,alertas-lista' %}
                         <nav class="module-tabs" aria-label="Submenú de Catálogo y Stock">
+                            {% if user.es_administrador or 'catalogo.ver' in user.get_permisos_codigos %}
                             <a href="{% url 'inventario:producto-lista' %}" class="module-tab {% if url_name != 'alertas-lista' %}active{% endif %}">
                                 <svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
                                 Catálogo de Productos
                             </a>
+                            {% endif %}
+                            {% if user.es_administrador or 'analitica.ver_alertas' in user.get_permisos_codigos %}
                             <a href="{% url 'inventario:alertas-lista' %}" class="module-tab {% if url_name == 'alertas-lista' %}active{% endif %}">
                                 <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
                                 Alertas de Stock
@@ -1625,9 +1636,11 @@
                                     <span class="badge {% if alertas_resumen.total_criticas > 0 %}badge-crit{% else %}badge-warn{% endif %}" style="font-size: 10px; padding: 1px 6px;">{{ alertas_resumen.total_alertas }}</span>
                                 {% endif %}
                             </a>
+                            {% endif %}
                         </nav>
                     {% elif url_name in 'categoria-lista,categoria-crear,categoria-editar,categoria-desactivar,categoria-trasladar,ubicacion-lista,ubicacion-crear,ubicacion-editar,ubicacion-desactivar,trasladar-ubicacion,almacen-lista,almacen-crear,almacen-editar,almacen-desactivar,trasladar-almacen' %}
                         <nav class="module-tabs" aria-label="Submenú de Categorías y Almacenes">
+                            {% if user.es_administrador or 'infraestructura.ver' in user.get_permisos_codigos %}
                             <a href="{% url 'inventario:categoria-lista' %}" class="module-tab {% if 'categoria' in url_name %}active{% endif %}">
                                 <svg viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z"/><circle cx="17" cy="17" r="3"/></svg>
                                 Categorías y Tipos
@@ -1640,6 +1653,7 @@
                                 <svg viewBox="0 0 24 24"><path d="M3 21V8l9-5 9 5v13"/><path d="M9 21V12h6v9"/></svg>
                                 Almacenes
                             </a>
+                            {% endif %}
                         </nav>
                     {% endif %}
                 {% endwith %}

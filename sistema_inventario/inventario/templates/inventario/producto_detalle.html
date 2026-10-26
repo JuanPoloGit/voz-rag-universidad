@@ -251,58 +251,65 @@
         {% csrf_token %}
         <input type="hidden" name="next" value="{{ request.path }}">
         <div class="app-modal-header">
-            <h2 class="app-modal-title">Editar {{ producto.codigo_interno }}</h2>
+            <h2 class="app-modal-title">Editar Producto: <span style="font-family: var(--font-mono); color: var(--accent-bright);">{{ producto.codigo_interno }}</span></h2>
             <button type="button" class="app-modal-close" onclick="closeAppModal('modalEditarProductoDetalle')">&times;</button>
         </div>
         <div class="app-modal-body">
+            <!-- Bloque Informativo Estructural (Inmutable en este formulario) -->
+            <div style="background: var(--bg-panel-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 14px;">
+                <div style="font-size: 10.5px; font-weight: 700; color: var(--accent-bright); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">
+                    Estructura Operativa (Inmutable en Edición)
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; font-size: 12.5px;">
+                    <div>
+                        <span style="color: var(--text-faint); font-size: 10.5px; display: block;">Sede / Almacén:</span>
+                        <strong style="color: var(--text);">{{ producto.categoria.almacen_principal.nombre }}</strong>
+                    </div>
+                    <div>
+                        <span style="color: var(--text-faint); font-size: 10.5px; display: block;">Ubicación Física:</span>
+                        <strong style="color: var(--text);">{{ producto.ubicaciones.first.nombre|default:"Sin asignar" }}</strong>
+                    </div>
+                    <div>
+                        <span style="color: var(--text-faint); font-size: 10.5px; display: block;">Categoría y Tipo:</span>
+                        <strong style="color: var(--text);">{{ producto.categoria.nombre }}{% if producto.tipo %} · {{ producto.tipo.nombre }}{% endif %}</strong>
+                    </div>
+                </div>
+                <div style="margin-top: 8px; font-size: 11px; color: var(--warn); background: rgba(255, 189, 92, 0.08); padding: 5px 8px; border-radius: 5px; border: 1px solid rgba(255, 189, 92, 0.2);">
+                    Para cambiar la sede o reubicar físicamente este producto, utiliza el módulo de <a href="{% url 'inventario:movimiento-lista' %}" style="text-decoration: underline; font-weight: 600; color: var(--warn);">Movimientos y Traslados</a>.
+                </div>
+            </div>
+
             <div class="form-group">
                 <label>Nombre del Producto *</label>
                 {{ producto_form.nombre }}
             </div>
+
             <div class="form-grid-2">
                 <div class="form-group">
-                    <label>Almacén *</label>
-                    {{ producto_form.almacen }}
-                    <div class="form-help">Almacén principal donde reside el producto.</div>
-                </div>
-                <div class="form-group">
-                    <label>Ubicación Física Única (opcional)</label>
-                    {{ producto_form.ubicacion }}
-                    <div class="form-help">Espacio físico específico dentro del almacén.</div>
-                </div>
-            </div>
-            <div class="form-grid-2">
-                <div class="form-group">
-                    <label>Categoría *</label>
-                    {{ producto_form.categoria }}
-                </div>
-                <div class="form-group">
-                    <label>Tipo (opcional)</label>
-                    {{ producto_form.tipo }}
-                </div>
-            </div>
-            <div class="form-grid-2">
-                <div class="form-group">
-                    <label>Stock Mínimo</label>
+                    <label>Stock Mínimo (Umbral de Alerta)</label>
                     {{ producto_form.stock_minimo }}
                 </div>
                 <div class="form-group">
-                    <label>Código de Barras</label>
+                    <label>Código de Barras (EAN/UPC)</label>
                     {{ producto_form.codigo_barras }}
                 </div>
             </div>
+
             <div class="form-grid-2">
                 <div class="form-group">
-                    <label>Nombre de Empaque</label>
+                    <label>Nombre de Empaque (opcional)</label>
                     {{ producto_form.nombre_empaque }}
+                    <div class="form-help">Ej. Caja, Paquete, Bulto.</div>
                 </div>
                 <div class="form-group">
-                    <label>Unidades por Empaque</label>
+                    <label>Unidades por Empaque (Factor)</label>
                     {{ producto_form.unidades_por_empaque }}
+                    <div class="form-help">Unidades base por empaque.</div>
                 </div>
             </div>
+
             <div class="form-group" style="margin-bottom: 0;">
-                <label>Descripción</label>
+                <label>Descripción / Especificaciones</label>
                 {{ producto_form.descripcion }}
             </div>
         </div>
@@ -315,114 +322,4 @@
 {% endblock %}
 
 {% block extra_js %}
-{{ almacenes_json|json_script:"almacenes-data-detalle" }}
-{{ categorias_json|json_script:"categorias-data-detalle" }}
-{{ ubicaciones_json|json_script:"ubicaciones-data-detalle" }}
-{{ tipos_por_categoria|json_script:"tipos-por-categoria-data-detalle" }}
-<script>
-document.addEventListener("DOMContentLoaded", function() {
-    var modal = document.getElementById("modalEditarProductoDetalle");
-    var almSelect = modal ? modal.querySelector("select[name='almacen']") : null;
-    var catSelect = modal ? modal.querySelector("select[name='categoria']") : null;
-    var ubicSelect = modal ? modal.querySelector("select[name='ubicacion']") : null;
-    var tipoSelect = modal ? modal.querySelector("select[name='tipo']") : null;
-
-    var catsEl = document.getElementById("categorias-data-detalle");
-    var ubsEl = document.getElementById("ubicaciones-data-detalle");
-    var dataEl = document.getElementById("tipos-por-categoria-data-detalle");
-
-    var todasCategorias = catsEl ? JSON.parse(catsEl.textContent || "[]") : [];
-    var todasUbicaciones = ubsEl ? JSON.parse(ubsEl.textContent || "[]") : [];
-    var todosTipos = dataEl ? JSON.parse(dataEl.textContent || "[]") : [];
-
-    function filtrarCategoriasDetalle(almId, catSeleccionada) {
-        if (!catSelect) return;
-        var prevVal = catSeleccionada !== undefined ? catSeleccionada : catSelect.value;
-        catSelect.innerHTML = '<option value="">Selecciona una categoría...</option>';
-        todasCategorias.forEach(function(c) {
-            if (!almId || String(c.almacen_id) === String(almId)) {
-                var opt = document.createElement("option");
-                opt.value = String(c.id);
-                opt.textContent = c.nombre + (almId ? "" : " (" + c.almacen_nombre + ")");
-                if (String(c.id) === String(prevVal)) {
-                    opt.selected = true;
-                }
-                catSelect.appendChild(opt);
-            }
-        });
-    }
-
-    function filtrarUbicacionesDetalle(almId, ubicSeleccionada) {
-        if (!ubicSelect) return;
-        var prevVal = ubicSeleccionada !== undefined ? ubicSeleccionada : ubicSelect.value;
-        ubicSelect.innerHTML = '<option value="">Sin ubicación física (opcional)</option>';
-        todasUbicaciones.forEach(function(u) {
-            if (!almId || String(u.almacen_id) === String(almId)) {
-                var opt = document.createElement("option");
-                opt.value = String(u.id);
-                opt.textContent = u.nombre + (almId ? "" : " (" + u.almacen_nombre + ")");
-                if (String(u.id) === String(prevVal)) {
-                    opt.selected = true;
-                }
-                ubicSelect.appendChild(opt);
-            }
-        });
-    }
-
-    function sincronizarTiposModalDetalle(catId, tipoSeleccionado) {
-        if (!tipoSelect) return;
-        var prevVal = tipoSeleccionado !== undefined ? tipoSeleccionado : tipoSelect.value;
-        tipoSelect.innerHTML = '<option value="">Sin tipo (opcional)</option>';
-        if (!catId) return;
-
-        todosTipos.forEach(function(t) {
-            if (String(t.categoria_id) === String(catId)) {
-                var opt = document.createElement("option");
-                opt.value = String(t.id);
-                opt.textContent = t.nombre;
-                if (String(t.id) === String(prevVal)) {
-                    opt.selected = true;
-                }
-                tipoSelect.appendChild(opt);
-            }
-        });
-    }
-
-    if (almSelect) {
-        almSelect.addEventListener("change", function() {
-            var almId = almSelect.value;
-            filtrarCategoriasDetalle(almId, "");
-            filtrarUbicacionesDetalle(almId, "");
-            sincronizarTiposModalDetalle("", "");
-        });
-    }
-
-    if (catSelect) {
-        catSelect.addEventListener("change", function() {
-            var catId = catSelect.value;
-            if (catId) {
-                var catObj = todasCategorias.find(function(c) { return String(c.id) === String(catId); });
-                if (catObj && almSelect && String(almSelect.value) !== String(catObj.almacen_id)) {
-                    almSelect.value = String(catObj.almacen_id);
-                    filtrarUbicacionesDetalle(catObj.almacen_id, ubicSelect ? ubicSelect.value : "");
-                }
-            }
-            sincronizarTiposModalDetalle(catId, "");
-        });
-    }
-
-    // Inicializar al cargar
-    var almInicial = "{{ producto.categoria.almacen_principal_id|default:'' }}";
-    var catInicial = "{{ producto.categoria_id|default:'' }}";
-    var ubicInicial = "{% with ub=producto.ubicaciones.first %}{{ ub.id|default:'' }}{% endwith %}";
-    var tipoInicial = "{{ producto.tipo_id|default:'' }}";
-
-    if (almSelect && almInicial) {
-        almSelect.value = almInicial;
-        filtrarCategoriasDetalle(almInicial, catInicial);
-        filtrarUbicacionesDetalle(almInicial, ubicInicial);
-    }
-    sincronizarTiposModalDetalle(catInicial, tipoInicial);
-});
-</script>
 {% endblock %}

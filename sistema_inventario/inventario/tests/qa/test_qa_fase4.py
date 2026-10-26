@@ -12,7 +12,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.contrib.auth import get_user_model
 
-from cuentas.models import UsuarioAudacIA
+from cuentas.models import UsuarioAudacIA, PermisoAudacIA
 from inventario.models import (
     Almacen,
     Categoria,
@@ -240,6 +240,9 @@ class QAOperacionesFase4AdversarialTest(TestCase):
         self.assertEqual(ex_orig_ini.stock_disponible, 4)
 
         # 2. Traslado de las 4 unidades exactas al almacén secundario
+        p_tras_alm = PermisoAudacIA.objects.get(codigo="movimientos.traslado_almacen")
+        self.operador_principal.permisos_personalizados.add(p_tras_alm)
+        self.operador_principal.limpiar_permisos_cache()
         ex_orig, ex_dest, mov_traslado = registrar_traslado_entre_almacenes(
             producto=self.producto_a,
             almacen_origen=self.almacen_principal,

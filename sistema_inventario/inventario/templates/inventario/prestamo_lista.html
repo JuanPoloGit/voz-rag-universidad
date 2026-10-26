@@ -71,7 +71,7 @@
                             </span>
                         </td>
                         <td>
-                            {% if p.estado != 'CERRADO' %}
+                            {% if p.estado != 'CERRADO' and p.cantidad_pendiente_devolucion > 0 %}
                                 <div style="display: flex; gap: 0.25rem;">
                                     {% if request.user.es_administrador or 'movimientos.devolucion' in request.user.get_permisos_codigos %}
                                     <a href="{% url 'inventario:prestamo-devolver' p.pk %}" class="btn btn-sm btn-primary">Devolver</a>

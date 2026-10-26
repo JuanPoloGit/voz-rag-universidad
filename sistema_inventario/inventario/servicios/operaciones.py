@@ -608,9 +608,7 @@ def registrar_traslado_interno(
     Actualiza las ubicaciones registradas sin alterar el stock total.
     """
     _validar_acceso_almacen(usuario, almacen)
-    if getattr(usuario, "es_usuario_normal", False):
-        if not usuario.tiene_permiso("movimientos.traslado") and not usuario.tiene_permiso("catalogo.reubicar_interno"):
-            raise PermissionDenied("No tienes permisos para realizar traslados internos o reubicar productos.")
+    _validar_permiso_operativo(usuario, "movimientos.traslado_interno")
 
     if ubicacion_origen.almacen_id != almacen.id or ubicacion_destino.almacen_id != almacen.id:
         raise ValidationError("Ambas ubicaciones deben pertenecer al almacén indicado.")
@@ -689,7 +687,7 @@ def registrar_traslado_entre_almacenes(
     """
     # Valida permisos sobre el almacén origen (§6.2)
     _validar_acceso_almacen(usuario, almacen_origen)
-    _validar_permiso_operativo(usuario, "movimientos.traslado")
+    _validar_permiso_operativo(usuario, "movimientos.traslado_almacen")
 
     if almacen_origen.id == almacen_destino.id:
         raise ValidationError("El almacén origen y destino no pueden ser el mismo.")
