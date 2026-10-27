@@ -70,4 +70,9 @@ urlpatterns = [
     path("conteos/", views.ConteoFisicoListaView.as_view(), name="conteo-lista"),
     path("conteos/crear/", views.ConteoFisicoCrearView.as_view(), name="conteo-crear"),
     path("conteos/<uuid:pk>/confirmar/", views.ConteoFisicoConfirmarView.as_view(), name="conteo-confirmar"),
+
+    # Copias de Seguridad (Exclusivo Superadministrador)
+    path("respaldos/", views.RespaldoListaView.as_view(), name="respaldo-lista"),
+    path("respaldos/generar/", views.RespaldoCrearView.as_view(), name="respaldo-crear"),
+    path("respaldos/descargar/<str:nombre_archivo>/", views.RespaldoDescargarView.as_view(), name="respaldo-descargar"),
 ]

@@ -121,6 +121,43 @@ class RolRequeridoMixin:
         return super().dispatch(request, *args, **kwargs)
 
 
+class SuperusuarioRequeridoMixin:
+    """Mixin para vistas exclusivas de Superadministrador (ej. Respaldos del Sistema)."""
+
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            raise PermissionDenied(_("Debe iniciar sesión para acceder."))
+
+        if not request.user.is_active or getattr(request.user, "eliminado_logicamente", False):
+            raise PermissionDenied(_("Cuenta inactiva o eliminada."))
+
+        es_super = (
+            getattr(request.user, "is_superuser", False)
+            or getattr(request.user, "rol", None) == "SUPERUSUARIO"
+            or getattr(request.user, "es_superusuario_inventario", False)
+        )
+        if not es_super:
+            raise PermissionDenied(_("Esta acción es exclusiva para Superadministradores del sistema."))
+
+        return super().dispatch(request, *args, **kwargs)
+
+
+class AdministradorRequeridoMixin:
+    """Mixin para vistas exclusivas de Administrador o Superadministrador (ej. Centro de Exportaciones)."""
+
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            raise PermissionDenied(_("Debe iniciar sesión para acceder."))
+
+        if not request.user.is_active or getattr(request.user, "eliminado_logicamente", False):
+            raise PermissionDenied(_("Cuenta inactiva o eliminada."))
+
+        if not (getattr(request.user, "es_administrador", False) or getattr(request.user, "is_superuser", False)):
+            raise PermissionDenied(_("Esta acción es exclusiva para Administradores o Superadministradores."))
+
+        return super().dispatch(request, *args, **kwargs)
+
+
 class AccesoAlmacenMixin:
     """Mixin para CBVs que resuelve el almacén y valida permisos del usuario."""
     almacen = None

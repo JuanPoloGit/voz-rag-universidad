@@ -2,12 +2,24 @@
 
 from datetime import datetime
 from django.contrib.auth.mixins import LoginRequiredMixin
-from cuentas.permisos import PermisoRequeridoMixin
-from django.http import JsonResponse
+from cuentas.permisos import AdministradorRequeridoMixin, PermisoRequeridoMixin
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.generic import View
 
 from inventario.models import Almacen, Categoria, Movimiento, Producto
+from web.servicios.csv_export import (
+    exportar_existencias_csv,
+    exportar_movimientos_csv,
+    exportar_prestamos_csv,
+    exportar_resumen_dashboard_csv,
+)
+from web.servicios.excel_export import (
+    exportar_dashboard_excel,
+    exportar_existencias_excel,
+    exportar_movimientos_excel,
+    exportar_prestamos_excel,
+)
 from web.servicios.reportes import (
     obtener_datos_grafico_balance_movimientos,
     obtener_datos_grafico_categorias,
@@ -253,3 +265,141 @@ class ReporteProductosEstancadosView(LoginRequiredMixin, PermisoRequeridoMixin, 
                 "dias": dias,
             },
         )
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# CENTRO DE EXPORTACIONES (EXCEL / CSV) — EXCLUSIVO ADMINISTRADORES Y SUPERADMIN
+# ═════════════════════════════════════════════════════════════════════════════
+
+class CentroExportacionesView(LoginRequiredMixin, AdministradorRequeridoMixin, View):
+    """Panel central de exportaciones en Excel y CSV (§11)."""
+
+    def get(self, request):
+        from inventario.models import Prestamo
+        almacenes = Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
+        categorias = Categoria.objects.filter(activo=True, eliminado=False).order_by("nombre")
+        return render(
+            request,
+            "web/centro_exportaciones.html",
+            {
+                "almacenes": almacenes,
+                "categorias": categorias,
+                "tipos_movimiento": Movimiento.Tipo.choices,
+                "estados_prestamo": Prestamo.Estado.choices,
+            },
+        )
+
+
+class ExportarDashboardExcelView(LoginRequiredMixin, AdministradorRequeridoMixin, View):
+    """Descarga del libro profesional de Excel con todas las pestañas del Dashboard."""
+
+    def get(self, request):
+        almacen_id = request.GET.get("almacen_id", "").strip()
+        almacen_obj = None
+        if almacen_id.isdigit():
+            almacen_obj = Almacen.objects.filter(id=int(almacen_id), activo=True, eliminado=False).first()
+
+        buffer = exportar_dashboard_excel(request.user, almacen=almacen_obj)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        nombre_archivo = f"Dashboard_AudacIA_{timestamp}.xlsx"
+
+        response = HttpResponse(
+            buffer.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{nombre_archivo}"'
+        return response
+
+
+class ExportarDatosExcelView(LoginRequiredMixin, AdministradorRequeridoMixin, View):
+    """Exportación en Excel de reportes específicos (Existencias, Movimientos, Préstamos)."""
+
+    def get(self, request, tipo):
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        if tipo == "existencias":
+            almacen_id = int(request.GET.get("almacen_id")) if request.GET.get("almacen_id", "").isdigit() else None
+            categoria_id = int(request.GET.get("categoria_id")) if request.GET.get("categoria_id", "").isdigit() else None
+            filtro_stock = request.GET.get("filtro_stock", "") or None
+            qs = obtener_reporte_existencias(request.user, almacen_id=almacen_id, categoria_id=categoria_id, filtro_stock=filtro_stock)
+            buffer = exportar_existencias_excel(qs)
+            filename = f"Existencias_AudacIA_{timestamp}.xlsx"
+
+        elif tipo == "movimientos":
+            f_desde = None
+            f_hasta = None
+            if request.GET.get("fecha_desde"):
+                try:
+                    f_desde = datetime.strptime(request.GET["fecha_desde"].strip(), "%Y-%m-%d").date()
+                except ValueError:
+                    pass
+            if request.GET.get("fecha_hasta"):
+                try:
+                    f_hasta = datetime.strptime(request.GET["fecha_hasta"].strip(), "%Y-%m-%d").date()
+                except ValueError:
+                    pass
+            t_mov = request.GET.get("tipo", "").strip() or None
+            p_id = int(request.GET.get("producto_id")) if request.GET.get("producto_id", "").isdigit() else None
+            qs = obtener_reporte_movimientos_periodo(request.user, fecha_desde=f_desde, fecha_hasta=f_hasta, tipo=t_mov, producto_id=p_id)
+            buffer = exportar_movimientos_excel(qs)
+            filename = f"Movimientos_AudacIA_{timestamp}.xlsx"
+
+        elif tipo == "prestamos":
+            estado = request.GET.get("estado", "").strip() or None
+            qs = obtener_reporte_prestamos_activos(request.user, estado=estado)
+            buffer = exportar_prestamos_excel(qs)
+            filename = f"Prestamos_AudacIA_{timestamp}.xlsx"
+
+        else:
+            raise Http404("Tipo de exportación en Excel no válido.")
+
+        response = HttpResponse(
+            buffer.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+
+class ExportarDatosCSVView(LoginRequiredMixin, AdministradorRequeridoMixin, View):
+    """Exportación en CSV con UTF-8 BOM de datos de existencias, movimientos, préstamos o resumen."""
+
+    def get(self, request, tipo):
+        if tipo == "dashboard":
+            almacen_id = request.GET.get("almacen_id", "").strip()
+            almacen_obj = Almacen.objects.filter(id=int(almacen_id)).first() if almacen_id.isdigit() else None
+            metricas = obtener_metricas_dashboard(request.user, almacen=almacen_obj)
+            return exportar_resumen_dashboard_csv(metricas, usuario=request.user, almacen=almacen_obj)
+
+        elif tipo == "existencias":
+            almacen_id = int(request.GET.get("almacen_id")) if request.GET.get("almacen_id", "").isdigit() else None
+            categoria_id = int(request.GET.get("categoria_id")) if request.GET.get("categoria_id", "").isdigit() else None
+            filtro_stock = request.GET.get("filtro_stock", "") or None
+            qs = obtener_reporte_existencias(request.user, almacen_id=almacen_id, categoria_id=categoria_id, filtro_stock=filtro_stock)
+            return exportar_existencias_csv(qs)
+
+        elif tipo == "movimientos":
+            f_desde = None
+            f_hasta = None
+            if request.GET.get("fecha_desde"):
+                try:
+                    f_desde = datetime.strptime(request.GET["fecha_desde"].strip(), "%Y-%m-%d").date()
+                except ValueError:
+                    pass
+            if request.GET.get("fecha_hasta"):
+                try:
+                    f_hasta = datetime.strptime(request.GET["fecha_hasta"].strip(), "%Y-%m-%d").date()
+                except ValueError:
+                    pass
+            t_mov = request.GET.get("tipo", "").strip() or None
+            p_id = int(request.GET.get("producto_id")) if request.GET.get("producto_id", "").isdigit() else None
+            qs = obtener_reporte_movimientos_periodo(request.user, fecha_desde=f_desde, fecha_hasta=f_hasta, tipo=t_mov, producto_id=p_id)
+            return exportar_movimientos_csv(qs)
+
+        elif tipo == "prestamos":
+            estado = request.GET.get("estado", "").strip() or None
+            qs = obtener_reporte_prestamos_activos(request.user, estado=estado)
+            return exportar_prestamos_csv(qs)
+
+        else:
+            raise Http404("Tipo de exportación en CSV no válido.")

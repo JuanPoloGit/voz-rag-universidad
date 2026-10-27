@@ -299,6 +299,26 @@
             Consolidado general de todo el inventario
         </span>
     {% endif %}
+
+    {% if user.es_administrador %}
+    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto;">
+        <a href="{% url 'web:exportar-dashboard-excel' %}{% if almacen_seleccionado %}?almacen_id={{ almacen_seleccionado }}{% endif %}" class="btn btn-sm btn-primary" title="Descargar libro Excel profesional de 4 hojas" style="font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="8" y1="13" x2="16" y2="13"/>
+                <line x1="8" y1="17" x2="16" y2="17"/>
+            </svg>
+            Exportar Excel
+        </a>
+        <a href="{% url 'web:exportar-datos-csv' 'dashboard' %}{% if almacen_seleccionado %}?almacen_id={{ almacen_seleccionado }}{% endif %}" class="btn btn-sm btn-secondary" title="Descargar resumen en CSV con UTF-8 BOM" style="font-size: 12px; padding: 5px 9px;">
+            CSV
+        </a>
+        <a href="{% url 'web:centro-exportaciones' %}" class="btn btn-sm btn-secondary" title="Abrir centro completo de exportaciones" style="font-size: 12px; padding: 5px 9px;">
+            Más reportes &rarr;
+        </a>
+    </div>
+    {% endif %}
 </form>
 {% endif %}
 

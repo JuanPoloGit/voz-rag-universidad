@@ -4,7 +4,7 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Q
-from django.http import JsonResponse
+from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from datetime import datetime
@@ -13,7 +13,7 @@ from django.utils.safestring import mark_safe
 from django.views.generic import CreateView, DetailView, ListView, UpdateView, View
 
 from cuentas.models import UsuarioAudacIA
-from cuentas.permisos import PermisoRequeridoMixin, RolRequeridoMixin
+from cuentas.permisos import PermisoRequeridoMixin, RolRequeridoMixin, SuperusuarioRequeridoMixin
 from inventario.forms import (
     AlmacenForm,
     BajaPrestamoForm,
@@ -2878,6 +2878,80 @@ class MovimientoRevertirView(LoginRequiredMixin, View):
             except Exception as exc:
                 _procesar_error_formulario(form, exc)
         return render(request, "inventario/movimiento_revertir.html", {"movimiento": movimiento, "form": form})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 13. COPIAS DE SEGURIDAD (BACKUPS) — EXCLUSIVO SUPERUSUARIO
+# ─────────────────────────────────────────────────────────────────────────────
+
+from inventario.servicios.respaldo import (
+    generar_respaldo_bd,
+    listar_respaldos,
+    obtener_estadisticas_respaldos,
+    obtener_ruta_respaldo_segura,
+)
+
+
+class RespaldoListaView(LoginRequiredMixin, SuperusuarioRequeridoMixin, View):
+    """Listado y panel central de gestión de respaldos del sistema (§5)."""
+
+    def get(self, request):
+        respaldos = listar_respaldos()
+        estadisticas = obtener_estadisticas_respaldos()
+        return render(
+            request,
+            "inventario/respaldo_lista.html",
+            {
+                "respaldos": respaldos,
+                "estadisticas": estadisticas,
+            },
+        )
+
+
+class RespaldoCrearView(LoginRequiredMixin, SuperusuarioRequeridoMixin, View):
+    """Generación manual inmediata de un nuevo respaldo con compresión y SHA-256."""
+
+    def post(self, request):
+        try:
+            resultado = generar_respaldo_bd(
+                usuario=request.user,
+                force=True,
+                motivo="Respaldo manual solicitado desde el panel web por Superadministrador",
+            )
+            messages.success(
+                request,
+                f"Respaldo generado con éxito: '{resultado['archivo']}' ({resultado['tamano_formateado']}). Integridad SHA-256 verificada.",
+            )
+        except Exception as exc:
+            messages.error(request, f"Error al generar respaldo: {exc}")
+        return redirect("inventario:respaldo-lista")
+
+
+class RespaldoDescargarView(LoginRequiredMixin, SuperusuarioRequeridoMixin, View):
+    """Descarga segura de archivo de respaldo o checksum SHA-256."""
+
+    def get(self, request, nombre_archivo):
+        try:
+            ruta_segura = obtener_ruta_respaldo_segura(nombre_archivo)
+        except (ValueError, FileNotFoundError):
+            raise Http404("El archivo de respaldo solicitado no existe o no es accesible.")
+
+        try:
+            from inventario.auditoria import registrar_auditoria
+            registrar_auditoria(
+                usuario=request.user,
+                accion="DESCARGA_BACKUP",
+                tipo_entidad="Sistema",
+                id_entidad="backup",
+                valores_nuevos={"archivo": os.path.basename(ruta_segura)},
+                motivo=f"Descarga de archivo de respaldo: {nombre_archivo}",
+                ip_origen=_obtener_ip(request),
+            )
+        except Exception:
+            pass
+
+        content_type = "application/gzip" if ruta_segura.endswith(".gz") else "text/plain"
+        return FileResponse(open(ruta_segura, "rb"), as_attachment=True, filename=nombre_archivo, content_type=content_type)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

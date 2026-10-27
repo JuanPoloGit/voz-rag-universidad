@@ -17,6 +17,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, connections
 
 from inventario.auditoria import registrar_auditoria
+from inventario.servicios.respaldo import generar_respaldo_bd, obtener_directorio_respaldos
 from scripts.colombia_calendario import es_dia_laboral, obtener_ultimos_dias_laborales
 
 
@@ -50,92 +51,32 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         ahora = datetime.datetime.now()
         force = options.get("force", False)
-
-        # 1. Validar calendario laboral colombiano a menos que se use --force
-        if not force and not es_dia_laboral(ahora.date()):
-            self.stdout.write(
-                self.style.WARNING(
-                    f"Fecha {ahora.date().isoformat()} es no laboral en Colombia (fin de semana o festivo). "
-                    "Respaldo omitido según Política A (use --force para forzar)."
-                )
-            )
-            return
-
-        # 2. Configurar directorio de respaldos
-        base_dir = getattr(settings, "BASE_DIR", os.path.dirname(os.path.abspath(__file__)))
-        output_dir = options.get("output_dir") or os.path.join(base_dir, "backups")
-        os.makedirs(output_dir, exist_ok=True)
-
-        timestamp_str = ahora.strftime("%Y%m%d_%H%M%S")
-        temp_sqlite = os.path.join(output_dir, f"temp_{timestamp_str}.sqlite3")
-        backup_filename = f"backup_{timestamp_str}.sqlite3.gz"
-        final_gz_path = os.path.join(output_dir, backup_filename)
-        sha_path = final_gz_path + ".sha256"
+        output_dir = options.get("output_dir")
+        db_path = options.get("db_path")
 
         try:
-            # 3. Copia de respaldo no bloqueante
-            db_path_custom = options.get("db_path")
-            if db_path_custom and os.path.exists(db_path_custom):
-                shutil.copy2(db_path_custom, temp_sqlite)
-            else:
-                # Usar SQLite Online Backup sobre la conexión Django
-                connection.ensure_connection()
-                dest_conn = sqlite3.connect(temp_sqlite)
-                connection.connection.backup(dest_conn)
-                dest_conn.close()
+            resultado = generar_respaldo_bd(
+                usuario=None,
+                force=force,
+                output_dir=output_dir,
+                db_path=db_path,
+                motivo="Respaldo administrativo ejecutado vía CLI",
+            )
 
-            # 4. Compresión GZIP
-            with open(temp_sqlite, "rb") as f_in, gzip.open(final_gz_path, "wb") as f_out:
-                shutil.copyfileobj(f_in, f_out)
+            if resultado.get("omitido"):
+                self.stdout.write(self.style.WARNING(resultado["motivo"]))
+                return
 
-            # Eliminar temporal sin comprimir
-            if os.path.exists(temp_sqlite):
-                os.remove(temp_sqlite)
-
-            # 5. Cálculo y almacenamiento del Checksum SHA-256
-            hasher = hashlib.sha256()
-            with open(final_gz_path, "rb") as f:
-                while chunk := f.read(65536):
-                    hasher.update(chunk)
-            checksum = hasher.hexdigest()
-
-            with open(sha_path, "w", encoding="utf-8") as f:
-                f.write(f"{checksum}  {backup_filename}\n")
-
-            tamano_bytes = os.path.getsize(final_gz_path)
-
-            # 6. Registrar en auditoría inmutable
-            if not db_path_custom:
-                try:
-                    registrar_auditoria(
-                        usuario=None,
-                        accion="BACKUP_SISTEMA",
-                        tipo_entidad="Sistema",
-                        id_entidad="backup",
-                        valores_nuevos={
-                            "archivo": backup_filename,
-                            "sha256": checksum,
-                            "tamano_bytes": tamano_bytes,
-                        },
-                        motivo=f"Respaldo generado con éxito: {backup_filename}",
-                        ip_origen="127.0.0.1",
-                    )
-                except Exception:
-                    pass
-
-            # 7. Aplicar Política A de retención (limpieza de históricos fuera de ventana)
-            self._aplicar_politica_retencion(output_dir, ahora.date())
+            dir_destino = obtener_directorio_respaldos(output_dir)
+            self._aplicar_politica_retencion(dir_destino, ahora.date())
 
             self.stdout.write(
                 self.style.SUCCESS(
-                    f"Respaldo completado: {final_gz_path} ({tamano_bytes} bytes)\n"
-                    f"SHA-256: {checksum}"
+                    f"Respaldo completado: {resultado['ruta']} ({resultado['tamano_bytes']} bytes)\n"
+                    f"SHA-256: {resultado['sha256']}"
                 )
             )
-
         except Exception as exc:
-            if os.path.exists(temp_sqlite):
-                os.remove(temp_sqlite)
             raise CommandError(f"Error generando el respaldo: {exc}")
 
     def _aplicar_politica_retencion(self, output_dir: str, fecha_referencia: datetime.date):
