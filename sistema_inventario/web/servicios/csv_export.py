@@ -134,7 +134,7 @@ def exportar_resumen_dashboard_csv(metricas, usuario=None, almacen=None) -> Http
     # Mini resumen de categorías
     datos_cat = obtener_datos_grafico_categorias(usuario, almacen=almacen)
     writer.writerow(["Categoría", "Total Productos"])
-    for cat, total in zip(datos_cat.get("labels", []), datos_cat.get("series", [])):
+    for cat, total in zip(datos_cat.get("labels", []), datos_cat.get("data", [])):
         writer.writerow([cat, total])
 
     return response
@@ -160,48 +160,118 @@ def exportar_inventario_completo_csv(usuario, almacen=None) -> HttpResponse:
         "Unidades por Empaque",
     ])
 
-    from web.servicios.reportes import obtener_reporte_existencias
-    alm_id = almacen.id if almacen else None
-    qs = obtener_reporte_existencias(usuario, almacen_id=alm_id)
-    qs = qs.select_related("producto", "almacen", "producto__categoria", "producto__tipo").prefetch_related(
-        "producto__producto_ubicaciones__ubicacion"
-    )
+    from django.db.models import Q, Sum
+    from inventario.models import Existencia, Producto
 
-    for ex in qs:
-        prod = ex.producto
-        stock_total = ex.stock_disponible + ex.stock_en_prestamo
+    es_normal = getattr(usuario, "es_usuario_normal", False)
+    alms_permitidos = usuario.get_almacenes_asignados() if es_normal else None
 
-        # Estado descriptivo
-        if ex.stock_disponible == 0:
-            estado = "AGOTADO / CRÍTICO"
-        elif ex.stock_disponible < prod.stock_minimo:
-            estado = "BAJO MÍNIMO"
-        else:
-            estado = "ÓPTIMO"
+    if almacen:
+        # Exportación filtrada por un almacén específico
+        qs = Existencia.objects.filter(
+            almacen=almacen,
+            producto__activo=True,
+            producto__archivado=False,
+            almacen__activo=True,
+            almacen__eliminado=False,
+        ).select_related("producto", "almacen", "producto__categoria", "producto__tipo").prefetch_related(
+            "producto__producto_ubicaciones__ubicacion"
+        ).order_by("producto__codigo_interno")
 
-        # Ubicaciones del producto en este almacén
-        ubicaciones_alm = [
-            pu.ubicacion.nombre
-            for pu in prod.producto_ubicaciones.all()
-            if pu.ubicacion.almacen_id == ex.almacen_id and not getattr(pu.ubicacion, "eliminado", False)
-        ]
-        ubicaciones_str = ", ".join(ubicaciones_alm) if ubicaciones_alm else "Sin ubicación específica"
+        for ex in qs:
+            prod = ex.producto
+            stock_total = ex.stock_disponible + ex.stock_en_prestamo
 
-        writer.writerow([
-            prod.codigo_interno,
-            prod.nombre,
-            prod.categoria.nombre if prod.categoria else "Sin categoría",
-            prod.tipo.nombre if prod.tipo else "General",
-            ex.almacen.nombre,
-            ubicaciones_str,
-            ex.stock_disponible,
-            ex.stock_en_prestamo,
-            stock_total,
-            prod.stock_minimo,
-            estado,
-            prod.codigo_barras or "N/A",
-            prod.nombre_empaque or "Unidad",
-            prod.unidades_por_empaque or 1,
-        ])
+            if ex.stock_disponible == 0:
+                estado = "AGOTADO / CRÍTICO"
+            elif ex.stock_disponible < prod.stock_minimo:
+                estado = "BAJO MÍNIMO"
+            else:
+                estado = "ÓPTIMO"
+
+            ubicaciones_alm = [
+                pu.ubicacion.nombre
+                for pu in prod.producto_ubicaciones.all()
+                if pu.ubicacion.almacen_id == ex.almacen_id and not getattr(pu.ubicacion, "eliminado", False)
+            ]
+            ubicaciones_str = ", ".join(ubicaciones_alm) if ubicaciones_alm else "Sin ubicación específica"
+
+            writer.writerow([
+                prod.codigo_interno,
+                prod.nombre,
+                prod.categoria.nombre if prod.categoria else "Sin categoría",
+                prod.tipo.nombre if prod.tipo else "General",
+                ex.almacen.nombre,
+                ubicaciones_str,
+                ex.stock_disponible,
+                ex.stock_en_prestamo,
+                stock_total,
+                prod.stock_minimo,
+                estado,
+                prod.codigo_barras or "N/A",
+                prod.nombre_empaque or "Unidad",
+                prod.unidades_por_empaque or 1,
+            ])
+    else:
+        # Consolidado General: 1 fila por producto activo en el catálogo (sin duplicados entre almacenes)
+        filtro_alms = Q(existencias__almacen__activo=True, existencias__almacen__eliminado=False)
+        if es_normal and alms_permitidos is not None:
+            filtro_alms &= Q(existencias__almacen__in=alms_permitidos)
+
+        prods_qs = Producto.objects.filter(
+            activo=True,
+            archivado=False,
+        ).select_related("categoria", "tipo").prefetch_related(
+            "existencias__almacen",
+            "producto_ubicaciones__ubicacion",
+        ).annotate(
+            stock_disp_total=Sum("existencias__stock_disponible", filter=filtro_alms),
+            stock_prest_total=Sum("existencias__stock_en_prestamo", filter=filtro_alms),
+        ).order_by("codigo_interno")
+
+        for prod in prods_qs:
+            stock_disp = prod.stock_disp_total or 0
+            stock_prest = prod.stock_prest_total or 0
+            stock_total = stock_disp + stock_prest
+
+            if stock_disp == 0:
+                estado = "AGOTADO / CRÍTICO"
+            elif stock_disp < prod.stock_minimo:
+                estado = "BAJO MÍNIMO"
+            else:
+                estado = "ÓPTIMO"
+
+            # Almacenes donde tiene presencia
+            alms_activos = [
+                e.almacen.nombre
+                for e in prod.existencias.all()
+                if e.almacen.activo and not e.almacen.eliminado and (not es_normal or e.almacen in alms_permitidos)
+            ]
+            alms_str = ", ".join(sorted(set(alms_activos))) if alms_activos else "Todos los almacenes"
+
+            # Ubicaciones del producto
+            ubicaciones = [
+                pu.ubicacion.nombre
+                for pu in prod.producto_ubicaciones.all()
+                if not getattr(pu.ubicacion, "eliminado", False)
+            ]
+            ubicaciones_str = ", ".join(sorted(set(ubicaciones))) if ubicaciones else "Sin ubicación específica"
+
+            writer.writerow([
+                prod.codigo_interno,
+                prod.nombre,
+                prod.categoria.nombre if prod.categoria else "Sin categoría",
+                prod.tipo.nombre if prod.tipo else "General",
+                alms_str,
+                ubicaciones_str,
+                stock_disp,
+                stock_prest,
+                stock_total,
+                prod.stock_minimo,
+                estado,
+                prod.codigo_barras or "N/A",
+                prod.nombre_empaque or "Unidad",
+                prod.unidades_por_empaque or 1,
+            ])
 
     return response

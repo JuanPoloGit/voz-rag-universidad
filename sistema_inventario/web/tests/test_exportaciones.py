@@ -160,3 +160,70 @@ class ServiciosExportacionTest(TestCase):
         resp_dash = exportar_resumen_dashboard_csv(metricas, usuario=self.admin)
         self.assertTrue(resp_dash.content.startswith(b"\xef\xbb\xbf"))
         self.assertIn(b"Total Productos en Cat\xc3\xa1logo", resp_dash.content)
+
+    def test_consolidado_general_csv_sin_duplicados(self):
+        """Valida que un producto con existencias en múltiples almacenes no se duplique en el consolidado general."""
+        alm2 = Almacen.objects.create(nombre="Almacén Secundario")
+        Existencia.objects.create(
+            producto=self.producto,
+            almacen=alm2,
+            stock_disponible=5,
+            stock_en_prestamo=1,
+        )
+        self.assertEqual(Existencia.objects.filter(producto=self.producto).count(), 2)
+        self.assertEqual(Producto.objects.filter(activo=True, archivado=False).count(), 1)
+
+        # Consolidado General (almacen=None)
+        resp = exportar_inventario_completo_csv(self.admin, almacen=None)
+        self.assertEqual(resp.status_code, 200)
+        lineas = resp.content.decode("utf-8-sig").strip().split("\r\n")
+        # 1 fila cabecera + exactamente 1 fila del producto consolidado
+        self.assertEqual(len(lineas), 2)
+        fila_prod = lineas[1].split(";")
+        self.assertEqual(fila_prod[0], "PROD-EXP-001")
+        # Stock disponible consolidado: 10 + 5 = 15
+        self.assertEqual(fila_prod[6], "15")
+        # Stock en prestamo consolidado: 2 + 1 = 3
+        self.assertEqual(fila_prod[7], "3")
+        # Stock total consolidado: 15 + 3 = 18
+        self.assertEqual(fila_prod[8], "18")
+
+    def test_prestamos_filtro_historico_incluye_cerrados(self):
+        """Valida que la exportación de préstamos con histórico completo incluya préstamos en estado CERRADO."""
+        mov2 = Movimiento.objects.create(
+            clave_idempotencia="IDEM-TEST-EXP-002",
+            tipo=Movimiento.Tipo.PRESTAMO,
+            producto=self.producto,
+            almacen_origen=self.almacen,
+            cantidad=3,
+            stock_disponible_anterior=10,
+            stock_disponible_posterior=7,
+            usuario=self.admin,
+            motivo="Préstamo cerrado previo",
+        )
+        prestamo_cerrado = Prestamo.objects.create(
+            producto=self.producto,
+            almacen=self.almacen,
+            movimiento=mov2,
+            usuario=self.admin,
+            cantidad_original=3,
+            cantidad_pendiente_devolucion=0,
+            destinatario="Estudiante Graduado",
+            estado=Prestamo.Estado.CERRADO,
+        )
+
+        # Por defecto (activos únicamente)
+        activos = obtener_reporte_prestamos_activos(self.admin, incluir_cerrados=False)
+        self.assertNotIn(prestamo_cerrado, activos)
+
+        # Con histórico completo (incluir_cerrados=True o estado="TODOS")
+        todos = obtener_reporte_prestamos_activos(self.admin, incluir_cerrados=True)
+        self.assertIn(prestamo_cerrado, todos)
+
+        todos_por_estado = obtener_reporte_prestamos_activos(self.admin, estado="TODOS")
+        self.assertIn(prestamo_cerrado, todos_por_estado)
+
+        # En exportación CSV
+        resp_csv = exportar_prestamos_csv(todos)
+        self.assertIn(b"Estudiante Graduado", resp_csv.content)
+        self.assertIn(b"Cerrado", resp_csv.content)

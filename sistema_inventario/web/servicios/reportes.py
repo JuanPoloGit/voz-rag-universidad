@@ -272,8 +272,10 @@ def obtener_reporte_movimientos_periodo(
     return qs
 
 
-def obtener_reporte_prestamos_activos(usuario: Any, estado: Optional[str] = None) -> List[Any]:
-    """Lista de préstamos abiertos con cálculo de días transcurridos."""
+def obtener_reporte_prestamos_activos(
+    usuario: Any, estado: Optional[str] = None, incluir_cerrados: bool = False
+) -> List[Any]:
+    """Lista de préstamos con cálculo de días transcurridos. Soporta filtro por estado o histórico completo."""
     es_normal = getattr(usuario, "es_usuario_normal", False)
     alms_permitidos = usuario.get_almacenes_asignados() if es_normal else None
 
@@ -284,9 +286,9 @@ def obtener_reporte_prestamos_activos(usuario: Any, estado: Optional[str] = None
             return []
         qs = qs.filter(almacen__in=alms_permitidos)
 
-    if estado:
+    if estado and estado != "TODOS":
         qs = qs.filter(estado=estado)
-    else:
+    elif not incluir_cerrados and estado != "TODOS":
         qs = qs.filter(estado__in=[Prestamo.Estado.ABIERTO, Prestamo.Estado.DEVUELTO_PARCIAL])
 
     ahora = timezone.now()

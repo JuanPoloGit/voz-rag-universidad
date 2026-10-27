@@ -164,3 +164,44 @@ class VistasExportacionesTest(TestCase):
         url_pres = reverse("web:exportar-datos-csv", kwargs={"tipo": "prestamos"})
         resp_pres = self.client.get(url_pres)
         self.assertEqual(resp_pres.status_code, 200)
+
+    def test_descarga_prestamos_historico_incluye_cerrados(self):
+        """Verifica que la descarga de préstamos con estado=TODOS incluya registros cerrados."""
+        self.client.force_login(self.admin)
+
+        mov2 = Movimiento.objects.create(
+            clave_idempotencia="IDEM-TEST-EXP-VISTAS-02",
+            tipo=Movimiento.Tipo.PRESTAMO,
+            producto=self.producto,
+            almacen_origen=self.almacen,
+            cantidad=2,
+            stock_disponible_anterior=8,
+            stock_disponible_posterior=6,
+            usuario=self.admin,
+            motivo="Préstamo previo",
+        )
+        Prestamo.objects.create(
+            producto=self.producto,
+            almacen=self.almacen,
+            movimiento=mov2,
+            usuario=self.admin,
+            cantidad_original=2,
+            cantidad_pendiente_devolucion=0,
+            destinatario="Laboratorio Física",
+            estado=Prestamo.Estado.CERRADO,
+        )
+
+        url_pres_csv = reverse("web:exportar-datos-csv", kwargs={"tipo": "prestamos"}) + "?estado=TODOS"
+        resp_csv = self.client.get(url_pres_csv)
+        self.assertEqual(resp_csv.status_code, 200)
+        self.assertIn(b"Laboratorio F\xc3\xadsica", resp_csv.content)
+        self.assertIn(b"Cerrado", resp_csv.content)
+
+        url_pres_excel = reverse("web:exportar-datos-excel", kwargs={"tipo": "prestamos"}) + "?estado=TODOS"
+        resp_excel = self.client.get(url_pres_excel)
+        self.assertEqual(resp_excel.status_code, 200)
+        wb = openpyxl.load_workbook(BytesIO(resp_excel.content))
+        ws = wb.active
+        # Debe haber al menos 2 préstamos (el abierto y el cerrado)
+        destinatarios = [ws.cell(row=r, column=3).value for r in range(5, ws.max_row + 1)]
+        self.assertIn("Laboratorio Física", destinatarios)

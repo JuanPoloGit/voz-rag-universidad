@@ -11,6 +11,7 @@ from django.db.models import F
 from django.utils import timezone
 import openpyxl
 from openpyxl.chart import BarChart, DoughnutChart, PieChart, Reference
+from openpyxl.chart.label import DataLabelList
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
@@ -233,72 +234,64 @@ def exportar_dashboard_excel(usuario: Any, almacen: Optional[Almacen] = None) ->
         cv.number_format = "#,##0"
 
     r_cat = r_kpi + 7
-    ws1.merge_cells(start_row=r_cat, start_column=1, end_row=r_cat, end_column=4)
-    c_cat_t = ws1.cell(row=r_cat, column=1, value="DISTRIBUCIÓN DE ARTÍCULOS POR CATEGORÍA")
-    c_cat_t.font = FONT_SECCION
-    r_cat += 1
-
-    cat_headers = ["Categoría", "Productos Registrados", "Stock Total", "% del Inventario"]
-    aplicar_estilo_fila(ws1, r_cat, cat_headers, es_cabecera=True)
-    r_cat += 1
-
     datos_cat = obtener_datos_grafico_categorias(usuario, almacen=almacen)
     cat_labels = datos_cat.get("labels", [])
-    cat_series = datos_cat.get("series", [])
-    start_cat_row = r_cat
+    cat_data = datos_cat.get("data", [])
 
-    if cat_labels:
-        for i, (nombre_cat, cant_prod) in enumerate(zip(cat_labels, cat_series)):
-            # Obtener stock total de la categoría
-            cat_obj = Categoria.objects.filter(nombre=nombre_cat).first()
-            stock_cat = 0
-            if cat_obj:
-                ex_cat = Existencia.objects.filter(producto__categoria=cat_obj, producto__archivado=False)
-                if almacen:
-                    ex_cat = ex_cat.filter(almacen=almacen)
-                stock_cat = sum(e.stock_disponible for e in ex_cat)
+    if cat_labels and cat_data:
+        # Tabla de datos fuente ubicada en columnas H e I para alimentar el gráfico sin saturar la vista principal
+        col_cat_label = 8
+        col_cat_val = 9
+        fila_datos = r_cat
 
-            porcentaje_formula = f"=(C{r_cat}/SUM(C{start_cat_row}:C{start_cat_row + len(cat_labels) - 1}))"
-            fila_vals = [nombre_cat, cant_prod, stock_cat, porcentaje_formula]
-            aplicar_estilo_fila(
-                ws1,
-                r_cat,
-                fila_vals,
-                es_par=(i % 2 == 0),
-                alineaciones=["left", "right", "right", "right"],
-                formatos=["", "#,##0", "#,##0", "0.0%"],
-            )
-            r_cat += 1
+        c_h1 = ws1.cell(row=fila_datos, column=col_cat_label, value="Categoría")
+        c_h1.font = FONT_CABECERA
+        c_h1.fill = FILL_CABECERA
+        c_h1.border = BORDER_THIN
+        c_h1.alignment = ALIGN_CENTER
 
-        end_cat_row = r_cat - 1
-        total_cat_vals = [
-            "TOTAL GENERAL",
-            f"=SUM(B{start_cat_row}:B{end_cat_row})",
-            f"=SUM(C{start_cat_row}:C{end_cat_row})",
-            "=1.0",
-        ]
-        aplicar_estilo_fila(
-            ws1,
-            r_cat,
-            total_cat_vals,
-            es_total=True,
-            alineaciones=["left", "right", "right", "right"],
-            formatos=["", "#,##0", "#,##0", "0.0%"],
-        )
+        c_h2 = ws1.cell(row=fila_datos, column=col_cat_val, value="Productos")
+        c_h2.font = FONT_CABECERA
+        c_h2.fill = FILL_CABECERA
+        c_h2.border = BORDER_THIN
+        c_h2.alignment = ALIGN_CENTER
 
-        # Gráfico Donut de Stock por Categoría al lado de la tabla
+        start_cat_row = fila_datos + 1
+        for i, (nombre_cat, cant_prod) in enumerate(zip(cat_labels, cat_data)):
+            r_curr = start_cat_row + i
+            c_lbl = ws1.cell(row=r_curr, column=col_cat_label, value=nombre_cat)
+            c_lbl.font = FONT_DATOS
+            c_lbl.fill = FILL_FILA_PAR if (i % 2 == 0) else FILL_FILA_IMPAR
+            c_lbl.border = BORDER_THIN
+            c_lbl.alignment = ALIGN_LEFT
+
+            c_val = ws1.cell(row=r_curr, column=col_cat_val, value=cant_prod)
+            c_val.font = FONT_DATOS_BOLD
+            c_val.fill = FILL_FILA_PAR if (i % 2 == 0) else FILL_FILA_IMPAR
+            c_val.border = BORDER_THIN
+            c_val.alignment = ALIGN_RIGHT
+            c_val.number_format = "#,##0"
+
+        end_cat_row = start_cat_row + len(cat_labels) - 1
+
+        # Elemento visual único: Gráfico Donut corporativo centrado en columnas A-F
         chart_cat = DoughnutChart()
-        chart_cat.title = "Distribución de Stock por Categoría"
+        chart_cat.title = "DISTRIBUCIÓN DE ARTÍCULOS POR CATEGORÍA"
         chart_cat.style = 10
-        chart_cat.width = 16
-        chart_cat.height = 11
-        chart_cat.holeSize = 45
+        chart_cat.width = 18
+        chart_cat.height = 12
+        chart_cat.holeSize = 50
 
-        data_ref = Reference(ws1, min_col=3, min_row=start_cat_row - 1, max_row=end_cat_row)
-        labels_ref = Reference(ws1, min_col=1, min_row=start_cat_row, max_row=end_cat_row)
+        chart_cat.dataLabels = DataLabelList()
+        chart_cat.dataLabels.showPercent = True
+        chart_cat.dataLabels.showVal = True
+
+        data_ref = Reference(ws1, min_col=col_cat_val, min_row=fila_datos, max_row=end_cat_row)
+        labels_ref = Reference(ws1, min_col=col_cat_label, min_row=start_cat_row, max_row=end_cat_row)
         chart_cat.add_data(data_ref, titles_from_data=True)
         chart_cat.set_categories(labels_ref)
-        ws1.add_chart(chart_cat, f"F{start_cat_row - 1}")
+
+        ws1.add_chart(chart_cat, f"A{r_cat}")
 
     autoajustar_columnas(ws1)
 

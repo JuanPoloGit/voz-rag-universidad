@@ -347,7 +347,8 @@ class ExportarDatosExcelView(LoginRequiredMixin, AdministradorRequeridoMixin, Vi
 
         elif tipo == "prestamos":
             estado = request.GET.get("estado", "").strip() or None
-            qs = obtener_reporte_prestamos_activos(request.user, estado=estado)
+            incluir = (estado is None or estado == "TODOS")
+            qs = obtener_reporte_prestamos_activos(request.user, estado=estado, incluir_cerrados=incluir)
             buffer = exportar_prestamos_excel(qs)
             filename = f"Prestamos_AudacIA_{timestamp}.xlsx"
 
@@ -398,7 +399,8 @@ class ExportarDatosCSVView(LoginRequiredMixin, AdministradorRequeridoMixin, View
 
         elif tipo == "prestamos":
             estado = request.GET.get("estado", "").strip() or None
-            qs = obtener_reporte_prestamos_activos(request.user, estado=estado)
+            incluir = (estado is None or estado == "TODOS")
+            qs = obtener_reporte_prestamos_activos(request.user, estado=estado, incluir_cerrados=incluir)
             return exportar_prestamos_csv(qs)
 
         else:

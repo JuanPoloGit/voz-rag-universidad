@@ -39,7 +39,7 @@
                     </svg>
                 </div>
                 <div>
-                    <h3 style="margin: 0; font-size: 1.2rem; font-weight: 700; color: #FFFFFF;">Libro Completo del Dashboard (4 Hojas)</h3>
+                    <h3 style="margin: 0; font-size: 1.2rem; font-weight: 700; color: #FFFFFF;">Libro Completo del Dashboard</h3>
                     <span style="font-size: 0.8rem; color: #94A3B8;">Resumen Ejecutivo · Existencias y Stock · Últimos Movimientos · Préstamos Pendientes</span>
                 </div>
             </div>
@@ -76,155 +76,149 @@
 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem;">
 
     <!-- 1. CATÁLOGO Y EXISTENCIAS -->
-    <div class="card" style="display: flex; flex-direction: column; justify-content: space-between;">
-        <div>
-            <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem;">
-                <div style="width: 32px; height: 32px; border-radius: 6px; background: rgba(99, 102, 241, 0.15); display: flex; align-items: center; justify-content: center; color: var(--accent-bright);">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-                    </svg>
-                </div>
+    <div class="card" style="display: flex; flex-direction: column;">
+        <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem;">
+            <div style="width: 32px; height: 32px; border-radius: 6px; background: rgba(99, 102, 241, 0.15); display: flex; align-items: center; justify-content: center; color: var(--accent-bright);">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                </svg>
+            </div>
+            <div>
+                <h3 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--text-bright);">Catálogo y Existencias</h3>
+                <span style="font-size: 0.75rem; color: var(--text-muted);">Stock disponible, en préstamo y alertas</span>
+            </div>
+        </div>
+
+        <form id="form-existencias" method="get" style="display: flex; flex-direction: column; flex: 1;">
+            <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1rem;">
                 <div>
-                    <h3 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--text-bright);">Catálogo y Existencias</h3>
-                    <span style="font-size: 0.75rem; color: var(--text-muted);">Stock disponible, en préstamo y alertas</span>
+                    <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Almacén</label>
+                    <select name="almacen_id" class="form-control" style="width: 100%; font-size: 0.85rem;">
+                        <option value="">-- Todos los almacenes --</option>
+                        {% for a in almacenes %}
+                            <option value="{{ a.id }}">{{ a.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Categoría</label>
+                    <select name="categoria_id" class="form-control" style="width: 100%; font-size: 0.85rem;">
+                        <option value="">-- Todas las categorías --</option>
+                        {% for c in categorias %}
+                            <option value="{{ c.id }}">{{ c.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Estado de Stock</label>
+                    <select name="filtro_stock" class="form-control" style="width: 100%; font-size: 0.85rem;">
+                        <option value="">-- Todos los estados --</option>
+                        <option value="CRITICO">Agotado (Stock 0)</option>
+                        <option value="BAJO">Bajo Stock Mínimo</option>
+                        <option value="NORMAL">Stock Óptimo</option>
+                    </select>
                 </div>
             </div>
 
-            <form id="form-existencias" method="get">
-                <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1rem;">
-                    <div>
-                        <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Almacén</label>
-                        <select name="almacen_id" class="form-control" style="width: 100%; font-size: 0.85rem;">
-                            <option value="">-- Todos los almacenes --</option>
-                            {% for a in almacenes %}
-                                <option value="{{ a.id }}">{{ a.nombre }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-
-                    <div>
-                        <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Categoría</label>
-                        <select name="categoria_id" class="form-control" style="width: 100%; font-size: 0.85rem;">
-                            <option value="">-- Todas las categorías --</option>
-                            {% for c in categorias %}
-                                <option value="{{ c.id }}">{{ c.nombre }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-
-                    <div>
-                        <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Estado de Stock</label>
-                        <select name="filtro_stock" class="form-control" style="width: 100%; font-size: 0.85rem;">
-                            <option value="">-- Todos los estados --</option>
-                            <option value="CRITICO">Agotado (Stock 0)</option>
-                            <option value="BAJO">Bajo Stock Mínimo</option>
-                            <option value="NORMAL">Stock Óptimo</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div style="display: flex; gap: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border-soft);">
-                    <button type="submit" formaction="{% url 'web:exportar-datos-excel' 'existencias' %}" class="btn btn-sm btn-primary" style="flex: 1; font-weight: 600;">
-                        Descargar Excel
-                    </button>
-                    <button type="submit" formaction="{% url 'web:exportar-datos-csv' 'existencias' %}" class="btn btn-sm btn-secondary" style="flex: 1;">
-                        Descargar CSV
-                    </button>
-                </div>
-            </form>
-        </div>
+            <div style="display: flex; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--border-soft); margin-top: auto;">
+                <button type="submit" formaction="{% url 'web:exportar-datos-excel' 'existencias' %}" class="btn btn-sm btn-primary" style="flex: 1; font-weight: 600;">
+                    Descargar Excel
+                </button>
+                <button type="submit" formaction="{% url 'web:exportar-datos-csv' 'existencias' %}" class="btn btn-sm btn-secondary" style="flex: 1;">
+                    Descargar CSV
+                </button>
+            </div>
+        </form>
     </div>
 
     <!-- 2. KARDEX Y MOVIMIENTOS -->
-    <div class="card" style="display: flex; flex-direction: column; justify-content: space-between;">
-        <div>
-            <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem;">
-                <div style="width: 32px; height: 32px; border-radius: 6px; background: rgba(16, 185, 129, 0.15); display: flex; align-items: center; justify-content: center; color: var(--success);">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/>
-                    </svg>
+    <div class="card" style="display: flex; flex-direction: column;">
+        <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem;">
+            <div style="width: 32px; height: 32px; border-radius: 6px; background: rgba(16, 185, 129, 0.15); display: flex; align-items: center; justify-content: center; color: var(--success);">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/>
+                </svg>
+            </div>
+            <div>
+                <h3 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--text-bright);">Movimientos y Kardex</h3>
+                <span style="font-size: 0.75rem; color: var(--text-muted);">Trazabilidad cronológica de operaciones</span>
+            </div>
+        </div>
+
+        <form id="form-movimientos" method="get" style="display: flex; flex-direction: column; flex: 1;">
+            <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1rem;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                    <div>
+                        <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Fecha Desde</label>
+                        <input type="date" name="fecha_desde" class="form-control" style="width: 100%; font-size: 0.85rem;">
+                    </div>
+                    <div>
+                        <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Fecha Hasta</label>
+                        <input type="date" name="fecha_hasta" class="form-control" style="width: 100%; font-size: 0.85rem;">
+                    </div>
                 </div>
+
                 <div>
-                    <h3 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--text-bright);">Movimientos y Kardex</h3>
-                    <span style="font-size: 0.75rem; color: var(--text-muted);">Trazabilidad cronológica de operaciones</span>
+                    <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Tipo de Movimiento</label>
+                    <select name="tipo" class="form-control" style="width: 100%; font-size: 0.85rem;">
+                        <option value="">-- Todos los tipos --</option>
+                        {% for val, label in tipos_movimiento %}
+                            <option value="{{ val }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
             </div>
 
-            <form id="form-movimientos" method="get">
-                <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1rem;">
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
-                        <div>
-                            <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Fecha Desde</label>
-                            <input type="date" name="fecha_desde" class="form-control" style="width: 100%; font-size: 0.85rem;">
-                        </div>
-                        <div>
-                            <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Fecha Hasta</label>
-                            <input type="date" name="fecha_hasta" class="form-control" style="width: 100%; font-size: 0.85rem;">
-                        </div>
-                    </div>
-
-                    <div>
-                        <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Tipo de Movimiento</label>
-                        <select name="tipo" class="form-control" style="width: 100%; font-size: 0.85rem;">
-                            <option value="">-- Todos los tipos --</option>
-                            {% for val, label in tipos_movimiento %}
-                                <option value="{{ val }}">{{ label }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </div>
-
-                <div style="display: flex; gap: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border-soft); margin-top: 1.85rem;">
-                    <button type="submit" formaction="{% url 'web:exportar-datos-excel' 'movimientos' %}" class="btn btn-sm btn-primary" style="flex: 1; font-weight: 600;">
-                        Descargar Excel
-                    </button>
-                    <button type="submit" formaction="{% url 'web:exportar-datos-csv' 'movimientos' %}" class="btn btn-sm btn-secondary" style="flex: 1;">
-                        Descargar CSV
-                    </button>
-                </div>
-            </form>
-        </div>
+            <div style="display: flex; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--border-soft); margin-top: auto;">
+                <button type="submit" formaction="{% url 'web:exportar-datos-excel' 'movimientos' %}" class="btn btn-sm btn-primary" style="flex: 1; font-weight: 600;">
+                    Descargar Excel
+                </button>
+                <button type="submit" formaction="{% url 'web:exportar-datos-csv' 'movimientos' %}" class="btn btn-sm btn-secondary" style="flex: 1;">
+                    Descargar CSV
+                </button>
+            </div>
+        </form>
     </div>
 
     <!-- 3. PRÉSTAMOS Y DEVOLUCIONES -->
-    <div class="card" style="display: flex; flex-direction: column; justify-content: space-between;">
-        <div>
-            <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem;">
-                <div style="width: 32px; height: 32px; border-radius: 6px; background: rgba(245, 158, 11, 0.15); display: flex; align-items: center; justify-content: center; color: var(--warning);">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10"/>
-                        <polyline points="12 6 12 12 16 14"/>
-                    </svg>
-                </div>
+    <div class="card" style="display: flex; flex-direction: column;">
+        <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem;">
+            <div style="width: 32px; height: 32px; border-radius: 6px; background: rgba(245, 158, 11, 0.15); display: flex; align-items: center; justify-content: center; color: var(--warning);">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12 6 12 12 16 14"/>
+                </svg>
+            </div>
+            <div>
+                <h3 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--text-bright);">Préstamos y Devoluciones</h3>
+                <span style="font-size: 0.75rem; color: var(--text-muted);">Control de deudas y saldos pendientes</span>
+            </div>
+        </div>
+
+        <form id="form-prestamos" method="get" style="display: flex; flex-direction: column; flex: 1;">
+            <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1rem;">
                 <div>
-                    <h3 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--text-bright);">Préstamos y Devoluciones</h3>
-                    <span style="font-size: 0.75rem; color: var(--text-muted);">Control de deudas y saldos pendientes</span>
+                    <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Estado del Préstamo</label>
+                    <select name="estado" class="form-control" style="width: 100%; font-size: 0.85rem;">
+                        <option value="TODOS">-- Todos los estados (Histórico Completo) --</option>
+                        {% for val, label in estados_prestamo %}
+                            <option value="{{ val }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
             </div>
 
-            <form id="form-prestamos" method="get">
-                <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1rem;">
-                    <div>
-                        <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Estado del Préstamo</label>
-                        <select name="estado" class="form-control" style="width: 100%; font-size: 0.85rem;">
-                            <option value="">-- Todos los estados (Histórico) --</option>
-                            {% for val, label in estados_prestamo %}
-                                <option value="{{ val }}">{{ label }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </div>
-
-                <div style="display: flex; gap: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border-soft); margin-top: 4.85rem;">
-                    <button type="submit" formaction="{% url 'web:exportar-datos-excel' 'prestamos' %}" class="btn btn-sm btn-primary" style="flex: 1; font-weight: 600;">
-                        Descargar Excel
-                    </button>
-                    <button type="submit" formaction="{% url 'web:exportar-datos-csv' 'prestamos' %}" class="btn btn-sm btn-secondary" style="flex: 1;">
-                        Descargar CSV
-                    </button>
-                </div>
-            </form>
-        </div>
+            <div style="display: flex; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--border-soft); margin-top: auto;">
+                <button type="submit" formaction="{% url 'web:exportar-datos-excel' 'prestamos' %}" class="btn btn-sm btn-primary" style="flex: 1; font-weight: 600;">
+                    Descargar Excel
+                </button>
+                <button type="submit" formaction="{% url 'web:exportar-datos-csv' 'prestamos' %}" class="btn btn-sm btn-secondary" style="flex: 1;">
+                    Descargar CSV
+                </button>
+            </div>
+        </form>
     </div>
 
 </div>
