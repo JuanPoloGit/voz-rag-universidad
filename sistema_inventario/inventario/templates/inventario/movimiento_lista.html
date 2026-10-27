@@ -145,6 +145,7 @@
         </div>
     </div>
 
+    {% if puede_ver_historial %}
     <!-- Botones de Filtro por Tipo de Visualización -->
     <div style="display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px;">
         <div class="filter-pills" role="tablist" aria-label="Filtrar vista de movimientos" style="flex-wrap: wrap;">
@@ -168,7 +169,7 @@
                 <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 Entradas
             </a>
-            {% if not es_usuario_normal %}
+            {% if request.user.es_administrador or 'movimientos.traslado_interno' in request.user.get_permisos_codigos or 'movimientos.traslado_almacen' in request.user.get_permisos_codigos %}
             <a href="{% url 'inventario:movimiento-lista' %}?vista=TRASLADO{% if q %}&q={{ q }}{% endif %}{% if fecha_desde %}&fecha_desde={{ fecha_desde }}{% endif %}{% if fecha_hasta %}&fecha_hasta={{ fecha_hasta }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
                class="filter-pill {% if vista_actual == 'TRASLADO' %}active{% endif %}">
                 <svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
@@ -627,6 +628,27 @@
             </div>
         {% endif %}
     {% endif %}
+    {% else %}
+        <div style="background: rgba(59, 111, 240, 0.08); border: 1px solid rgba(59, 111, 240, 0.22); border-radius: var(--radius); padding: 3rem 1.5rem; text-align: center; margin-top: 1rem;">
+            <div style="width: 52px; height: 52px; border-radius: 50%; background: rgba(59, 111, 240, 0.14); display: inline-grid; place-items: center; margin-bottom: 1rem;">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent-bright);"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </div>
+            <h2 style="font-family: var(--font-heading); font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 8px;">
+                Historial de Movimientos Restringido
+            </h2>
+            <p style="color: var(--text-dim); font-size: 13px; max-width: 500px; margin: 0 auto 1.5rem; line-height: 1.55;">
+                Tu cuenta no cuenta con el permiso para consultar el historial de operaciones (<code>movimientos.ver</code>).
+                Puedes registrar nuevas operaciones autorizadas utilizando el botón superior <strong>"+ Nuevo Movimiento"</strong>.
+            </p>
+            {% if request.user.es_administrador or 'movimientos.entrada' in request.user.get_permisos_codigos or 'movimientos.dotacion' in request.user.get_permisos_codigos or 'movimientos.prestamo' in request.user.get_permisos_codigos or 'movimientos.traslado_interno' in request.user.get_permisos_codigos or 'movimientos.traslado_almacen' in request.user.get_permisos_codigos %}
+            <div>
+                <button type="button" class="btn btn-primary" onclick="document.getElementById('btnAbrirNuevoMovimiento').click();">
+                    + Registrar Nuevo Movimiento
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    {% endif %}
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════════════════
@@ -843,8 +865,8 @@
             </div>
         </form>
 
-        {% if not es_usuario_normal %}
-        <!-- 4. FORMULARIO TRASLADO (Solo Administrador y Superusuario) -->
+        {% if request.user.es_administrador or 'movimientos.traslado_interno' in request.user.get_permisos_codigos or 'movimientos.traslado_almacen' in request.user.get_permisos_codigos %}
+        <!-- 4. FORMULARIO TRASLADO (Interno o Entre Almacenes) -->
         <form method="post" action="{% url 'inventario:movimiento-traslado' %}" id="secFormTraslado" class="mov-dynamic-form" style="display: none;" novalidate>
             {% csrf_token %}
             <input type="hidden" name="next" value="{% url 'inventario:movimiento-lista' %}?vista=TRASLADO">
@@ -1130,6 +1152,9 @@ document.addEventListener("DOMContentLoaded", function() {
         } else if (targetId === "secFormPrestamo") {
             actualizarProductoPrestamo(selectProductoPrestamo ? selectProductoPrestamo.value : null);
         } else if (targetId === "secFormTraslado") {
+            if (typeof setModoTraslado === "function") {
+                setModoTraslado();
+            }
             if (typeof actualizarProductoTraslado === "function" && selectProductoTraslado) {
                 actualizarProductoTraslado(selectProductoTraslado.value);
             }
@@ -1608,7 +1633,9 @@ document.addEventListener("DOMContentLoaded", function() {
 
     function obtenerModoTraslado() {
         var radio = document.querySelector('#secFormTraslado input[name="modalidad_traslado"]:checked');
-        return radio ? radio.value : "INTERNO";
+        if (radio) return radio.value;
+        if (radioTipoEntre && !radioTipoInterno) return "ENTRE";
+        return "INTERNO";
     }
 
     function poblarOpcionesUbicacion(selectElem, almacenId, ubicacionSeleccionada, disableUbicacionId) {
@@ -1716,8 +1743,18 @@ document.addEventListener("DOMContentLoaded", function() {
     function setModoTraslado(modo) {
         ocultarFeedbackTraslado();
 
-        if (modo === "INTERNO" || (esUsuarioNormal && usuarioAlmacenesCount <= 1)) {
+        var tieneInterno = !!radioTipoInterno;
+        var tieneEntre = !!radioTipoEntre;
+
+        if (tieneInterno && !tieneEntre) {
             modo = "INTERNO";
+        } else if (!tieneInterno && tieneEntre) {
+            modo = "ENTRE";
+        } else if (!modo) {
+            modo = (radioTipoEntre && radioTipoEntre.checked) ? "ENTRE" : "INTERNO";
+        }
+
+        if (modo === "INTERNO") {
             if (radioTipoInterno) radioTipoInterno.checked = true;
             if (cardTipoInterno) {
                 cardTipoInterno.classList.add("active");

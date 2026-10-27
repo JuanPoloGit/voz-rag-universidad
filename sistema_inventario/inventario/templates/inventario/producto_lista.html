@@ -105,6 +105,7 @@
         </div>
     </div>
 
+    {% if puede_ver_catalogo %}
     <!-- Filtros automáticos en cascada relacional en una sola línea responsiva -->
     <form method="get" action="{% url 'inventario:producto-lista' %}" data-auto-filter="true" id="formFiltrosCatalogo"
           style="margin-bottom: 1.25rem; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
@@ -357,6 +358,29 @@
                 <a href="?page={{ page_obj.next_page_number }}{% if q %}&q={{ q }}{% endif %}{% if almacen_seleccionado %}&almacen_id={{ almacen_seleccionado }}{% endif %}{% if categoria_seleccionada %}&categoria_id={{ categoria_seleccionada }}{% endif %}{% if tipo_seleccionado %}&tipo_id={{ tipo_seleccionado }}{% endif %}{% if ubicacion_seleccionada %}&ubicacion_id={{ ubicacion_seleccionada }}{% endif %}{% if estado_activo %}&estado_activo={{ estado_activo }}{% endif %}" class="btn btn-sm btn-secondary">Siguiente &raquo;</a>
             {% else %}
                 <span class="btn btn-sm btn-secondary" style="opacity: 0.45; pointer-events: none; cursor: default;">Siguiente &raquo;</span>
+            {% endif %}
+        </div>
+    {% endif %}
+    {% else %}
+        <div style="background: rgba(59, 111, 240, 0.08); border: 1px solid rgba(59, 111, 240, 0.22); border-radius: var(--radius); padding: 3rem 1.5rem; text-align: center; margin-top: 1rem;">
+            <div style="width: 52px; height: 52px; border-radius: 50%; background: rgba(59, 111, 240, 0.14); display: inline-grid; place-items: center; margin-bottom: 1rem;">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent-bright);"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
+            </div>
+            <h2 style="font-family: var(--font-heading); font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 8px;">
+                Catálogo de Productos Restringido
+            </h2>
+            <p style="color: var(--text-dim); font-size: 13px; max-width: 500px; margin: 0 auto 1.5rem; line-height: 1.55;">
+                Tu cuenta no cuenta con el permiso para consultar el catálogo ni el listado de productos (<code>catalogo.ver</code>).
+                {% if request.user.es_administrador or 'catalogo.crear' in request.user.get_permisos_codigos %}
+                Puedes registrar nuevos artículos autorizados utilizando el botón superior <strong>"+ Nuevo Producto"</strong>.
+                {% endif %}
+            </p>
+            {% if request.user.es_administrador or 'catalogo.crear' in request.user.get_permisos_codigos %}
+            <div>
+                <button type="button" class="btn btn-primary" onclick="document.getElementById('btnNuevoProducto').click();">
+                    + Registrar Nuevo Producto
+                </button>
+            </div>
             {% endif %}
         </div>
     {% endif %}

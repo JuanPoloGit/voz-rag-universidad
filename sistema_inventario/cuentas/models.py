@@ -288,6 +288,49 @@ class UsuarioAudacIA(AbstractUser):
             return True
         return codigo_permiso in self.get_permisos_codigos()
 
+    def tiene_algun_permiso(self, *codigos: str) -> bool:
+        """Retorna True si el usuario tiene al menos uno de los permisos indicados (o es admin)."""
+        if not self.is_authenticated or not self.is_active or self.eliminado_logicamente:
+            return False
+        if self.es_administrador:
+            return True
+        user_perms = self.get_permisos_codigos()
+        return any(c in user_perms for c in codigos)
+
+    @property
+    def puede_acceder_modulo_movimientos(self) -> bool:
+        """Permite ingresar a Movimientos si puede ver o tiene cualquier permiso operativo."""
+        return self.tiene_algun_permiso(
+            "movimientos.ver",
+            "movimientos.entrada",
+            "movimientos.prestamo",
+            "movimientos.dotacion",
+            "movimientos.devolucion",
+            "movimientos.baja",
+            "movimientos.traslado_interno",
+            "movimientos.traslado_almacen",
+        )
+
+    @property
+    def puede_acceder_modulo_catalogo(self) -> bool:
+        """Permite ingresar a Catálogo si puede ver, crear, editar o eliminar productos."""
+        return self.tiene_algun_permiso(
+            "catalogo.ver",
+            "catalogo.crear",
+            "catalogo.editar",
+            "catalogo.eliminar",
+            "analitica.ver_alertas",
+        )
+
+    @property
+    def puede_acceder_modulo_infraestructura(self) -> bool:
+        """Permite ingresar a Infraestructura si puede ver o gestionar categorías/ubicaciones."""
+        return self.tiene_algun_permiso(
+            "infraestructura.ver",
+            "infraestructura.gestionar_categorias",
+            "infraestructura.gestionar_ubicaciones",
+        )
+
 
 class IntentoFallido(models.Model):
     """Registro de intentos fallidos de login para bloqueo temporal.
@@ -458,14 +501,6 @@ PERMISOS_CATALOGO = [
         "orden": 3,
     },
 
-    # Módulo 5: SEGURIDAD
-    {
-        "codigo": "seguridad.gestionar_usuarios",
-        "modulo": "SEGURIDAD",
-        "nombre": "Gestionar usuarios y permisos",
-        "descripcion": "Crear y administrar usuarios subordinados y sus facultades.",
-        "orden": 1,
-    },
 ]
 
 PRESETS_PERMISOS = {
@@ -504,8 +539,8 @@ PRESETS_PERMISOS = {
         ],
     },
     "PANOLERO": {
-        "nombre": "Pañolero / Despacho",
-        "descripcion": "Entrega de herramientas en préstamo, dotaciones y retornos.",
+        "nombre": "Almacenista de Herramientas / Despacho",
+        "descripcion": "Entrega de herramientas y equipos en préstamo, dotaciones y devoluciones.",
         "icon": "wrench",
         "icono": "wrench",
         "codigos": [

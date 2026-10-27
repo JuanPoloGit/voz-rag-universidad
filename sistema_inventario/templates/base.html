@@ -1407,7 +1407,7 @@
                 </a>
                 {% endif %}
 
-                {% if user.es_administrador or 'catalogo.ver' in user.get_permisos_codigos or 'analitica.ver_alertas' in user.get_permisos_codigos %}
+                {% if user.es_administrador or user.puede_acceder_modulo_catalogo %}
                 <a href="{% url 'inventario:producto-lista' %}" class="nav-item {% block sidebar_productos %}{% endblock %}{% block sidebar_alertas %}{% endblock %}{% block sidebar_rep_existencias %}{% endblock %}">
                     <svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
                     Catálogo y Stock
@@ -1417,14 +1417,14 @@
                 </a>
                 {% endif %}
 
-                {% if user.es_administrador or 'movimientos.ver' in user.get_permisos_codigos %}
+                {% if user.es_administrador or user.puede_acceder_modulo_movimientos %}
                 <a href="{% url 'inventario:movimiento-lista' %}" class="nav-item {% block sidebar_movimientos %}{% endblock %}{% block sidebar_entrada %}{% endblock %}{% block sidebar_salida %}{% endblock %}{% block sidebar_prestamos %}{% endblock %}{% block sidebar_conteos %}{% endblock %}{% block sidebar_rep_prestamos %}{% endblock %}{% block sidebar_rep_movimientos %}{% endblock %}{% block sidebar_rep_estancados %}{% endblock %}">
                     <svg viewBox="0 0 24 24"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
                     Movimientos
                 </a>
                 {% endif %}
 
-                {% if user.es_administrador or 'infraestructura.ver' in user.get_permisos_codigos %}
+                {% if user.es_administrador or user.puede_acceder_modulo_infraestructura %}
                 <a href="{% url 'inventario:categoria-lista' %}" class="nav-item {% block sidebar_categorias %}{% endblock %}{% block sidebar_ubicaciones %}{% endblock %}{% block sidebar_almacenes %}{% endblock %}">
                     <svg viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z"/><circle cx="17" cy="17" r="3"/></svg>
                     Categorías y Almacenes

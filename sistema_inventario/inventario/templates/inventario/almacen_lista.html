@@ -22,6 +22,7 @@
         {% endif %}
     </div>
 
+    {% if puede_ver_almacenes %}
     <!-- Buscador y filtro automático -->
     <form method="get" action="{% url 'inventario:almacen-lista' %}" data-auto-filter="true"
           style="margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
@@ -124,6 +125,20 @@
             </tbody>
         </table>
     </div>
+    {% else %}
+        <div style="background: rgba(59, 111, 240, 0.08); border: 1px solid rgba(59, 111, 240, 0.22); border-radius: var(--radius); padding: 3rem 1.5rem; text-align: center; margin-top: 1rem;">
+            <div style="width: 52px; height: 52px; border-radius: 50%; background: rgba(59, 111, 240, 0.14); display: inline-grid; place-items: center; margin-bottom: 1rem;">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent-bright);"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            </div>
+            <h2 style="font-family: var(--font-heading); font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 8px;">
+                Listado de Almacenes Restringido
+            </h2>
+            <p style="color: var(--text-dim); font-size: 13px; max-width: 500px; margin: 0 auto; line-height: 1.55;">
+                Tu cuenta no cuenta con el permiso para consultar el listado de almacenes (<code>infraestructura.ver</code>).
+                Puedes acceder a las secciones de Categorías o Ubicaciones según tus permisos autorizados.
+            </p>
+        </div>
+    {% endif %}
 </div>
 
 {% if user.es_administrador %}

@@ -22,6 +22,7 @@
         </div>
     </div>
 
+    {% if puede_ver_ubicaciones %}
     <!-- Filtros automáticos -->
     <form method="get" action="{% url 'inventario:ubicacion-lista' %}" data-auto-filter="true"
           style="margin-bottom: 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
@@ -137,7 +138,29 @@
                 </tbody>
             </table>
         </div>
-    </div>
+    {% else %}
+        <div style="background: rgba(59, 111, 240, 0.08); border: 1px solid rgba(59, 111, 240, 0.22); border-radius: var(--radius); padding: 3rem 1.5rem; text-align: center; margin-top: 1rem;">
+            <div style="width: 52px; height: 52px; border-radius: 50%; background: rgba(59, 111, 240, 0.14); display: inline-grid; place-items: center; margin-bottom: 1rem;">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent-bright);"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            </div>
+            <h2 style="font-family: var(--font-heading); font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 8px;">
+                Listado de Ubicaciones Restringido
+            </h2>
+            <p style="color: var(--text-dim); font-size: 13px; max-width: 500px; margin: 0 auto 1.5rem; line-height: 1.55;">
+                Tu cuenta no cuenta con el permiso para consultar el listado de ubicaciones (<code>infraestructura.ver</code>).
+                {% if request.user.es_administrador or 'infraestructura.gestionar_ubicaciones' in request.user.get_permisos_codigos %}
+                Puedes registrar nuevas ubicaciones físicas utilizando el botón superior <strong>"+ Nueva Ubicación"</strong>.
+                {% endif %}
+            </p>
+            {% if request.user.es_administrador or 'infraestructura.gestionar_ubicaciones' in request.user.get_permisos_codigos %}
+            <div>
+                <button type="button" class="btn btn-primary" onclick="document.getElementById('btnNuevaUbicacionModal').click();">
+                    + Registrar Nueva Ubicación
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    {% endif %}
 </div>
 
 <!-- ═══ MODAL NUEVA / EDITAR UBICACIÓN ═══ -->

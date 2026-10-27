@@ -199,17 +199,25 @@ class AjaxModalFormMixin:
 # 1. ALMACENES
 # ─────────────────────────────────────────────────────────────────────────────
 
-class AlmacenListaView(LoginRequiredMixin, PermisoRequeridoMixin, ListView):
+class AlmacenListaView(LoginRequiredMixin, ListView):
     """Lista de almacenes registrados."""
 
-    permiso_requerido = "infraestructura.ver"
     model = Almacen
     template_name = "inventario/almacen_lista.html"
     context_object_name = "almacenes"
 
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return self.handle_no_permission()
+        if not (request.user.es_administrador or request.user.puede_acceder_modulo_infraestructura):
+            raise PermissionDenied("No tienes permisos para acceder a infraestructura.")
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
-        qs = Almacen.objects.filter(eliminado=False)
         user = self.request.user
+        if not (user.es_administrador or user.tiene_permiso("infraestructura.ver")):
+            return Almacen.objects.none()
+        qs = Almacen.objects.filter(eliminado=False)
         if getattr(user, "es_usuario_normal", False):
             qs = qs.filter(id__in=user.get_almacenes_asignados())
         mostrar_inactivos = self.request.GET.get("mostrar_inactivos") == "1"
@@ -222,6 +230,8 @@ class AlmacenListaView(LoginRequiredMixin, PermisoRequeridoMixin, ListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        user = self.request.user
+        context["puede_ver_almacenes"] = user.es_administrador or user.tiene_permiso("infraestructura.ver")
         context["mostrar_inactivos"] = self.request.GET.get("mostrar_inactivos") == "1"
         context["q"] = self.request.GET.get("q", "")
         context["almacen_form"] = AlmacenForm()
@@ -314,20 +324,28 @@ class AlmacenEditarView(LoginRequiredMixin, RolRequeridoMixin, AjaxModalFormMixi
 # 2. UBICACIONES
 # ─────────────────────────────────────────────────────────────────────────────
 
-class UbicacionListaView(LoginRequiredMixin, PermisoRequeridoMixin, ListView):
+class UbicacionListaView(LoginRequiredMixin, ListView):
     """Lista de ubicaciones físicas accesibles por el usuario."""
 
-    permiso_requerido = "infraestructura.ver"
     model = Ubicacion
     template_name = "inventario/ubicacion_lista.html"
     context_object_name = "ubicaciones"
 
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return self.handle_no_permission()
+        if not (request.user.es_administrador or request.user.puede_acceder_modulo_infraestructura):
+            raise PermissionDenied("No tienes permisos para acceder a infraestructura.")
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
+        user = self.request.user
+        if not (user.es_administrador or user.tiene_permiso("infraestructura.ver")):
+            return Ubicacion.objects.none()
         qs = Ubicacion.objects.filter(eliminado=False)
         mostrar_inactivos = self.request.GET.get("mostrar_inactivos") == "1"
         if not mostrar_inactivos:
             qs = qs.filter(activo=True)
-        user = self.request.user
         if getattr(user, "es_usuario_normal", False):
             user_alms = user.get_almacenes_asignados()
             qs = qs.filter(almacen__in=user_alms)
@@ -346,6 +364,7 @@ class UbicacionListaView(LoginRequiredMixin, PermisoRequeridoMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         user = self.request.user
+        context["puede_ver_ubicaciones"] = user.es_administrador or user.tiene_permiso("infraestructura.ver")
         alms_disponibles = user.get_almacenes_asignados() if getattr(user, "es_usuario_normal", False) else Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
         if not getattr(user, "es_usuario_normal", False) or alms_disponibles.count() > 1:
             context["almacenes"] = alms_disponibles
@@ -495,20 +514,28 @@ class UbicacionEditarView(LoginRequiredMixin, PermisoRequeridoMixin, AjaxModalFo
 # 3. CATEGORÍAS Y TIPOS OPCIONALES
 # ─────────────────────────────────────────────────────────────────────────────
 
-class CategoriaListaView(LoginRequiredMixin, PermisoRequeridoMixin, ListView):
+class CategoriaListaView(LoginRequiredMixin, ListView):
     """Lista de categorías de productos accesibles por el usuario con sus tipos opcionales."""
 
-    permiso_requerido = "infraestructura.ver"
     model = Categoria
     template_name = "inventario/categoria_lista.html"
     context_object_name = "categorias"
 
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return self.handle_no_permission()
+        if not (request.user.es_administrador or request.user.puede_acceder_modulo_infraestructura):
+            raise PermissionDenied("No tienes permisos para acceder a infraestructura.")
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
+        user = self.request.user
+        if not (user.es_administrador or user.tiene_permiso("infraestructura.ver")):
+            return Categoria.objects.none()
         qs = Categoria.objects.filter(eliminado=False)
         mostrar_inactivos = self.request.GET.get("mostrar_inactivos") == "1"
         if not mostrar_inactivos:
             qs = qs.filter(activo=True)
-        user = self.request.user
         if getattr(user, "es_usuario_normal", False):
             user_alms = user.get_almacenes_asignados()
             qs = qs.filter(almacen_principal__in=user_alms)
@@ -531,6 +558,7 @@ class CategoriaListaView(LoginRequiredMixin, PermisoRequeridoMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         user = self.request.user
+        context["puede_ver_categorias"] = user.es_administrador or user.tiene_permiso("infraestructura.ver")
         alms_disponibles = user.get_almacenes_asignados() if getattr(user, "es_usuario_normal", False) else Almacen.objects.filter(activo=True, eliminado=False).order_by("nombre")
         if not getattr(user, "es_usuario_normal", False) or alms_disponibles.count() > 1:
             context["almacenes"] = alms_disponibles
@@ -809,14 +837,20 @@ class TipoCategoriaEliminarView(LoginRequiredMixin, PermisoRequeridoMixin, View)
 # 4. PRODUCTOS
 # ─────────────────────────────────────────────────────────────────────────────
 
-class ProductoListaView(LoginRequiredMixin, PermisoRequeridoMixin, ListView):
+class ProductoListaView(LoginRequiredMixin, ListView):
     """Catálogo y lista operativa de productos."""
 
-    permiso_requerido = "catalogo.ver"
     model = Producto
     template_name = "inventario/producto_lista.html"
     context_object_name = "productos"
     paginate_by = 10
+
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return self.handle_no_permission()
+        if not (request.user.es_administrador or request.user.puede_acceder_modulo_catalogo):
+            raise PermissionDenied("No tienes permisos para acceder al catálogo.")
+        return super().dispatch(request, *args, **kwargs)
 
     def get(self, request, *args, **kwargs):
         q = request.GET.get("q", "").strip()
@@ -909,6 +943,8 @@ class ProductoListaView(LoginRequiredMixin, PermisoRequeridoMixin, ListView):
         }
 
     def get_queryset(self):
+        if not (self.request.user.es_administrador or self.request.user.tiene_permiso("catalogo.ver")):
+            return Producto.objects.none()
         qs = Producto.objects.filter(archivado=False)
         f = self._resolver_filtros_validos()
 
@@ -1008,6 +1044,7 @@ class ProductoListaView(LoginRequiredMixin, PermisoRequeridoMixin, ListView):
         context["ubicaciones"] = ub_qs
 
         context["q"] = f["q"]
+        context["puede_ver_catalogo"] = user.es_administrador or user.tiene_permiso("catalogo.ver")
         context["almacen_seleccionado"] = str(f["almacen_id"]) if f["almacen_id"] else ""
         context["categoria_seleccionada"] = str(f["categoria_id"]) if f["categoria_id"] else ""
         context["tipo_seleccionado"] = str(f["tipo_id"]) if f["tipo_id"] else ""
@@ -1974,16 +2011,31 @@ class AlertasStockJSONView(LoginRequiredMixin, PermisoRequeridoMixin, View):
 # 8. MOVIMIENTOS: LISTA, ENTRADAS Y SALIDAS
 # ─────────────────────────────────────────────────────────────────────────────
 
-class MovimientoListaView(LoginRequiredMixin, PermisoRequeridoMixin, ListView):
+class MovimientoListaView(LoginRequiredMixin, ListView):
     """Centro unificado de Movimientos: Entradas, Salidas, Préstamos (con Antigüedad), Traslados y Conteos Físicos."""
 
-    permiso_requerido = "movimientos.ver"
     model = Movimiento
     template_name = "inventario/movimiento_lista.html"
     context_object_name = "movimientos"
     paginate_by = 15
 
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return self.handle_no_permission()
+        if not (request.user.es_administrador or request.user.puede_acceder_modulo_movimientos):
+            raise PermissionDenied("No tienes permisos para acceder al módulo de movimientos.")
+        return super().dispatch(request, *args, **kwargs)
+
     def get_queryset(self):
+        user = self.request.user
+        vista = self.request.GET.get("vista", "").upper()
+        if vista == "TRASLADO":
+            if not (user.es_administrador or user.tiene_permiso("movimientos.traslado_interno") or user.tiene_permiso("movimientos.traslado_almacen")):
+                raise PermissionDenied("No tienes permisos para consultar la vista de traslados.")
+
+        if not (user.es_administrador or user.tiene_permiso("movimientos.ver")):
+            return Movimiento.objects.none()
+
         qs = Movimiento.objects.select_related(
             "producto",
             "almacen_origen",
@@ -1996,7 +2048,6 @@ class MovimientoListaView(LoginRequiredMixin, PermisoRequeridoMixin, ListView):
             "movimiento_original__prestamo",
         ).order_by("-fecha_hora")
 
-        user = self.request.user
         if getattr(user, "es_usuario_normal", False):
             user_alms = user.get_almacenes_asignados()
             if user_alms.exists():
@@ -2004,9 +2055,6 @@ class MovimientoListaView(LoginRequiredMixin, PermisoRequeridoMixin, ListView):
             else:
                 return qs.none()
 
-        vista = self.request.GET.get("vista", "").upper()
-        if vista == "TRASLADO" and getattr(user, "es_usuario_normal", False):
-            raise PermissionDenied("Los usuarios estándar no tienen acceso a la vista de traslados.")
         tipo = self.request.GET.get("tipo", "")
 
         if not vista or vista == "TODOS":
@@ -2209,6 +2257,13 @@ class MovimientoListaView(LoginRequiredMixin, PermisoRequeridoMixin, ListView):
             ]
 
         context["vista_actual"] = vista
+        puede_ver_historial = user.es_administrador or user.tiene_permiso("movimientos.ver")
+        context["puede_ver_historial"] = puede_ver_historial
+        if not puede_ver_historial:
+            context["prestamos_lista"] = []
+            context["conteos_lista"] = []
+            context["estancados_lista"] = []
+            context["movimientos"] = []
         context["tipos_movimiento"] = Movimiento.Tipo.choices
         context["tipo_seleccionado"] = tipo
         context["estado_prestamo"] = estado_prestamo

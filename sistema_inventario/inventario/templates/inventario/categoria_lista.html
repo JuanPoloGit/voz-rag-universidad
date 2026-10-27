@@ -58,6 +58,7 @@
         </div>
     </div>
 
+    {% if puede_ver_categorias %}
     <!-- Barra de filtros automáticos -->
     <form method="get" action="{% url 'inventario:categoria-lista' %}" data-auto-filter="true"
           style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px;">
@@ -212,6 +213,29 @@
                 </tbody>
             </table>
         </div>
+    {% else %}
+        <div style="background: rgba(59, 111, 240, 0.08); border: 1px solid rgba(59, 111, 240, 0.22); border-radius: var(--radius); padding: 3rem 1.5rem; text-align: center; margin-top: 1rem;">
+            <div style="width: 52px; height: 52px; border-radius: 50%; background: rgba(59, 111, 240, 0.14); display: inline-grid; place-items: center; margin-bottom: 1rem;">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent-bright);"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z"/><circle cx="17" cy="17" r="3"/></svg>
+            </div>
+            <h2 style="font-family: var(--font-heading); font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 8px;">
+                Listado de Categorías Restringido
+            </h2>
+            <p style="color: var(--text-dim); font-size: 13px; max-width: 500px; margin: 0 auto 1.5rem; line-height: 1.55;">
+                Tu cuenta no cuenta con el permiso para consultar el listado de categorías (<code>infraestructura.ver</code>).
+                {% if request.user.es_administrador or 'infraestructura.gestionar_categorias' in request.user.get_permisos_codigos %}
+                Puedes registrar nuevas categorías utilizando el botón superior <strong>"+ Nueva Categoría"</strong>.
+                {% endif %}
+            </p>
+            {% if request.user.es_administrador or 'infraestructura.gestionar_categorias' in request.user.get_permisos_codigos %}
+            <div>
+                <button type="button" class="btn btn-primary" onclick="document.getElementById('btnNuevaCategoriaModal').click();">
+                    + Registrar Nueva Categoría
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    {% endif %}
 </div>
 
 <!-- ═══ MODAL NUEVA / EDITAR CATEGORÍA ═══ -->
