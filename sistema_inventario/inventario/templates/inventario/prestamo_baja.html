@@ -18,6 +18,7 @@
 
     <form method="post">
         {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.GET.next|default:'' }}">
 
         {% if form.non_field_errors %}
             <div class="alert alert-error" style="margin-bottom: 1.25rem;">
@@ -45,7 +46,7 @@
         </div>
 
         <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
-            <a href="{% url 'inventario:prestamo-lista' %}" class="btn btn-secondary">Cancelar</a>
+            <a href="{% if request.GET.next %}{{ request.GET.next }}{% else %}{% url 'inventario:movimiento-lista' %}?vista=PRESTAMOS{% endif %}" class="btn btn-secondary">Cancelar</a>
             <button type="submit" class="btn btn-primary" style="background: var(--danger); border-color: var(--danger);">Registrar Baja por Daño</button>
         </div>
     </form>

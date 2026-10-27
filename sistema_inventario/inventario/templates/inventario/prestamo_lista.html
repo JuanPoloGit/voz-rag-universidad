@@ -13,11 +13,14 @@
                 Control de artículos entregados temporalmente con seguimiento de devoluciones parciales y bajas (§9.4).
             </p>
         </div>
-        {% if request.user.es_administrador or 'movimientos.prestamo' in request.user.get_permisos_codigos %}
-        <div>
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=PRESTAMOS" class="btn btn-secondary">
+                &larr; Centro de Movimientos y Préstamos
+            </a>
+            {% if request.user.es_administrador or 'movimientos.prestamo' in request.user.get_permisos_codigos %}
             <a href="{% url 'inventario:prestamo-crear' %}" class="btn btn-primary">+ Entregar Préstamo</a>
+            {% endif %}
         </div>
-        {% endif %}
     </div>
 
     <!-- Filtros -->
@@ -58,15 +61,11 @@
                             <code>{{ p.producto.codigo_interno }}</code><br>
                             <small>{{ p.producto.nombre|truncatechars:25 }}</small>
                         </td>
-                        <td>{{ p.almacen.nombre }}</td>
-                        <td>{{ p.cantidad_original }}</td>
-                        <td><strong style="color: {% if p.cantidad_pendiente_devolucion > 0 %}var(--danger){% else %}var(--success){% endif %};">{{ p.cantidad_pendiente_devolucion }}</strong></td>
+                        <td><span class="badge badge-accent">{{ p.almacen.nombre }}</span></td>
+                        <td>{{ p.cantidad_original }} unid.</td>
+                        <td><strong style="color: var(--danger);">{{ p.cantidad_pendiente_devolucion }} unid.</strong></td>
                         <td>
-                            <span class="badge" style="
-                                {% if p.estado == 'ABIERTO' %}background: #8b5cf6; color: white;
-                                {% elif p.estado == 'DEVUELTO_PARCIAL' %}background: var(--warning); color: white;
-                                {% else %}background: var(--success); color: white;{% endif %}
-                            ">
+                            <span class="badge {% if p.estado == 'ABIERTO' %}badge-warn{% elif p.estado == 'DEVUELTO_PARCIAL' %}badge-accent{% else %}badge-ok{% endif %}">
                                 {{ p.get_estado_display }}
                             </span>
                         </td>

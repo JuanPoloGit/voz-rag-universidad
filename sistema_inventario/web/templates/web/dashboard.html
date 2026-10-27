@@ -408,7 +408,7 @@
     <div class="card" style="margin-bottom: 0;">
         <div class="panel-header">
             <h3 class="panel-title">Préstamos Pendientes</h3>
-            <a href="{% url 'inventario:prestamo-lista' %}" class="panel-link">Ver todos →</a>
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=PRESTAMOS{% if almacen_seleccionado %}&almacen_id={{ almacen_seleccionado }}{% endif %}" class="panel-link">Ver todos →</a>
         </div>
         {% if prestamos_recientes %}
             <div class="table-responsive">
@@ -418,7 +418,7 @@
                             <th>Responsable</th>
                             <th>Producto</th>
                             <th>Pend.</th>
-                            <th>Acción</th>
+                            <th style="text-align: right;">Acción</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -427,8 +427,19 @@
                                 <td><strong>{{ p.destinatario }}</strong></td>
                                 <td><code>{{ p.producto.codigo_interno }}</code> <small class="text-dim">{{ p.producto.nombre|truncatechars:20 }}</small></td>
                                 <td><strong style="color: var(--warn);">{{ p.cantidad_pendiente_devolucion }}</strong></td>
-                                <td>
-                                    <a href="{% url 'inventario:prestamo-devolver' p.pk %}" class="btn btn-sm btn-primary">Devolver</a>
+                                <td style="text-align: right; white-space: nowrap;">
+                                    {% if request.user.es_administrador or 'movimientos.devolucion' in request.user.get_permisos_codigos %}
+                                    <button type="button"
+                                            class="btn btn-sm btn-primary btn-abrir-devolucion"
+                                            data-url="{% url 'inventario:prestamo-devolver' p.pk %}"
+                                            data-producto="{{ p.producto.codigo_interno }} — {{ p.producto.nombre }}"
+                                            data-destinatario="{{ p.destinatario }}"
+                                            data-pendiente="{{ p.cantidad_pendiente_devolucion }}">
+                                        Devolver
+                                    </button>
+                                    {% else %}
+                                    <span style="font-size: 11.5px; color: var(--text-faint);">Solo lectura</span>
+                                    {% endif %}
                                 </td>
                             </tr>
                         {% endfor %}
@@ -440,6 +451,35 @@
         {% endif %}
     </div>
 </div>
+
+<!-- ═══ MODAL DEVOLUCIÓN DE PRÉSTAMO RÁPIDA DESDE DASHBOARD ═══ -->
+<dialog id="modalDevolucionPrestamo" class="app-modal">
+    <form method="post" id="formDevolucionModal" style="display: flex; flex-direction: column;">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <input type="hidden" name="clave_idempotencia" id="idemDevolucion">
+        <div class="app-modal-header">
+            <h2 class="app-modal-title">Registrar Devolución de Préstamo</h2>
+            <button type="button" class="app-modal-close" onclick="closeAppModal('modalDevolucionPrestamo')">&times;</button>
+        </div>
+        <div class="app-modal-body">
+            <p id="infoPrestamoDevolver" style="font-size: 13px; color: var(--text-dim); margin-bottom: 14px;"></p>
+            <div id="warnMaxDevolucion" style="display: none; background: rgba(245, 158, 11, 0.15); border: 1px solid var(--accent-warning); color: #fcd34d; padding: 8px 12px; border-radius: 6px; font-size: 12px; margin-bottom: 12px;"></div>
+            <div class="form-group">
+                <label>Cantidad a Devolver *</label>
+                <input type="number" name="cantidad" id="inputCantDevolver" class="form-control" min="1" required>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Motivo / Estado de Recepción *</label>
+                <input type="text" name="motivo" class="form-control" value="Devolución en buen estado" required>
+            </div>
+        </div>
+        <div class="app-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalDevolucionPrestamo')">Cancelar</button>
+            <button type="submit" class="btn btn-primary">Confirmar Devolución</button>
+        </div>
+    </form>
+</dialog>
 {% endblock %}
 
 {% block extra_js %}
@@ -569,6 +609,50 @@
                 if (categoriasChart) categoriasChart.resize();
             });
         }
+        // Modal Devolución rápida de Préstamos desde el Dashboard
+        function generarClaveIdempotencia() {
+            return "idem-" + Date.now() + "-" + Math.random().toString(36).substring(2, 10);
+        }
+
+        var inpCantDevolver = document.getElementById("inputCantDevolver");
+        var warnMaxDevolucion = document.getElementById("warnMaxDevolucion");
+
+        if (inpCantDevolver) {
+            inpCantDevolver.addEventListener("input", function() {
+                var maxPend = parseInt(inpCantDevolver.max, 10);
+                var val = parseInt(inpCantDevolver.value, 10);
+                if (!isNaN(maxPend) && !isNaN(val) && val > maxPend) {
+                    inpCantDevolver.value = maxPend;
+                    if (warnMaxDevolucion) {
+                        warnMaxDevolucion.textContent = "Se ajustó automáticamente al saldo máximo pendiente (" + maxPend + " unid.).";
+                        warnMaxDevolucion.style.display = "block";
+                    }
+                } else {
+                    if (warnMaxDevolucion) warnMaxDevolucion.style.display = "none";
+                }
+            });
+        }
+
+        document.querySelectorAll(".btn-abrir-devolucion").forEach(function(btn) {
+            btn.addEventListener("click", function() {
+                var form = document.getElementById("formDevolucionModal");
+                if (!form) return;
+                form.action = btn.getAttribute("data-url");
+                var idemInp = document.getElementById("idemDevolucion");
+                if (idemInp) idemInp.value = generarClaveIdempotencia();
+                var pend = btn.getAttribute("data-pendiente");
+                var infoEl = document.getElementById("infoPrestamoDevolver");
+                if (infoEl) {
+                    infoEl.textContent = "Artículo: " + btn.getAttribute("data-producto") + " · Responsable: " + btn.getAttribute("data-destinatario") + " (Pendiente: " + pend + " unid.)";
+                }
+                if (warnMaxDevolucion) warnMaxDevolucion.style.display = "none";
+                if (inpCantDevolver) {
+                    inpCantDevolver.max = pend;
+                    inpCantDevolver.value = pend;
+                }
+                openAppModal("modalDevolucionPrestamo");
+            });
+        });
     });
 </script>
 {% endblock %}
