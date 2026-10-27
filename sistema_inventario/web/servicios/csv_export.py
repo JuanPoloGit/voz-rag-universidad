@@ -138,3 +138,70 @@ def exportar_resumen_dashboard_csv(metricas, usuario=None, almacen=None) -> Http
         writer.writerow([cat, total])
 
     return response
+
+
+def exportar_inventario_completo_csv(usuario, almacen=None) -> HttpResponse:
+    """Exporta TODOS los datos consolidados y detallados del inventario a CSV con codificación UTF-8 BOM."""
+    response, writer = _crear_respuesta_csv("inventario_completo")
+    writer.writerow([
+        "Código Interno",
+        "Nombre Producto",
+        "Categoría",
+        "Tipo de Producto",
+        "Almacén",
+        "Ubicaciones en Almacén",
+        "Stock Disponible",
+        "Stock en Préstamo",
+        "Stock Total",
+        "Stock Mínimo",
+        "Estado del Stock",
+        "Código de Barras",
+        "Empaque / Presentación",
+        "Unidades por Empaque",
+    ])
+
+    from web.servicios.reportes import obtener_reporte_existencias
+    alm_id = almacen.id if almacen else None
+    qs = obtener_reporte_existencias(usuario, almacen_id=alm_id)
+    qs = qs.select_related("producto", "almacen", "producto__categoria", "producto__tipo").prefetch_related(
+        "producto__producto_ubicaciones__ubicacion"
+    )
+
+    for ex in qs:
+        prod = ex.producto
+        stock_total = ex.stock_disponible + ex.stock_en_prestamo
+
+        # Estado descriptivo
+        if ex.stock_disponible == 0:
+            estado = "AGOTADO / CRÍTICO"
+        elif ex.stock_disponible < prod.stock_minimo:
+            estado = "BAJO MÍNIMO"
+        else:
+            estado = "ÓPTIMO"
+
+        # Ubicaciones del producto en este almacén
+        ubicaciones_alm = [
+            pu.ubicacion.nombre
+            for pu in prod.producto_ubicaciones.all()
+            if pu.ubicacion.almacen_id == ex.almacen_id and not getattr(pu.ubicacion, "eliminado", False)
+        ]
+        ubicaciones_str = ", ".join(ubicaciones_alm) if ubicaciones_alm else "Sin ubicación específica"
+
+        writer.writerow([
+            prod.codigo_interno,
+            prod.nombre,
+            prod.categoria.nombre if prod.categoria else "Sin categoría",
+            prod.tipo.nombre if prod.tipo else "General",
+            ex.almacen.nombre,
+            ubicaciones_str,
+            ex.stock_disponible,
+            ex.stock_en_prestamo,
+            stock_total,
+            prod.stock_minimo,
+            estado,
+            prod.codigo_barras or "N/A",
+            prod.nombre_empaque or "Unidad",
+            prod.unidades_por_empaque or 1,
+        ])
+
+    return response

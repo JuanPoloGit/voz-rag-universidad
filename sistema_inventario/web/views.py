@@ -10,6 +10,7 @@ from django.views.generic import View
 from inventario.models import Almacen, Categoria, Movimiento, Producto
 from web.servicios.csv_export import (
     exportar_existencias_csv,
+    exportar_inventario_completo_csv,
     exportar_movimientos_csv,
     exportar_prestamos_csv,
     exportar_resumen_dashboard_csv,
@@ -368,8 +369,7 @@ class ExportarDatosCSVView(LoginRequiredMixin, AdministradorRequeridoMixin, View
         if tipo == "dashboard":
             almacen_id = request.GET.get("almacen_id", "").strip()
             almacen_obj = Almacen.objects.filter(id=int(almacen_id)).first() if almacen_id.isdigit() else None
-            metricas = obtener_metricas_dashboard(request.user, almacen=almacen_obj)
-            return exportar_resumen_dashboard_csv(metricas, usuario=request.user, almacen=almacen_obj)
+            return exportar_inventario_completo_csv(request.user, almacen=almacen_obj)
 
         elif tipo == "existencias":
             almacen_id = int(request.GET.get("almacen_id")) if request.GET.get("almacen_id", "").isdigit() else None

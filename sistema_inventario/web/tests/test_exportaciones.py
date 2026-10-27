@@ -10,6 +10,7 @@ from cuentas.models import UsuarioAudacIA
 from inventario.models import Almacen, Categoria, Existencia, Movimiento, Prestamo, Producto
 from web.servicios.csv_export import (
     exportar_existencias_csv,
+    exportar_inventario_completo_csv,
     exportar_movimientos_csv,
     exportar_prestamos_csv,
     exportar_resumen_dashboard_csv,
@@ -91,6 +92,16 @@ class ServiciosExportacionTest(TestCase):
         self.assertIn("Últimos Movimientos", nombres_hojas)
         self.assertIn("Préstamos Pendientes", nombres_hojas)
 
+        # Verificar gráficos en Resumen Ejecutivo
+        ws_resumen = wb["Resumen Ejecutivo"]
+        self.assertGreaterEqual(len(ws_resumen._charts), 1)
+
+        # Verificar bordes en celdas KPI combinadas (col 1 y col 2 en fila 9)
+        celda_kpi_1 = ws_resumen.cell(row=9, column=1)
+        celda_kpi_2 = ws_resumen.cell(row=9, column=2)
+        self.assertIsNotNone(celda_kpi_1.border.top.style)
+        self.assertIsNotNone(celda_kpi_2.border.top.style)
+
         # Verificar hoja de existencias
         ws_ex = wb["Existencias y Stock"]
         self.assertEqual(ws_ex.cell(row=4, column=1).value, "Código Interno")
@@ -137,7 +148,14 @@ class ServiciosExportacionTest(TestCase):
         self.assertTrue(resp_pres.content.startswith(b"\xef\xbb\xbf"))
         self.assertIn(b"Profesor Investigador", resp_pres.content)
 
-        # 4. Resumen Dashboard CSV
+        # 4. Inventario Completo CSV (Dashboard)
+        resp_full = exportar_inventario_completo_csv(self.admin, almacen=self.almacen)
+        self.assertTrue(resp_full.content.startswith(b"\xef\xbb\xbf"))
+        self.assertIn(b"PROD-EXP-001", resp_full.content)
+        self.assertIn(b"Osciloscopio Digital", resp_full.content)
+        self.assertIn(b"Almac\xc3\xa9n Pruebas", resp_full.content)
+
+        # 5. Resumen Dashboard CSV
         metricas = obtener_metricas_dashboard(self.admin)
         resp_dash = exportar_resumen_dashboard_csv(metricas, usuario=self.admin)
         self.assertTrue(resp_dash.content.startswith(b"\xef\xbb\xbf"))

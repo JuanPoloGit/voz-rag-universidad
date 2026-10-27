@@ -141,12 +141,14 @@ class VistasExportacionesTest(TestCase):
     def test_descarga_datos_csv_view(self):
         self.client.force_login(self.admin)
 
-        # 1. Dashboard CSV
+        # 1. Dashboard CSV (Inventario completo)
         url_dash = reverse("web:exportar-datos-csv", kwargs={"tipo": "dashboard"})
         resp_dash = self.client.get(url_dash)
         self.assertEqual(resp_dash.status_code, 200)
         self.assertIn("text/csv", resp_dash["Content-Type"])
         self.assertTrue(resp_dash.content.startswith(b"\xef\xbb\xbf"))
+        self.assertIn(b"HERR-001", resp_dash.content)
+        self.assertIn(b"Taladro Percutor", resp_dash.content)
 
         # 2. Existencias CSV
         url_ex = reverse("web:exportar-datos-csv", kwargs={"tipo": "existencias"})

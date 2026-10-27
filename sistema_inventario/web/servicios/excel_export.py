@@ -10,6 +10,7 @@ from typing import Any, List, Optional
 from django.db.models import F
 from django.utils import timezone
 import openpyxl
+from openpyxl.chart import BarChart, DoughnutChart, PieChart, Reference
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
@@ -45,6 +46,8 @@ FILL_CABECERA = PatternFill(start_color="334155", end_color="334155", fill_type=
 FILL_SUBHEADER = PatternFill(start_color="475569", end_color="475569", fill_type="solid")
 FILL_FILA_PAR = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
 FILL_FILA_IMPAR = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+FILL_KPI_HEADER = PatternFill(start_color="E2E8F0", end_color="E2E8F0", fill_type="solid")
+FILL_KPI_BODY = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
 FILL_KPI = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
 FILL_TOTAL = PatternFill(start_color="E2E8F0", end_color="E2E8F0", fill_type="solid")
 
@@ -72,6 +75,17 @@ BORDER_KPI = Border(
 ALIGN_LEFT = Alignment(horizontal="left", vertical="center")
 ALIGN_CENTER = Alignment(horizontal="center", vertical="center")
 ALIGN_RIGHT = Alignment(horizontal="right", vertical="center")
+
+
+def estilar_rango(ws, start_row: int, start_col: int, end_row: int, end_col: int, border=None, fill=None):
+    """Garantiza que todas las celdas en un rango (incluso combinado) tengan borde y relleno."""
+    for r in range(start_row, end_row + 1):
+        for c in range(start_col, end_col + 1):
+            cell = ws.cell(row=r, column=c)
+            if border:
+                cell.border = border
+            if fill:
+                cell.fill = fill
 
 
 def autoajustar_columnas(ws, min_width: int = 12, max_width: int = 50):
@@ -200,22 +214,23 @@ def exportar_dashboard_excel(usuario: Any, almacen: Optional[Almacen] = None) ->
         fila_base = r_kpi if idx < 3 else r_kpi + 3
         c_idx = col_pos[idx % 3]
 
+        ws1.row_dimensions[fila_base].height = 18
+        ws1.row_dimensions[fila_base + 1].height = 26
+
         # Fila label
         ws1.merge_cells(start_row=fila_base, start_column=c_idx, end_row=fila_base, end_column=c_idx + 1)
+        estilar_rango(ws1, fila_base, c_idx, fila_base, c_idx + 1, border=BORDER_THIN, fill=FILL_KPI_HEADER)
         cl = ws1.cell(row=fila_base, column=c_idx, value=label)
         cl.font = FONT_KPI_LABEL
-        cl.fill = FILL_KPI
         cl.alignment = ALIGN_CENTER
-        cl.border = BORDER_KPI
 
         # Fila valor
         ws1.merge_cells(start_row=fila_base + 1, start_column=c_idx, end_row=fila_base + 1, end_column=c_idx + 1)
+        estilar_rango(ws1, fila_base + 1, c_idx, fila_base + 1, c_idx + 1, border=BORDER_THIN, fill=FILL_KPI_BODY)
         cv = ws1.cell(row=fila_base + 1, column=c_idx, value=val)
         cv.font = font_v
-        cv.fill = FILL_KPI
         cv.alignment = ALIGN_CENTER
         cv.number_format = "#,##0"
-        cv.border = BORDER_KPI
 
     r_cat = r_kpi + 7
     ws1.merge_cells(start_row=r_cat, start_column=1, end_row=r_cat, end_column=4)
@@ -270,6 +285,20 @@ def exportar_dashboard_excel(usuario: Any, almacen: Optional[Almacen] = None) ->
             alineaciones=["left", "right", "right", "right"],
             formatos=["", "#,##0", "#,##0", "0.0%"],
         )
+
+        # Gráfico Donut de Stock por Categoría al lado de la tabla
+        chart_cat = DoughnutChart()
+        chart_cat.title = "Distribución de Stock por Categoría"
+        chart_cat.style = 10
+        chart_cat.width = 16
+        chart_cat.height = 11
+        chart_cat.holeSize = 45
+
+        data_ref = Reference(ws1, min_col=3, min_row=start_cat_row - 1, max_row=end_cat_row)
+        labels_ref = Reference(ws1, min_col=1, min_row=start_cat_row, max_row=end_cat_row)
+        chart_cat.add_data(data_ref, titles_from_data=True)
+        chart_cat.set_categories(labels_ref)
+        ws1.add_chart(chart_cat, f"F{start_cat_row - 1}")
 
     autoajustar_columnas(ws1)
 
