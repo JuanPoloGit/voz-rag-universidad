@@ -109,7 +109,7 @@ class VistasOperacionesTest(TestCase):
             "destinatario": "Estudiante Prueba",
             "motivo": "Proyecto final",
         })
-        self.assertRedirects(resp_crear, reverse("inventario:prestamo-lista"))
+        self.assertRedirects(resp_crear, reverse("inventario:movimiento-lista") + "?vista=PRESTAMOS")
         prestamo = Prestamo.objects.get(destinatario="Estudiante Prueba")
         self.assertEqual(prestamo.cantidad_pendiente_devolucion, 2)
 
@@ -119,7 +119,7 @@ class VistasOperacionesTest(TestCase):
             "cantidad": 1,
             "motivo": "Devolución de 1 probador",
         })
-        self.assertRedirects(resp_dev, reverse("inventario:prestamo-lista"))
+        self.assertRedirects(resp_dev, reverse("inventario:movimiento-lista") + "?vista=PRESTAMOS")
         prestamo.refresh_from_db()
         self.assertEqual(prestamo.cantidad_pendiente_devolucion, 1)
         self.assertEqual(prestamo.estado, Prestamo.Estado.DEVUELTO_PARCIAL)
@@ -134,7 +134,7 @@ class VistasOperacionesTest(TestCase):
             "cantidad_contada": 12,
             "motivo": "Auditoría física",
         })
-        self.assertRedirects(resp_crear, reverse("inventario:conteo-lista"))
+        self.assertRedirects(resp_crear, reverse("inventario:movimiento-lista") + "?vista=CONTEOS")
         conteo = ConteoFisico.objects.first()
         self.assertFalse(conteo.confirmado)
 
@@ -146,6 +146,17 @@ class VistasOperacionesTest(TestCase):
         # 3. Admin confirma
         self.client.force_login(self.admin)
         resp_admin = self.client.post(url_conf)
-        self.assertRedirects(resp_admin, reverse("inventario:conteo-lista"))
+        self.assertRedirects(resp_admin, reverse("inventario:movimiento-lista") + "?vista=CONTEOS")
         conteo.refresh_from_db()
         self.assertTrue(conteo.confirmado)
+
+    def test_redireccion_canonica_prestamos_y_conteos(self):
+        """Verifica que las rutas obsoletas /prestamos/ y /conteos/ redirigen al centro unificado."""
+        self.client.force_login(self.admin)
+        # Redirección de Préstamos
+        resp_p = self.client.get(reverse("inventario:prestamo-lista") + "?estado=ACTIVO")
+        self.assertRedirects(resp_p, reverse("inventario:movimiento-lista") + "?vista=PRESTAMOS&estado=ACTIVO")
+
+        # Redirección de Conteos
+        resp_c = self.client.get(reverse("inventario:conteo-lista") + "?almacen=1")
+        self.assertRedirects(resp_c, reverse("inventario:movimiento-lista") + "?vista=CONTEOS&almacen=1")

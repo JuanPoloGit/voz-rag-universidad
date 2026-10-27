@@ -333,7 +333,7 @@ class QAOperacionesFase4AdversarialTest(TestCase):
         # 6. Verificación legítima: Cuando un Administrador ejecuta el POST, sí debe confirmarse
         self.client.force_login(self.admin)
         response_admin = self.client.post(url_confirmar)
-        self.assertRedirects(response_admin, reverse("inventario:conteo-lista"))
+        self.assertRedirects(response_admin, reverse("inventario:movimiento-lista") + "?vista=CONTEOS")
 
         conteo.refresh_from_db()
         self.assertTrue(conteo.confirmado)

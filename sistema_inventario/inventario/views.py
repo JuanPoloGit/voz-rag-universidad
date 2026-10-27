@@ -2465,44 +2465,21 @@ class SalidaCrearView(LoginRequiredMixin, PermisoRequeridoMixin, View):
 # 9. PRÉSTAMOS, DEVOLUCIONES Y BAJAS
 # ─────────────────────────────────────────────────────────────────────────────
 
-class PrestamoListaView(LoginRequiredMixin, PermisoRequeridoMixin, ListView):
-    """Listado y seguimiento de préstamos."""
+class PrestamoListaView(LoginRequiredMixin, View):
+    """Redirección canónica al Centro Unificado de Movimientos (pestaña Préstamos)."""
 
-    permiso_requerido = "movimientos.ver"
-    model = Prestamo
-    template_name = "inventario/prestamo_lista.html"
-    context_object_name = "prestamos"
-    paginate_by = 10
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return self.handle_no_permission()
+        if not (request.user.es_administrador or request.user.puede_acceder_modulo_movimientos):
+            raise PermissionDenied("No tienes permisos para acceder a préstamos.")
+        return super().dispatch(request, *args, **kwargs)
 
-    def get_queryset(self):
-        qs = Prestamo.objects.select_related("producto", "almacen", "usuario", "ubicacion_origen").order_by("-fecha_creacion")
-        user = self.request.user
-        if getattr(user, "es_usuario_normal", False):
-            user_alms = user.get_almacenes_asignados()
-            if user_alms.exists():
-                qs = qs.filter(almacen__in=user_alms)
-            else:
-                return qs.none()
-
-        estado = self.request.GET.get("estado")
-        if estado:
-            qs = qs.filter(estado=estado)
-
-        q = self.request.GET.get("q", "").strip()
-        if q:
-            qs = qs.filter(
-                Q(producto__nombre__icontains=q)
-                | Q(producto__codigo_interno__icontains=q)
-                | Q(destinatario__icontains=q)
-            )
-        return qs
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["estados"] = Prestamo.Estado.choices
-        context["estado_seleccionado"] = self.request.GET.get("estado", "")
-        context["q"] = self.request.GET.get("q", "")
-        return context
+    def get(self, request, *args, **kwargs):
+        params = request.GET.copy()
+        params["vista"] = "PRESTAMOS"
+        url = reverse("inventario:movimiento-lista") + "?" + params.urlencode()
+        return redirect(url)
 
 
 class PrestamoCrearView(LoginRequiredMixin, PermisoRequeridoMixin, View):
@@ -2538,8 +2515,8 @@ class PrestamoCrearView(LoginRequiredMixin, PermisoRequeridoMixin, View):
                 if alerta.get("nivel"):
                     messages.warning(request, alerta["mensaje"])
                 if request.headers.get("x-requested-with") == "XMLHttpRequest":
-                    return JsonResponse({"success": True, "redirect_url": next_url or reverse("inventario:movimiento-lista")})
-                return redirect(next_url or "inventario:prestamo-lista")
+                    return JsonResponse({"success": True, "redirect_url": next_url or f"{reverse('inventario:movimiento-lista')}?vista=PRESTAMOS"})
+                return redirect(next_url or f"{reverse('inventario:movimiento-lista')}?vista=PRESTAMOS")
             except Exception as exc:
                 _procesar_error_formulario(form, exc)
         if request.headers.get("x-requested-with") == "XMLHttpRequest":
@@ -2592,8 +2569,8 @@ class PrestamoDevolucionView(LoginRequiredMixin, PermisoRequeridoMixin, View):
                     f"Devolución registrada: {dev.cantidad} unid. de '{p_db.producto.codigo_interno}'. Saldo pendiente: {p_db.cantidad_pendiente_devolucion} ({p_db.get_estado_display()}).",
                 )
                 if request.headers.get("x-requested-with") == "XMLHttpRequest":
-                    return JsonResponse({"success": True, "redirect_url": next_url or reverse("inventario:prestamo-lista")})
-                return redirect(next_url or "inventario:prestamo-lista")
+                    return JsonResponse({"success": True, "redirect_url": next_url or f"{reverse('inventario:movimiento-lista')}?vista=PRESTAMOS"})
+                return redirect(next_url or f"{reverse('inventario:movimiento-lista')}?vista=PRESTAMOS")
             except Exception as exc:
                 _procesar_error_formulario(form, exc)
         if request.headers.get("x-requested-with") == "XMLHttpRequest":
@@ -2646,8 +2623,8 @@ class PrestamoBajaView(LoginRequiredMixin, PermisoRequeridoMixin, View):
                     f"Baja por daño/pérdida registrada: {baja.cantidad} unid. de '{p_db.producto.codigo_interno}'. Saldo pendiente: {p_db.cantidad_pendiente_devolucion}.",
                 )
                 if request.headers.get("x-requested-with") == "XMLHttpRequest":
-                    return JsonResponse({"success": True, "redirect_url": next_url or reverse("inventario:prestamo-lista")})
-                return redirect(next_url or "inventario:prestamo-lista")
+                    return JsonResponse({"success": True, "redirect_url": next_url or f"{reverse('inventario:movimiento-lista')}?vista=PRESTAMOS"})
+                return redirect(next_url or f"{reverse('inventario:movimiento-lista')}?vista=PRESTAMOS")
             except Exception as exc:
                 _procesar_error_formulario(form, exc)
         if request.headers.get("x-requested-with") == "XMLHttpRequest":
@@ -2773,25 +2750,21 @@ class TrasladoCrearView(LoginRequiredMixin, View):
 # 11. CONTEO FÍSICO Y AJUSTES
 # ─────────────────────────────────────────────────────────────────────────────
 
-class ConteoFisicoListaView(LoginRequiredMixin, PermisoRequeridoMixin, ListView):
-    """Listado de conteos físicos y solicitudes de ajuste."""
+class ConteoFisicoListaView(LoginRequiredMixin, View):
+    """Redirección canónica al Centro Unificado de Movimientos (pestaña Conteos Físicos)."""
 
-    permiso_requerido = "movimientos.ver"
-    model = ConteoFisico
-    template_name = "inventario/conteo_lista.html"
-    context_object_name = "conteos"
-    paginate_by = 10
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return self.handle_no_permission()
+        if not (request.user.es_administrador or request.user.puede_acceder_modulo_movimientos):
+            raise PermissionDenied("No tienes permisos para acceder a conteos físicos.")
+        return super().dispatch(request, *args, **kwargs)
 
-    def get_queryset(self):
-        qs = ConteoFisico.objects.select_related("producto", "almacen", "usuario_conteo", "usuario_confirmacion").order_by("-fecha_conteo")
-        user = self.request.user
-        if getattr(user, "es_usuario_normal", False):
-            user_alms = user.get_almacenes_asignados()
-            if user_alms.exists():
-                qs = qs.filter(almacen__in=user_alms)
-            else:
-                return qs.none()
-        return qs
+    def get(self, request, *args, **kwargs):
+        params = request.GET.copy()
+        params["vista"] = "CONTEOS"
+        url = reverse("inventario:movimiento-lista") + "?" + params.urlencode()
+        return redirect(url)
 
 
 class ConteoFisicoCrearView(LoginRequiredMixin, PermisoRequeridoMixin, View):
@@ -2824,8 +2797,8 @@ class ConteoFisicoCrearView(LoginRequiredMixin, PermisoRequeridoMixin, View):
                     f"Conteo registrado: Contado {conteo.cantidad_contada} unid. vs {conteo.stock_sistema} en sistema (Diferencia: {conteo.diferencia:+d}). Pendiente de confirmación administrativa.",
                 )
                 if request.headers.get("x-requested-with") == "XMLHttpRequest":
-                    return JsonResponse({"success": True, "redirect_url": next_url or reverse("inventario:conteo-lista")})
-                return redirect(next_url or "inventario:conteo-lista")
+                    return JsonResponse({"success": True, "redirect_url": next_url or f"{reverse('inventario:movimiento-lista')}?vista=CONTEOS"})
+                return redirect(next_url or f"{reverse('inventario:movimiento-lista')}?vista=CONTEOS")
             except Exception as exc:
                 _procesar_error_formulario(form, exc)
         if request.headers.get("x-requested-with") == "XMLHttpRequest":
@@ -2861,7 +2834,7 @@ class ConteoFisicoConfirmarView(LoginRequiredMixin, RolRequeridoMixin, View):
             )
         except Exception as exc:
             messages.error(request, _formatear_error_excepcion(exc))
-        return redirect(next_url or "inventario:conteo-lista")
+        return redirect(next_url or f"{reverse('inventario:movimiento-lista')}?vista=CONTEOS")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
