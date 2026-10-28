@@ -75,4 +75,5 @@ urlpatterns = [
     path("respaldos/", views.RespaldoListaView.as_view(), name="respaldo-lista"),
     path("respaldos/generar/", views.RespaldoCrearView.as_view(), name="respaldo-crear"),
     path("respaldos/descargar/<str:nombre_archivo>/", views.RespaldoDescargarView.as_view(), name="respaldo-descargar"),
+    path("respaldos/eliminar/<str:nombre_archivo>/", views.RespaldoEliminarView.as_view(), name="respaldo-eliminar"),
 ]

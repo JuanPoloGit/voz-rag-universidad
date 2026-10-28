@@ -56,4 +56,32 @@
         </div>
     </form>
 </div>
+
+{% if producto_almacenes_json %}
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        var prodAlmMap = {{ producto_almacenes_json|safe }};
+        var selectProd = document.getElementById("id_producto");
+        var selectAlm = document.getElementById("id_almacen");
+
+        function sincronizarAlmacen() {
+            if (!selectProd || !selectAlm) return;
+            var prodId = selectProd.value;
+            if (prodId && prodAlmMap[prodId]) {
+                var almInfo = prodAlmMap[prodId];
+                if (almInfo.almacen_id) {
+                    selectAlm.value = almInfo.almacen_id;
+                }
+            }
+        }
+
+        if (selectProd) {
+            selectProd.addEventListener("change", sincronizarAlmacen);
+            if (selectProd.value) {
+                sincronizarAlmacen();
+            }
+        }
+    });
+</script>
+{% endif %}
 {% endblock %}

@@ -321,7 +321,10 @@
                                 {% endif %}
                                 {% if request.user.es_administrador or 'catalogo.eliminar' in request.user.get_permisos_codigos %}
                                 <form method="post" action="{% url 'inventario:producto-archivar' prod.id %}" style="display: inline; margin: 0;"
-                                      onsubmit="return confirm('¿Eliminar el producto «{{ prod.codigo_interno }} — {{ prod.nombre }}» del catálogo?');">
+                                      data-confirm="¿Eliminar el producto «{{ prod.codigo_interno }} — {{ prod.nombre }}» del catálogo?"
+                                      data-confirm-title="Eliminar Producto"
+                                      data-confirm-btn="Eliminar Producto"
+                                      data-confirm-danger="true">
                                     {% csrf_token %}
                                     <button type="submit" class="btn btn-sm btn-danger" title="Eliminar producto">
                                         Eliminar

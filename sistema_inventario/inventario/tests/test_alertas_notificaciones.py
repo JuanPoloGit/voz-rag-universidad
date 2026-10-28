@@ -1,11 +1,13 @@
 """Pruebas unitarias para el motor de alertas y notificaciones de stock crítico y bajo."""
 
-from django.test import RequestFactory, TestCase
+from django.test import Client, RequestFactory, TestCase
 from django.contrib.auth import get_user_model
+from django.urls import reverse
 
 from cuentas.models import UsuarioAudacIA
-from inventario.models import Almacen, Categoria, Existencia, Producto
+from inventario.models import Almacen, AlertaStockLeida, Categoria, ConteoFisico, Existencia, Producto
 from inventario.servicios.alertas import obtener_alertas_stock, verificar_estado_alerta
+from inventario.servicios.operaciones import registrar_conteo_fisico, confirmar_conteo_fisico
 from inventario.context_processors import alertas_stock
 
 User = get_user_model()
@@ -27,6 +29,12 @@ class AlertasNotificacionesTest(TestCase):
             username="admin_user",
             password="Password123",
             nombre_completo="Administrador General",
+            rol=UsuarioAudacIA.Rol.ADMINISTRADOR,
+        )
+        self.admin_2 = User.objects.create_user(
+            username="admin_user_2",
+            password="Password123",
+            nombre_completo="Segundo Administrador",
             rol=UsuarioAudacIA.Rol.ADMINISTRADOR,
         )
         self.usuario_a = User.objects.create_user(
@@ -149,3 +157,123 @@ class AlertasNotificacionesTest(TestCase):
         self.assertEqual(context["alertas_resumen"]["total_alertas"], 2)
         self.assertEqual(context["alertas_resumen"]["total_criticas"], 1)
         self.assertEqual(context["alertas_resumen"]["total_bajas"], 1)
+
+    def test_notificacion_conteo_pendiente_para_administradores(self):
+        """Los conteos pendientes de aprobación se notifican a administradores pero no a usuarios normales."""
+        conteo = registrar_conteo_fisico(
+            producto=self.prod_normal,
+            almacen=self.almacen_a,
+            cantidad_contada=15,
+            usuario=self.usuario_a,
+            motivo="Auditoría periódica",
+        )
+        self.assertFalse(conteo.confirmado)
+
+        factory = RequestFactory()
+
+        # Usuario normal no recibe notificación de conteos pendientes
+        req_user = factory.get("/")
+        req_user.user = self.usuario_a
+        ctx_user = alertas_stock(req_user)["alertas_resumen"]
+        self.assertEqual(len(ctx_user["conteos_pendientes"]), 0)
+        self.assertEqual(len(ctx_user["conteos_no_leidos"]), 0)
+
+        # Administrador recibe la notificación con su clave 'conteo:<id>'
+        req_admin = factory.get("/")
+        req_admin.user = self.admin
+        ctx_admin = alertas_stock(req_admin)["alertas_resumen"]
+        self.assertEqual(len(ctx_admin["conteos_pendientes"]), 1)
+        self.assertEqual(len(ctx_admin["conteos_no_leidos"]), 1)
+        self.assertEqual(ctx_admin["conteos_pendientes"][0].id, conteo.id)
+        self.assertEqual(ctx_admin["conteos_pendientes"][0].notificacion_key, f"conteo:{conteo.id}")
+        self.assertFalse(ctx_admin["conteos_pendientes"][0].es_leida)
+
+    def test_unicidad_y_persistencia_lectura_conteo_entre_administradores(self):
+        """Si el Admin 1 marca la notificación de conteo como leída, para el Admin 2 sigue no leída y persiste para Admin 1."""
+        conteo = registrar_conteo_fisico(
+            producto=self.prod_normal,
+            almacen=self.almacen_a,
+            cantidad_contada=18,
+            usuario=self.usuario_a,
+            motivo="Verificación de estantería",
+        )
+        key_conteo = f"conteo:{conteo.id}"
+
+        client = Client()
+
+        # Admin 1 inicia sesión y marca como leída la notificación del conteo
+        client.force_login(self.admin)
+        resp = client.post(
+            reverse("inventario:alerta-marcar-leida"),
+            {"accion": "una", "key": key_conteo},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        # Verificar en contexto de Admin 1: está leída
+        factory = RequestFactory()
+        req_admin1 = factory.get("/")
+        req_admin1.user = self.admin
+        ctx_admin1 = alertas_stock(req_admin1)["alertas_resumen"]
+        self.assertEqual(len(ctx_admin1["conteos_pendientes"]), 1)
+        self.assertTrue(ctx_admin1["conteos_pendientes"][0].es_leida)
+        self.assertEqual(len(ctx_admin1["conteos_no_leidos"]), 0)
+
+        # Para Admin 2: NO está leída porque la lectura es única e individual
+        req_admin2 = factory.get("/")
+        req_admin2.user = self.admin_2
+        ctx_admin2 = alertas_stock(req_admin2)["alertas_resumen"]
+        self.assertEqual(len(ctx_admin2["conteos_pendientes"]), 1)
+        self.assertFalse(ctx_admin2["conteos_pendientes"][0].es_leida)
+        self.assertEqual(len(ctx_admin2["conteos_no_leidos"]), 1)
+
+        # Persistencia: Admin 1 cierra sesión y vuelve a entrar en otra solicitud/sesión
+        client.logout()
+        client.force_login(self.admin)
+        req_admin1_nueva_sesion = factory.get("/")
+        req_admin1_nueva_sesion.user = self.admin
+        ctx_admin1_nueva = alertas_stock(req_admin1_nueva_sesion)["alertas_resumen"]
+        self.assertEqual(len(ctx_admin1_nueva["conteos_no_leidos"]), 0)
+        self.assertTrue(ctx_admin1_nueva["conteos_pendientes"][0].es_leida)
+
+    def test_resolucion_global_al_aprobar_conteo(self):
+        """Al confirmarse y aplicarse el ajuste del conteo, la notificación desaparece para TODOS los administradores."""
+        conteo = registrar_conteo_fisico(
+            producto=self.prod_normal,
+            almacen=self.almacen_a,
+            cantidad_contada=10,
+            usuario=self.usuario_a,
+            motivo="Ajuste requerido",
+        )
+
+        factory = RequestFactory()
+
+        # Ambos administradores ven 1 conteo pendiente
+        req1 = factory.get("/")
+        req1.user = self.admin
+        self.assertEqual(len(alertas_stock(req1)["alertas_resumen"]["conteos_pendientes"]), 1)
+
+        req2 = factory.get("/")
+        req2.user = self.admin_2
+        self.assertEqual(len(alertas_stock(req2)["alertas_resumen"]["conteos_pendientes"]), 1)
+
+        # Admin 2 aprueba el conteo
+        confirmar_conteo_fisico(
+            conteo=conteo,
+            usuario=self.admin_2,
+        )
+
+        # Ya ningún administrador tiene la notificación porque el conteo fue resuelto
+        req1_post = factory.get("/")
+        req1_post.user = self.admin
+        self.assertEqual(len(alertas_stock(req1_post)["alertas_resumen"]["conteos_pendientes"]), 0)
+        self.assertEqual(len(alertas_stock(req1_post)["alertas_resumen"]["conteos_no_leidos"]), 0)
+
+        req2_post = factory.get("/")
+        req2_post.user = self.admin_2
+        self.assertEqual(len(alertas_stock(req2_post)["alertas_resumen"]["conteos_pendientes"]), 0)
+        self.assertEqual(len(alertas_stock(req2_post)["alertas_resumen"]["conteos_no_leidos"]), 0)
+
+        # Las marcas de lectura residuales fueron eliminadas
+        self.assertFalse(AlertaStockLeida.objects.filter(clave=f"conteo:{conteo.id}").exists())
+

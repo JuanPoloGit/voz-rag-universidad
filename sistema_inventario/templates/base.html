@@ -401,12 +401,190 @@
            COMPONENT STYLES
            ═══════════════════════════════════════════════════════════════ */
 
-        /* ─── Messages (Django) ───────────────────────────────────── */
-        .messages-container {
-            margin-bottom: 1.5rem;
+        /* ─── Messages & Toasts ───────────────────────────────────── */
+        .toast-container {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            z-index: 999999;
             display: flex;
             flex-direction: column;
-            gap: 0.5rem;
+            gap: 12px;
+            max-width: 440px;
+            width: calc(100vw - 32px);
+            pointer-events: none;
+        }
+
+        .toast-item {
+            pointer-events: auto;
+            background: var(--bg-panel, #0f1c3f);
+            border: 1px solid var(--border, #1e2e63);
+            border-radius: 12px;
+            padding: 14px 16px;
+            box-shadow: 0 16px 36px -6px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.06);
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            position: relative;
+            overflow: hidden;
+            animation: toastSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            transition: opacity 0.28s ease, transform 0.28s ease, max-height 0.28s ease, margin 0.28s ease, padding 0.28s ease;
+            max-height: 240px;
+            color: var(--text, #e2e8f0);
+            font-size: 13px;
+            line-height: 1.45;
+        }
+
+        .toast-item.toast-closing {
+            opacity: 0;
+            transform: translateX(60px) scale(0.95);
+            max-height: 0;
+            margin-bottom: -12px;
+            padding-top: 0;
+            padding-bottom: 0;
+            border-width: 0;
+        }
+
+        @keyframes toastSlideIn {
+            from {
+                opacity: 0;
+                transform: translateX(60px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0) scale(1);
+            }
+        }
+
+        .toast-icon-wrapper {
+            width: 28px;
+            height: 28px;
+            border-radius: 8px;
+            display: grid;
+            place-items: center;
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+
+        .toast-icon-wrapper svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .toast-content {
+            flex: 1;
+            min-width: 0;
+            padding-right: 4px;
+        }
+
+        .toast-title {
+            font-family: var(--font-heading);
+            font-weight: 700;
+            font-size: 13.5px;
+            margin-bottom: 3px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .toast-message {
+            color: var(--text-dim, #94a3b8);
+            font-size: 12.8px;
+            word-break: break-word;
+        }
+
+        .toast-close-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted, #64748b);
+            font-size: 18px;
+            line-height: 1;
+            padding: 2px 4px;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: color 0.15s ease, background 0.15s ease;
+            flex-shrink: 0;
+        }
+
+        .toast-close-btn:hover {
+            color: var(--text, #ffffff);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .toast-progress {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            height: 3px;
+            width: 100%;
+            transform-origin: left center;
+            animation: toastProgressBar linear forwards;
+        }
+
+        @keyframes toastProgressBar {
+            from { transform: scaleX(1); }
+            to { transform: scaleX(0); }
+        }
+
+        .toast-item:hover .toast-progress {
+            animation-play-state: paused;
+        }
+
+        /* Temas por tipo */
+        .toast-item.toast-success {
+            border-left: 4px solid var(--ok, #4ee6ab);
+        }
+        .toast-item.toast-success .toast-icon-wrapper {
+            background: rgba(78, 230, 171, 0.15);
+            color: var(--ok, #4ee6ab);
+        }
+        .toast-item.toast-success .toast-title {
+            color: var(--ok, #4ee6ab);
+        }
+        .toast-item.toast-success .toast-progress {
+            background: var(--ok, #4ee6ab);
+        }
+
+        .toast-item.toast-error, .toast-item.toast-danger {
+            border-left: 4px solid var(--crit, #ff6b7a);
+        }
+        .toast-item.toast-error .toast-icon-wrapper, .toast-item.toast-danger .toast-icon-wrapper {
+            background: rgba(255, 107, 122, 0.15);
+            color: var(--crit, #ff6b7a);
+        }
+        .toast-item.toast-error .toast-title, .toast-item.toast-danger .toast-title {
+            color: var(--crit, #ff6b7a);
+        }
+        .toast-item.toast-error .toast-progress, .toast-item.toast-danger .toast-progress {
+            background: var(--crit, #ff6b7a);
+        }
+
+        .toast-item.toast-warning {
+            border-left: 4px solid var(--warn, #ffbd5c);
+        }
+        .toast-item.toast-warning .toast-icon-wrapper {
+            background: rgba(255, 189, 92, 0.15);
+            color: var(--warn, #ffbd5c);
+        }
+        .toast-item.toast-warning .toast-title {
+            color: var(--warn, #ffbd5c);
+        }
+        .toast-item.toast-warning .toast-progress {
+            background: var(--warn, #ffbd5c);
+        }
+
+        .toast-item.toast-info {
+            border-left: 4px solid var(--accent-bright, #38bdf8);
+        }
+        .toast-item.toast-info .toast-icon-wrapper {
+            background: rgba(56, 189, 248, 0.15);
+            color: var(--accent-bright, #38bdf8);
+        }
+        .toast-item.toast-info .toast-title {
+            color: var(--accent-bright, #38bdf8);
+        }
+        .toast-item.toast-info .toast-progress {
+            background: var(--accent-bright, #38bdf8);
         }
 
         .alert {
@@ -1424,8 +1602,8 @@
                 <a href="{% url 'inventario:producto-lista' %}" class="nav-item {% block sidebar_productos %}{% endblock %}{% block sidebar_alertas %}{% endblock %}{% block sidebar_rep_existencias %}{% endblock %}">
                     <svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
                     Catálogo y Stock
-                    {% if alertas_resumen.total_alertas > 0 %}
-                        <span class="badge {% if alertas_resumen.total_criticas > 0 %}badge-crit{% else %}badge-warn{% endif %}" style="margin-left: auto; font-size: 10px; padding: 2px 7px;" title="{{ alertas_resumen.total_alertas }} alertas de stock">{{ alertas_resumen.total_alertas }}</span>
+                    {% if alertas_resumen.total_alertas_stock > 0 %}
+                        <span class="badge {% if alertas_resumen.total_criticas > 0 %}badge-crit{% else %}badge-warn{% endif %}" style="margin-left: auto; font-size: 10px; padding: 2px 7px;" title="{{ alertas_resumen.total_alertas_stock }} alertas de stock">{{ alertas_resumen.total_alertas_stock }}</span>
                     {% endif %}
                 </a>
                 {% endif %}
@@ -1434,6 +1612,9 @@
                 <a href="{% url 'inventario:movimiento-lista' %}" class="nav-item {% block sidebar_movimientos %}{% endblock %}{% block sidebar_entrada %}{% endblock %}{% block sidebar_salida %}{% endblock %}{% block sidebar_prestamos %}{% endblock %}{% block sidebar_conteos %}{% endblock %}{% block sidebar_rep_prestamos %}{% endblock %}{% block sidebar_rep_movimientos %}{% endblock %}{% block sidebar_rep_estancados %}{% endblock %}">
                     <svg viewBox="0 0 24 24"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
                     Movimientos
+                    {% if user.es_administrador and alertas_resumen.total_conteos_no_leidos > 0 %}
+                        <span class="badge" style="margin-left: auto; font-size: 10px; padding: 2px 7px; background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4);" title="{{ alertas_resumen.total_conteos_no_leidos }} conteo(s) físico(s) pendiente(s) de aprobación">{{ alertas_resumen.total_conteos_no_leidos }}</span>
+                    {% endif %}
                 </a>
                 {% endif %}
 
@@ -1524,7 +1705,7 @@
                         <button type="button" class="notification-bell" id="btnToggleNotifDropdown" title="Notificaciones pendientes" aria-label="Notificaciones">
                             <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
                             {% if alertas_resumen.total_no_leidas > 0 %}
-                                <span class="notification-badge {% if alertas_resumen.total_criticas == 0 %}warn-badge{% endif %}" id="notifBellBadge">
+                                <span class="notification-badge {% if alertas_resumen.total_criticas == 0 and alertas_resumen.total_conteos == 0 %}warn-badge{% endif %}" id="notifBellBadge">
                                     {{ alertas_resumen.total_no_leidas }}
                                 </span>
                             {% elif alertas_resumen.total_alertas > 0 %}
@@ -1565,7 +1746,38 @@
                             </div>
 
                             <div class="notif-dropdown-body">
-                                {% if alertas_resumen.criticas_no_leidas or alertas_resumen.bajas_no_leidas %}
+                                {% if alertas_resumen.criticas_no_leidas or alertas_resumen.bajas_no_leidas or alertas_resumen.conteos_no_leidos %}
+                                    {% for c in alertas_resumen.conteos_no_leidos %}
+                                        <div class="notif-float-item alert-conteo" data-notif-item="{{ c.notificacion_key }}" style="border-left: 3px solid #38bdf8; background: rgba(56, 189, 248, 0.07);">
+                                            <a href="{% url 'inventario:conteo-lista' %}"
+                                               onclick="marcarYRedirigirGlobal(event, '{{ c.notificacion_key }}', '{% url 'inventario:conteo-lista' %}')"
+                                               style="flex: 1; min-width: 0; text-decoration: none; color: inherit; cursor: pointer;">
+                                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                                    <span class="status-inline" style="background: rgba(56, 189, 248, 0.18); color: #38bdf8; font-weight: 600; font-size: 11px; padding: 2px 7px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px;">
+                                                        <span class="status-dot" style="background: #38bdf8; width: 6px; height: 6px; border-radius: 50%;"></span>Conteo Físico
+                                                    </span>
+                                                    <strong style="color: var(--text); font-size: 13px;">{{ c.producto.codigo_interno }} — {{ c.producto.nombre }}</strong>
+                                                    <span class="badge badge-accent js-notif-new-badge" style="font-size: 9.5px; padding: 1px 6px;">Por Aprobar</span>
+                                                </div>
+                                                <div style="font-size: 11.8px; color: var(--text-dim); margin-top: 3px;">
+                                                    Bodega <strong>{{ c.almacen.nombre }}</strong> · Contado: <strong>{{ c.cantidad_contada }}</strong> vs Sistema: <strong>{{ c.stock_sistema }}</strong>
+                                                    <span style="font-weight: 600; {% if c.diferencia < 0 %}color: var(--crit);{% elif c.diferencia > 0 %}color: #4ade80;{% else %}color: var(--text-muted);{% endif %}">
+                                                        (Dif: {{ c.diferencia|stringformat:"+d" }})
+                                                    </span>
+                                                </div>
+                                            </a>
+                                            <form method="post" action="{% url 'inventario:alerta-marcar-leida' %}" class="js-notif-ajax-form" style="margin: 0; flex-shrink: 0;">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="key" value="{{ c.notificacion_key }}">
+                                                <input type="hidden" name="accion" value="una" class="js-notif-accion-input">
+                                                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                                <button type="submit" class="btn btn-sm btn-secondary js-notif-btn-label" style="padding: 5px 9px; font-size: 11px;">
+                                                    Marcar leída
+                                                </button>
+                                            </form>
+                                        </div>
+                                    {% endfor %}
+
                                     {% for ex in alertas_resumen.criticas_no_leidas %}
                                         <div class="notif-float-item alert-crit" data-notif-item="{{ ex.notificacion_key }}">
                                             <a href="{% url 'inventario:producto-detalle' ex.producto.pk %}"
@@ -1624,10 +1836,17 @@
                                 {% endif %}
                             </div>
 
-                            <div class="notif-dropdown-footer">
-                                <a href="{% url 'inventario:alertas-lista' %}" class="btn btn-sm btn-secondary">
-                                    Ver Alertas de Stock
-                                </a>
+                            <div class="notif-dropdown-footer" style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: space-between;">
+                                <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                    <a href="{% url 'inventario:alertas-lista' %}" class="btn btn-sm btn-secondary">
+                                        Ver Alertas de Stock
+                                    </a>
+                                    {% if user.es_administrador %}
+                                    <a href="{% url 'inventario:conteo-lista' %}" class="btn btn-sm btn-secondary">
+                                        Ver Conteos Físicos
+                                    </a>
+                                    {% endif %}
+                                </div>
                                 <button type="button" class="btn btn-sm btn-secondary" id="btnCerrarNotifDropdown">Cerrar</button>
                             </div>
                         </div>
@@ -1641,16 +1860,18 @@
                 </div>
             </header>
 
+            <!-- Contenedor flotante de Notificaciones Toast -->
+            <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+            {% if messages %}
+                <div id="djangoMessagesData" style="display: none;" aria-hidden="true">
+                    {% for message in messages %}
+                        <div class="js-django-msg" data-message="{{ message }}" data-tags="{{ message.tags|default:'info' }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+
             <main class="main-content">
-                {% if messages %}
-                    <div class="messages-container">
-                        {% for message in messages %}
-                            <div class="alert alert-{{ message.tags|default:'info' }}">
-                                <span>{{ message }}</span>
-                            </div>
-                        {% endfor %}
-                    </div>
-                {% endif %}
 
                 {% with url_name=request.resolver_match.url_name %}
                     {% if url_name in 'producto-lista,producto-detalle,producto-editar,producto-fusionar,alertas-lista' %}
@@ -1665,8 +1886,8 @@
                             <a href="{% url 'inventario:alertas-lista' %}" class="module-tab {% if url_name == 'alertas-lista' %}active{% endif %}">
                                 <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
                                 Alertas de Stock
-                                {% if alertas_resumen.total_alertas > 0 %}
-                                    <span class="badge {% if alertas_resumen.total_criticas > 0 %}badge-crit{% else %}badge-warn{% endif %}" style="font-size: 10px; padding: 1px 6px;">{{ alertas_resumen.total_alertas }}</span>
+                                {% if alertas_resumen.total_alertas_stock > 0 %}
+                                    <span class="badge {% if alertas_resumen.total_criticas > 0 %}badge-crit{% else %}badge-warn{% endif %}" style="font-size: 10px; padding: 1px 6px;">{{ alertas_resumen.total_alertas_stock }}</span>
                                 {% endif %}
                             </a>
                             {% endif %}
@@ -1734,7 +1955,193 @@
     </dialog>
     {% endif %}
 
+    <!-- ═══ MODAL GLOBAL DE CONFIRMACIÓN ELEGANTE ═══ -->
+    <dialog id="modalConfirmacionGlobal" class="app-modal modal-confirmacion" style="width: min(480px, 94vw); border-radius: 14px; overflow: hidden; border: 1px solid var(--border); box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.75);">
+        <div class="app-modal-header" style="padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: var(--bg-panel);">
+            <h2 class="app-modal-title" id="modalConfirmTitulo" style="font-size: 15.5px; font-weight: 700; display: flex; align-items: center; gap: 10px; margin: 0; color: var(--text);">
+                <span id="modalConfirmIconContainer" style="width: 30px; height: 30px; border-radius: 8px; display: inline-grid; place-items: center; background: rgba(59, 111, 240, 0.15); color: var(--accent-bright); flex-shrink: 0;">
+                    <svg id="modalConfirmIconSvg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                </span>
+                <span id="modalConfirmTituloTexto">Confirmar Acción</span>
+            </h2>
+            <button type="button" class="app-modal-close" id="btnModalConfirmCerrar" style="background: none; border: none; color: var(--text-muted); font-size: 22px; line-height: 1; cursor: pointer; padding: 0 4px;" aria-label="Cerrar">&times;</button>
+        </div>
+        <div class="app-modal-body" style="padding: 22px 20px; background: var(--bg-panel);">
+            <p id="modalConfirmMensaje" style="margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--text-dim);"></p>
+        </div>
+        <div style="padding: 14px 20px 16px; display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid var(--border); background: var(--bg-deep-2, rgba(0,0,0,0.18));">
+            <button type="button" class="btn btn-secondary" id="btnModalConfirmCancelar" style="padding: 8px 18px; font-size: 13px;">
+                Cancelar
+            </button>
+            <button type="button" class="btn btn-primary" id="btnModalConfirmAceptar" style="padding: 8px 20px; font-size: 13px;">
+                Confirmar
+            </button>
+        </div>
+    </dialog>
+
     <script>
+        /* ─── Motor Global de Notificaciones Toast ──────────────────── */
+        var toastIcons = {
+            success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+            error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+            danger: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+            warning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+            info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
+        };
+
+        var toastTitles = {
+            success: 'Operación Exitosa',
+            error: 'Atención / Error',
+            danger: 'Error Crítico',
+            warning: 'Advertencia',
+            info: 'Notificación del Sistema'
+        };
+
+        function showToast(message, type, duration) {
+            var container = document.getElementById("toastContainer");
+            if (!container) {
+                container = document.createElement("div");
+                container.id = "toastContainer";
+                container.className = "toast-container";
+                document.body.appendChild(container);
+            }
+
+            var cleanType = (type || "info").toLowerCase();
+            if (cleanType.indexOf("success") !== -1) cleanType = "success";
+            else if (cleanType.indexOf("error") !== -1) cleanType = "error";
+            else if (cleanType.indexOf("danger") !== -1) cleanType = "danger";
+            else if (cleanType.indexOf("warning") !== -1) cleanType = "warning";
+            else cleanType = "info";
+
+            var timeMs = (typeof duration === "number" && duration > 0) ? duration : 5000;
+            var title = toastTitles[cleanType] || 'Notificación';
+            var iconSvg = toastIcons[cleanType] || toastIcons.info;
+
+            var toast = document.createElement("div");
+            toast.className = "toast-item toast-" + cleanType;
+            toast.setAttribute("role", "alert");
+            toast.innerHTML = 
+                '<div class="toast-icon-wrapper">' + iconSvg + '</div>' +
+                '<div class="toast-content">' +
+                    '<div class="toast-title">' + title + '</div>' +
+                    '<div class="toast-message">' + message + '</div>' +
+                '</div>' +
+                '<button type="button" class="toast-close-btn" aria-label="Cerrar">&times;</button>' +
+                '<div class="toast-progress" style="animation-duration: ' + timeMs + 'ms;"></div>';
+
+            container.appendChild(toast);
+
+            var isPaused = false;
+            var remainingTime = timeMs;
+            var timerStart = Date.now();
+            var dismissTimeout = null;
+
+            function startTimer() {
+                timerStart = Date.now();
+                dismissTimeout = setTimeout(function() {
+                    dismiss();
+                }, remainingTime);
+            }
+
+            function pauseTimer() {
+                if (dismissTimeout) {
+                    clearTimeout(dismissTimeout);
+                    dismissTimeout = null;
+                    remainingTime -= (Date.now() - timerStart);
+                    if (remainingTime < 300) remainingTime = 300;
+                }
+            }
+
+            function dismiss() {
+                if (dismissTimeout) clearTimeout(dismissTimeout);
+                toast.classList.add("toast-closing");
+                setTimeout(function() {
+                    if (toast.parentNode) toast.parentNode.removeChild(toast);
+                }, 300);
+            }
+
+            toast.querySelector(".toast-close-btn").addEventListener("click", function(e) {
+                e.stopPropagation();
+                dismiss();
+            });
+
+            toast.addEventListener("mouseenter", pauseTimer);
+            toast.addEventListener("mouseleave", startTimer);
+
+            startTimer();
+            return { dismiss: dismiss };
+        }
+        window.showToast = showToast;
+
+        /* ─── Diálogo de Confirmación Elegante (Reemplazo de confirm()) ─── */
+        window.appConfirm = function(options) {
+            return new Promise(function(resolve) {
+                var dlg = document.getElementById("modalConfirmacionGlobal");
+                if (!dlg || typeof dlg.showModal !== "function") {
+                    var fallbackMsg = typeof options === "string" ? options : (options ? options.message : "¿Desea continuar?");
+                    resolve(window.confirm(fallbackMsg));
+                    return;
+                }
+
+                var opts = typeof options === "string" ? { message: options } : (options || {});
+                var title = opts.title || "Confirmar Acción";
+                var message = opts.message || "¿Está seguro de realizar esta acción?";
+                var confirmText = opts.confirmText || "Confirmar";
+                var cancelText = opts.cancelText || "Cancelar";
+                var isDanger = !!opts.danger || !!opts.isDanger;
+
+                document.getElementById("modalConfirmTituloTexto").textContent = title;
+                document.getElementById("modalConfirmMensaje").textContent = message;
+
+                var btnAceptar = document.getElementById("btnModalConfirmAceptar");
+                var btnCancelar = document.getElementById("btnModalConfirmCancelar");
+                var btnCerrar = document.getElementById("btnModalConfirmCerrar");
+                var iconContainer = document.getElementById("modalConfirmIconContainer");
+                var iconSvg = document.getElementById("modalConfirmIconSvg");
+
+                btnAceptar.textContent = confirmText;
+                btnCancelar.textContent = cancelText;
+
+                if (isDanger) {
+                    btnAceptar.className = "btn btn-danger";
+                    btnAceptar.style.background = "var(--crit, #ff6b7a)";
+                    btnAceptar.style.borderColor = "var(--crit, #ff6b7a)";
+                    btnAceptar.style.color = "#ffffff";
+                    iconContainer.style.background = "rgba(255, 107, 122, 0.15)";
+                    iconContainer.style.color = "var(--crit, #ff6b7a)";
+                    iconSvg.innerHTML = '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>';
+                } else {
+                    btnAceptar.className = "btn btn-primary";
+                    btnAceptar.style.background = "";
+                    btnAceptar.style.borderColor = "";
+                    btnAceptar.style.color = "";
+                    iconContainer.style.background = "rgba(59, 111, 240, 0.15)";
+                    iconContainer.style.color = "var(--accent-bright, #38bdf8)";
+                    iconSvg.innerHTML = '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>';
+                }
+
+                function cleanup(result) {
+                    btnAceptar.removeEventListener("click", onAceptar);
+                    btnCancelar.removeEventListener("click", onCancelar);
+                    btnCerrar.removeEventListener("click", onCancelar);
+                    dlg.removeEventListener("close", onClose);
+                    if (dlg.open) dlg.close();
+                    resolve(result);
+                }
+
+                function onAceptar() { cleanup(true); }
+                function onCancelar() { cleanup(false); }
+                function onClose() { cleanup(false); }
+
+                btnAceptar.addEventListener("click", onAceptar);
+                btnCancelar.addEventListener("click", onCancelar);
+                btnCerrar.addEventListener("click", onCancelar);
+                dlg.addEventListener("close", onClose, { once: true });
+
+                dlg.showModal();
+                btnAceptar.focus();
+            });
+        };
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('open');
             document.getElementById('sidebarOverlay').classList.toggle('open');
@@ -1788,6 +2195,81 @@
         }
 
         document.addEventListener("DOMContentLoaded", function() {
+            // Inicializar Toasts a partir de mensajes Django en la carga inicial
+            var djangoMsgContainer = document.getElementById("djangoMessagesData");
+            if (djangoMsgContainer) {
+                var msgs = djangoMsgContainer.querySelectorAll(".js-django-msg");
+                msgs.forEach(function(el, idx) {
+                    var text = el.getAttribute("data-message") || el.textContent;
+                    var tags = el.getAttribute("data-tags") || "info";
+                    setTimeout(function() {
+                        showToast(text, tags);
+                    }, idx * 120);
+                });
+            }
+
+            // Delegación global para diálogos de confirmación [data-confirm]
+            document.addEventListener("click", function(e) {
+                var trigger = e.target.closest("[data-confirm]");
+                if (!trigger) return;
+
+                e.preventDefault();
+                e.stopPropagation();
+
+                var msg = trigger.getAttribute("data-confirm");
+                var title = trigger.getAttribute("data-confirm-title") || "Confirmación Requerida";
+                var confirmText = trigger.getAttribute("data-confirm-btn") || "Confirmar";
+                var isDanger = trigger.getAttribute("data-confirm-danger") === "true" ||
+                               trigger.classList.contains("btn-danger") ||
+                               trigger.getAttribute("data-action-danger") === "true";
+
+                window.appConfirm({
+                    title: title,
+                    message: msg,
+                    confirmText: confirmText,
+                    danger: isDanger
+                }).then(function(confirmed) {
+                    if (!confirmed) return;
+                    if (trigger.tagName === "A" && trigger.href) {
+                        window.location.href = trigger.href;
+                    } else if (trigger.form) {
+                        trigger.form.submit();
+                    } else {
+                        var form = trigger.closest("form");
+                        if (form) form.submit();
+                    }
+                });
+            }, true);
+
+            document.addEventListener("submit", function(e) {
+                var form = e.target;
+                if (!form || !form.hasAttribute("data-confirm")) return;
+                if (form._confirmedByModal) {
+                    delete form._confirmedByModal;
+                    return;
+                }
+
+                e.preventDefault();
+                e.stopPropagation();
+
+                var msg = form.getAttribute("data-confirm");
+                var title = form.getAttribute("data-confirm-title") || "Confirmación Requerida";
+                var confirmText = form.getAttribute("data-confirm-btn") || "Confirmar";
+                var isDanger = form.getAttribute("data-confirm-danger") === "true";
+
+                window.appConfirm({
+                    title: title,
+                    message: msg,
+                    confirmText: confirmText,
+                    danger: isDanger
+                }).then(function(confirmed) {
+                    if (confirmed) {
+                        form._confirmedByModal = true;
+                        form.submit();
+                    }
+                });
+            }, true);
+
             // Limpieza automática de errores en diálogos y modales al cerrarse
             document.querySelectorAll("dialog").forEach(function(dlg) {
                 dlg.addEventListener("close", function() {

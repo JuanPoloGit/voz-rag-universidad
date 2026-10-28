@@ -164,3 +164,40 @@ class ConteosReversionesTest(TestCase):
                 motivo="Error en remisión de entrada",
             )
         self.assertIn("stock negativo", str(ctx.exception).lower())
+
+    def test_confirmar_conteo_recupera_existencia_faltante_o_inconsistente(self):
+        """Si un conteo físico histórico no tiene Existencia para su almacén, se alinea al almacén de la categoría sin lanzar DoesNotExist."""
+        almacen_secundario = Almacen.objects.create(nombre="Almacén Secundario", activo=True)
+        # Conteo con almacén diferente antes de la alineación
+        conteo = ConteoFisico.objects.create(
+            producto=self.producto,
+            almacen=almacen_secundario,
+            cantidad_contada=14,
+            stock_sistema=10,
+            diferencia=4,
+            usuario_conteo=self.operador,
+            confirmado=False,
+        )
+
+        conteo_conf, mov = confirmar_conteo_fisico(
+            conteo=conteo,
+            usuario=self.admin,
+        )
+        self.assertTrue(conteo_conf.confirmado)
+        self.assertEqual(conteo_conf.almacen, self.almacen)
+        ex = Existencia.objects.get(producto=self.producto, almacen=self.almacen)
+        self.assertEqual(ex.stock_disponible, 14)
+        self.assertEqual(mov.tipo, Movimiento.Tipo.AJUSTE_CONTEO)
+
+    def test_registrar_conteo_rechaza_almacen_incompatible(self):
+        """Registrar un conteo para un almacén distinto al de la categoría del producto es rechazado."""
+        almacen_otro = Almacen.objects.create(nombre="Almacén Otro", activo=True)
+        with self.assertRaises(ValidationError) as ctx:
+            registrar_conteo_fisico(
+                producto=self.producto,
+                almacen=almacen_otro,
+                cantidad_contada=10,
+                usuario=self.admin,
+            )
+        self.assertIn("categoría", str(ctx.exception).lower())
+

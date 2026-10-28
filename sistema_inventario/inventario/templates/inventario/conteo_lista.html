@@ -63,7 +63,7 @@
                                 {% if user.es_administrador %}
                                     <form action="{% url 'inventario:conteo-confirmar' c.pk %}" method="post" style="display: inline;">
                                         {% csrf_token %}
-                                        <button type="submit" class="btn btn-sm btn-primary" onclick="return confirm('¿Confirmar y aplicar este ajuste al stock de sistema?');">
+                                        <button type="submit" class="btn btn-sm btn-primary" data-confirm="¿Confirmar y aplicar este ajuste al stock de sistema para {{ c.producto.codigo_interno }}?" data-confirm-title="Confirmar Ajuste por Conteo" data-confirm-btn="Confirmar Ajuste">
                                             Aprobar Ajuste
                                         </button>
                                     </form>

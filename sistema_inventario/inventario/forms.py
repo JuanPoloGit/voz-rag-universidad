@@ -985,18 +985,23 @@ class ConteoFisicoForm(forms.Form):
         user_alms = self.usuario.get_almacenes_asignados() if is_normal else None
 
         if prod:
-            if not almacen:
-                if is_normal:
-                    ex_user = prod.existencias.filter(almacen__in=user_alms).first()
-                    ub_user = prod.ubicaciones.filter(almacen__in=user_alms).first()
-                    almacen = ex_user.almacen if ex_user else (ub_user.almacen if ub_user else prod.categoria.almacen_principal)
-                else:
-                    ex_prod = prod.existencias.filter(cantidad__gt=0).first() or prod.existencias.first()
-                    ub_prod = prod.ubicaciones.first()
-                    almacen = ex_prod.almacen if ex_prod else (ub_prod.almacen if ub_prod else prod.categoria.almacen_principal)
+            alm_esperado = (
+                prod.categoria.almacen_principal
+                if (prod.categoria and prod.categoria.almacen_principal)
+                else None
+            )
+            if not almacen and alm_esperado:
+                almacen = alm_esperado
                 cleaned_data["almacen"] = almacen
 
-            if is_normal:
+            if almacen and alm_esperado and almacen.id != alm_esperado.id:
+                self.add_error(
+                    "almacen",
+                    f"El producto '{prod.nombre}' pertenece a la categoría '{prod.categoria.nombre}', "
+                    f"asignada exclusivamente al almacén '{alm_esperado.nombre}'. No se puede registrar un conteo en '{almacen.nombre}'."
+                )
+
+            if is_normal and almacen:
                 if not user_alms.filter(id=almacen.id).exists():
                     self.add_error("almacen", "No tienes acceso al almacén donde se encuentra este producto.")
 

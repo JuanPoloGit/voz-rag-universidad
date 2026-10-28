@@ -1,6 +1,7 @@
 """Context processors para la aplicación inventario."""
 
 from typing import Any, Dict
+from inventario.models import ConteoFisico
 from inventario.servicios.alertas import (
     obtener_alertas_stock,
     obtener_claves_alertas_leidas,
@@ -14,8 +15,12 @@ def alertas_stock(request) -> Dict[str, Any]:
             "alertas_resumen": {
                 "criticas": [],
                 "bajas": [],
+                "conteos_pendientes": [],
+                "conteos_no_leidos": [],
                 "total_criticas": 0,
                 "total_bajas": 0,
+                "total_conteos": 0,
+                "total_alertas_stock": 0,
                 "total_alertas": 0,
                 "total_no_leidas": 0,
             }
@@ -26,8 +31,8 @@ def alertas_stock(request) -> Dict[str, Any]:
     if hasattr(request, "session"):
         request.session["alertas_leidas"] = list(leidas)
 
-    criticas = alertas.get("criticas", [])
-    bajas = alertas.get("bajas", [])
+    criticas = list(alertas.get("criticas", []))
+    bajas = list(alertas.get("bajas", []))
     for ex in criticas:
         clave = f"{ex.producto_id}:{ex.almacen_id}:{ex.stock_disponible}"
         ex.notificacion_key = clave
@@ -41,7 +46,31 @@ def alertas_stock(request) -> Dict[str, Any]:
     bajas_no_leidas = [ex for ex in bajas if not ex.es_leida]
     alertas["criticas_no_leidas"] = criticas_no_leidas
     alertas["bajas_no_leidas"] = bajas_no_leidas
-    alertas["total_no_leidas"] = len(criticas_no_leidas) + len(bajas_no_leidas)
+    alertas["total_alertas_stock"] = alertas.get("total_alertas", 0)
+
+    # Conteos físicos pendientes de confirmación administrativa (notificación exclusiva de administradores)
+    conteos_pendientes = []
+    conteos_no_leidos = []
+    if getattr(request.user, "es_administrador", False):
+        conteos_qs = ConteoFisico.objects.filter(confirmado=False).select_related(
+            "producto", "almacen", "usuario_conteo"
+        ).order_by("-fecha_conteo")
+        for c in conteos_qs:
+            clave = f"conteo:{c.id}"
+            c.notificacion_key = clave
+            c.es_leida = clave in leidas
+            conteos_pendientes.append(c)
+            if not c.es_leida:
+                conteos_no_leidos.append(c)
+
+    alertas["conteos_pendientes"] = conteos_pendientes
+    alertas["conteos_no_leidos"] = conteos_no_leidos
+    alertas["total_conteos"] = len(conteos_pendientes)
+    alertas["total_conteos_no_leidos"] = len(conteos_no_leidos)
+    alertas["total_alertas"] = alertas["total_alertas_stock"] + len(conteos_pendientes)
+    alertas["total_no_leidas"] = len(criticas_no_leidas) + len(bajas_no_leidas) + len(conteos_no_leidos)
+
     return {
         "alertas_resumen": alertas,
     }
+

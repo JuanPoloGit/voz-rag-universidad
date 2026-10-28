@@ -126,3 +126,27 @@ class VistasRespaldoTest(TestCase):
         url_inexistente = reverse("inventario:respaldo-descargar", kwargs={"nombre_archivo": "backup_19990101_000000.sqlite3.gz"})
         resp_404 = self.client.get(url_inexistente)
         self.assertEqual(resp_404.status_code, 404)
+
+    def test_eliminar_respaldo_view(self):
+        archivo_nombre = "backup_20261027_120000.sqlite3.gz"
+        ruta_archivo = os.path.join(self.temp_dir, archivo_nombre)
+        with open(ruta_archivo, "wb") as f:
+            f.write(b"MOCK_BACKUP")
+        with open(f"{ruta_archivo}.sha256", "w") as f:
+            f.write("mock_hash")
+
+        url = reverse("inventario:respaldo-eliminar", kwargs={"nombre_archivo": archivo_nombre})
+
+        # 1. Admin normal no puede eliminar: 403
+        self.client.force_login(self.admin)
+        resp_admin = self.client.post(url)
+        self.assertEqual(resp_admin.status_code, 403)
+        self.assertTrue(os.path.exists(ruta_archivo))
+
+        # 2. Superadmin elimina: redirige a lista y borra archivos
+        self.client.force_login(self.superadmin)
+        with patch("inventario.servicios.respaldo.obtener_directorio_respaldos", return_value=self.temp_dir):
+            resp_super = self.client.post(url)
+            self.assertRedirects(resp_super, reverse("inventario:respaldo-lista"))
+            self.assertFalse(os.path.exists(ruta_archivo))
+            self.assertFalse(os.path.exists(f"{ruta_archivo}.sha256"))

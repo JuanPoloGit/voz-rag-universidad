@@ -433,7 +433,7 @@
                                     Editar
                                 </button>
                                 {% if not u.es_superusuario_inventario and u.is_active %}
-                                    <form method="post" action="{% url 'cuentas:usuario_eliminar' u.pk %}" style="display: inline;" onsubmit="return confirm('¿Está seguro de desactivar a este usuario?');">
+                                    <form method="post" action="{% url 'cuentas:usuario_eliminar' u.pk %}" style="display: inline;" data-confirm="¿Está seguro de desactivar al usuario «{{ u.username }}»?" data-confirm-title="Desactivar Usuario" data-confirm-btn="Desactivar" data-confirm-danger="true">
                                         {% csrf_token %}
                                         <button type="submit" class="btn btn-sm btn-danger">Desactivar</button>
                                     </form>

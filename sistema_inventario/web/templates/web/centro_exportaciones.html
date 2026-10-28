@@ -4,6 +4,82 @@
 
 {% block title %}Centro de Exportaciones{% endblock %}
 
+{% block extra_css %}
+<style>
+.card-dashboard-destacada {
+    margin-bottom: 1.5rem;
+    border: 1px solid var(--border);
+    background: var(--bg-panel);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-sm);
+}
+.export-dashboard-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+}
+.export-dashboard-form {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+.export-select-alm {
+    width: 220px;
+    font-size: 0.85rem;
+}
+.export-btn-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.export-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.65rem 1.15rem;
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+@media (max-width: 768px) {
+    .export-dashboard-container {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 1.25rem;
+    }
+    .export-dashboard-form {
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.75rem;
+    }
+    .export-select-alm {
+        width: 100%;
+    }
+    .export-btn-group {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.5rem;
+    }
+    .export-action-btn {
+        width: 100%;
+        padding: 0.65rem 0.5rem;
+        font-size: 0.82rem;
+        text-align: center;
+    }
+}
+@media (max-width: 480px) {
+    .export-btn-group {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="card" style="margin-bottom: 1.5rem;">
     <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
@@ -25,11 +101,11 @@
 </div>
 
 <!-- TARJETA DESTACADA: DASHBOARD COMPLETO (LIBRO PROFESIONAL MULTIDISCO) -->
-<div class="card" style="margin-bottom: 1.5rem; border: 1px solid rgba(99, 102, 241, 0.3); background: linear-gradient(135deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.9) 100%);">
-    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1.5rem;">
+<div class="card card-dashboard-destacada">
+    <div class="export-dashboard-container">
         <div style="flex: 1; min-width: 280px;">
             <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
-                <div style="width: 40px; height: 40px; border-radius: 8px; background: rgba(16, 185, 129, 0.2); display: flex; align-items: center; justify-content: center; color: var(--success);">
+                <div style="width: 40px; height: 40px; border-radius: 8px; background: rgba(16, 185, 129, 0.15); display: flex; align-items: center; justify-content: center; color: var(--success); flex-shrink: 0;">
                     <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
                         <polyline points="14 2 14 8 20 8"/>
@@ -39,35 +115,37 @@
                     </svg>
                 </div>
                 <div>
-                    <h3 style="margin: 0; font-size: 1.2rem; font-weight: 700; color: #FFFFFF;">Libro Completo del Dashboard</h3>
-                    <span style="font-size: 0.8rem; color: #94A3B8;">Resumen Ejecutivo · Existencias y Stock · Últimos Movimientos · Préstamos Pendientes</span>
+                    <h3 style="margin: 0; font-size: 1.2rem; font-weight: 700; color: var(--text-bright);">Libro Completo del Dashboard</h3>
+                    <span style="font-size: 0.8rem; color: var(--text-muted);">Resumen Ejecutivo · Existencias y Stock · Últimos Movimientos · Préstamos Pendientes</span>
                 </div>
             </div>
-            <p style="margin: 0; font-size: 0.85rem; color: #CBD5E1; line-height: 1.5;">
+            <p style="margin: 0; font-size: 0.85rem; color: var(--text-dim); line-height: 1.5;">
                 Genera un informe integral con tarjetas de KPIs, formato numérico profesional, totales calculados con fórmulas nativas de Excel y autoajuste de columnas para presentaciones ejecutivas y auditorías.
             </p>
         </div>
 
-        <form method="get" action="{% url 'web:exportar-dashboard-excel' %}" style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
-            <select name="almacen_id" class="form-control" style="width: 210px; font-size: 0.85rem; background: var(--bg-deep-2); color: #fff; border-color: var(--border);">
+        <form method="get" action="{% url 'web:exportar-dashboard-excel' %}" class="export-dashboard-form">
+            <select name="almacen_id" class="form-control export-select-alm">
                 <option value="">-- Todos los Almacenes --</option>
                 {% for a in almacenes %}
                     <option value="{{ a.id }}">{{ a.nombre }}</option>
                 {% endfor %}
             </select>
 
-            <button type="submit" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.65rem 1.25rem; font-weight: 600;">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                    <polyline points="7 10 12 15 17 10"/>
-                    <line x1="12" y1="15" x2="12" y2="3"/>
-                </svg>
-                Descargar en Excel (.xlsx)
-            </button>
+            <div class="export-btn-group">
+                <button type="submit" class="btn btn-primary export-action-btn" style="font-weight: 600;">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    Descargar en Excel (.xlsx)
+                </button>
 
-            <a href="{% url 'web:exportar-datos-csv' 'dashboard' %}" class="btn btn-secondary" style="font-size: 0.85rem; padding: 0.65rem 1rem;" title="Descargar todos los datos detallados del inventario en CSV">
-                CSV Completo
-            </a>
+                <a href="{% url 'web:exportar-datos-csv' 'dashboard' %}" class="btn btn-secondary export-action-btn" title="Descargar todos los datos detallados del inventario en CSV">
+                    CSV Completo
+                </a>
+            </div>
         </form>
     </div>
 </div>

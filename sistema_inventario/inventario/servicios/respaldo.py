@@ -268,3 +268,52 @@ def obtener_ruta_respaldo_segura(nombre_archivo: str, output_dir: Optional[str] 
         raise FileNotFoundError(f"El archivo '{nombre_limpio}' no existe en el almacenamiento.")
 
     return ruta_real
+
+
+def eliminar_respaldo_bd(
+    nombre_archivo: str,
+    usuario=None,
+    output_dir: Optional[str] = None,
+) -> bool:
+    """
+    Elimina permanentemente una copia de seguridad y su huella SHA-256.
+    Exclusivo para el Superadministrador. Registra auditoría inmutable.
+    """
+    from django.core.exceptions import PermissionDenied
+    es_super = (
+        getattr(usuario, "es_superusuario_inventario", False)
+        or getattr(usuario, "is_superuser", False)
+        or (hasattr(usuario, "rol") and str(usuario.rol) == "SUPERUSUARIO")
+    )
+    if usuario and not es_super:
+        raise PermissionDenied("Solo el Superadministrador puede eliminar copias de seguridad de la base de datos.")
+
+    # Asegurar que solo se pase el nombre base del archivo principal .sqlite3.gz
+    if nombre_archivo.endswith(".sha256"):
+        nombre_archivo = nombre_archivo[:-7]
+
+    ruta_archivo = obtener_ruta_respaldo_segura(nombre_archivo, output_dir)
+    ruta_sha = f"{ruta_archivo}.sha256"
+
+    tamano_bytes = os.path.getsize(ruta_archivo) if os.path.exists(ruta_archivo) else 0
+
+    if os.path.exists(ruta_archivo):
+        os.remove(ruta_archivo)
+
+    if os.path.exists(ruta_sha):
+        os.remove(ruta_sha)
+
+    if usuario:
+        from inventario.auditoria import registrar_auditoria
+        registrar_auditoria(
+            usuario=usuario,
+            accion="ELIMINAR_BACKUP",
+            tipo_entidad="Sistema",
+            id_entidad="backup",
+            valores_anteriores={"archivo": os.path.basename(ruta_archivo), "tamano_bytes": tamano_bytes},
+            valores_nuevos={"eliminado": True},
+            motivo=f"Eliminación de respaldo {os.path.basename(ruta_archivo)} por Superadministrador para liberar espacio",
+            resultado="OK",
+        )
+
+    return True

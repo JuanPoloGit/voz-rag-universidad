@@ -104,7 +104,10 @@
                                     {% endif %}
 
                                     <form method="post" action="{% url 'inventario:almacen-eliminar' almacen.id %}" style="display: inline; margin: 0;"
-                                          onsubmit="return confirm('¿Eliminar el almacén «{{ almacen.nombre }}»? Si tiene existencias se solicitará trasladarlas primero.');">
+                                          data-confirm="¿Eliminar el almacén «{{ almacen.nombre }}»? Si tiene existencias se solicitará trasladarlas primero."
+                                          data-confirm-title="Eliminar Almacén"
+                                          data-confirm-btn="Eliminar Almacén"
+                                          data-confirm-danger="true">
                                         {% csrf_token %}
                                         <input type="hidden" name="next" value="{{ request.get_full_path }}">
                                         <button type="submit" class="btn btn-sm btn-danger" style="white-space: nowrap;">

@@ -18,6 +18,7 @@ from django.utils import timezone
 
 from inventario.auditoria import registrar_auditoria
 from inventario.models import (
+    AlertaStockLeida,
     Almacen,
     Categoria,
     ConteoFisico,
@@ -843,6 +844,14 @@ def registrar_conteo_fisico(
     if cantidad_contada < 0:
         raise ValidationError("La cantidad contada no puede ser negativa.")
 
+    alm_esperado = producto.categoria.almacen_principal if (producto.categoria and producto.categoria.almacen_principal) else almacen
+    if almacen and alm_esperado and almacen.pk != alm_esperado.pk:
+        raise ValidationError(
+            f"El producto '{producto.nombre}' pertenece a la categoría '{producto.categoria.nombre}', "
+            f"asignada exclusivamente al almacén '{alm_esperado.nombre}'. No se puede registrar un conteo en '{almacen.nombre}'."
+        )
+    almacen = alm_esperado or almacen
+
     existencia, _ = Existencia.objects.get_or_create(
         producto=producto,
         almacen=almacen,
@@ -900,10 +909,25 @@ def confirmar_conteo_fisico(
         if conteo_db.confirmado:
             raise ValidationError("Este conteo físico ya fue confirmado.")
 
-        existencia = Existencia.objects.select_for_update().get(
-            producto=conteo_db.producto,
-            almacen=conteo_db.almacen,
-        )
+        try:
+            existencia = Existencia.objects.select_for_update().get(
+                producto=conteo_db.producto,
+                almacen=conteo_db.almacen,
+            )
+        except Existencia.DoesNotExist:
+            alm_valido = (
+                conteo_db.producto.categoria.almacen_principal
+                if (conteo_db.producto.categoria and conteo_db.producto.categoria.almacen_principal)
+                else conteo_db.almacen
+            )
+            existencia, _ = Existencia.objects.select_for_update().get_or_create(
+                producto=conteo_db.producto,
+                almacen=alm_valido,
+                defaults={"stock_disponible": 0, "stock_en_prestamo": 0},
+            )
+            if conteo_db.almacen_id != alm_valido.id:
+                conteo_db.almacen = alm_valido
+                conteo_db.save(update_fields=["almacen"])
 
         stock_anterior = existencia.stock_disponible
         stock_posterior = conteo_db.cantidad_contada
@@ -936,6 +960,9 @@ def confirmar_conteo_fisico(
         conteo_db.movimiento_ajuste = movimiento
         conteo_db.diferencia = diferencia
         conteo_db.save()
+
+        # Limpiar registros de notificación leída para este conteo ya confirmado y resuelto
+        AlertaStockLeida.objects.filter(clave=f"conteo:{conteo_db.id}").delete()
 
         registrar_auditoria(
             usuario=usuario,

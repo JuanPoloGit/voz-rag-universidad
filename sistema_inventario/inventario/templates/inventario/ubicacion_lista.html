@@ -115,7 +115,10 @@
                                     {% endif %}
 
                                     <form method="post" action="{% url 'inventario:ubicacion-eliminar' ubic.id %}" style="display: inline; margin: 0;"
-                                          onsubmit="return confirm('¿Eliminar la ubicación «{{ ubic.nombre }}»?');">
+                                          data-confirm="¿Eliminar la ubicación «{{ ubic.nombre }}»?"
+                                          data-confirm-title="Eliminar Ubicación"
+                                          data-confirm-btn="Eliminar Ubicación"
+                                          data-confirm-danger="true">
                                         {% csrf_token %}
                                         <input type="hidden" name="next" value="{{ request.get_full_path }}">
                                         <button type="submit" class="btn btn-sm btn-danger">

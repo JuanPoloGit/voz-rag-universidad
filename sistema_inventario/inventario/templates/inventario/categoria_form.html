@@ -97,7 +97,10 @@
                             <button type="submit"
                                     style="background: none; border: none; color: var(--crit); cursor: pointer; font-size: 12px; padding: 0 2px;"
                                     title="Eliminar tipo"
-                                    onclick="return confirm('¿Eliminar el tipo «{{ t.nombre }}»?');">
+                                    data-confirm="¿Eliminar el tipo «{{ t.nombre }}»?"
+                                    data-confirm-title="Eliminar Tipo"
+                                    data-confirm-btn="Eliminar"
+                                    data-confirm-danger="true">
                                 &times;
                             </button>
                         </form>

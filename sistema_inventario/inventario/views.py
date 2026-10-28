@@ -1893,7 +1893,7 @@ class AlertasStockListaView(LoginRequiredMixin, PermisoRequeridoMixin, View):
 
 
 class AlertaMarcarLeidaView(LoginRequiredMixin, View):
-    """Marca una o todas las notificaciones de stock como leídas de forma persistente en BD."""
+    """Marca una o todas las notificaciones como leídas de forma persistente en BD."""
 
     def post(self, request):
         user = request.user
@@ -1907,6 +1907,13 @@ class AlertaMarcarLeidaView(LoginRequiredMixin, View):
                 f"{ex.producto_id}:{ex.almacen_id}:{ex.stock_disponible}"
                 for ex in list(alertas["criticas"]) + list(alertas["bajas"])
             ]
+            if getattr(user, "es_administrador", False):
+                from inventario.models import ConteoFisico
+                conteos_pendientes_ids = ConteoFisico.objects.filter(
+                    confirmado=False
+                ).values_list("id", flat=True)
+                claves.extend([f"conteo:{cid}" for cid in conteos_pendientes_ids])
+
             marcar_todas_alertas_stock_leidas(user, claves)
             messages.success(request, "Todas las notificaciones actuales fueron marcadas como leídas.")
         elif accion == "no_leida" and key:
@@ -1926,6 +1933,11 @@ class AlertaMarcarLeidaView(LoginRequiredMixin, View):
             for ex in list(alertas["criticas"]) + list(alertas["bajas"]):
                 if f"{ex.producto_id}:{ex.almacen_id}:{ex.stock_disponible}" not in leidas:
                     pendientes += 1
+            if getattr(user, "es_administrador", False):
+                from inventario.models import ConteoFisico
+                for c in ConteoFisico.objects.filter(confirmado=False):
+                    if f"conteo:{c.id}" not in leidas:
+                        pendientes += 1
             return JsonResponse({"ok": True, "total_no_leidas": pendientes})
 
         if redirect_to:
@@ -2772,9 +2784,28 @@ class ConteoFisicoCrearView(LoginRequiredMixin, PermisoRequeridoMixin, View):
 
     permiso_requerido = "movimientos.ver"
 
+    def _obtener_mapa_producto_almacen(self, form):
+        import json
+        qs = form.fields["producto"].queryset.select_related("categoria__almacen_principal")
+        mapa = {
+            str(p.id): {
+                "almacen_id": str(p.categoria.almacen_principal_id) if (p.categoria and p.categoria.almacen_principal_id) else "",
+                "almacen_nombre": p.categoria.almacen_principal.nombre if (p.categoria and p.categoria.almacen_principal) else "",
+            }
+            for p in qs
+        }
+        return json.dumps(mapa)
+
     def get(self, request):
         form = ConteoFisicoForm(usuario=request.user)
-        return render(request, "inventario/conteo_form.html", {"form": form})
+        return render(
+            request,
+            "inventario/conteo_form.html",
+            {
+                "form": form,
+                "producto_almacenes_json": self._obtener_mapa_producto_almacen(form),
+            },
+        )
 
     def post(self, request):
         form = ConteoFisicoForm(request.POST, usuario=request.user)
@@ -2811,7 +2842,14 @@ class ConteoFisicoCrearView(LoginRequiredMixin, PermisoRequeridoMixin, View):
                 for e in errs:
                     messages.error(request, str(e))
             return redirect(next_url)
-        return render(request, "inventario/conteo_form.html", {"form": form})
+        return render(
+            request,
+            "inventario/conteo_form.html",
+            {
+                "form": form,
+                "producto_almacenes_json": self._obtener_mapa_producto_almacen(form),
+            },
+        )
 
 
 class ConteoFisicoConfirmarView(LoginRequiredMixin, RolRequeridoMixin, View):
@@ -2885,6 +2923,7 @@ class MovimientoRevertirView(LoginRequiredMixin, View):
 # ─────────────────────────────────────────────────────────────────────────────
 
 from inventario.servicios.respaldo import (
+    eliminar_respaldo_bd,
     generar_respaldo_bd,
     listar_respaldos,
     obtener_estadisticas_respaldos,
@@ -2952,6 +2991,18 @@ class RespaldoDescargarView(LoginRequiredMixin, SuperusuarioRequeridoMixin, View
 
         content_type = "application/gzip" if ruta_segura.endswith(".gz") else "text/plain"
         return FileResponse(open(ruta_segura, "rb"), as_attachment=True, filename=nombre_archivo, content_type=content_type)
+
+
+class RespaldoEliminarView(LoginRequiredMixin, SuperusuarioRequeridoMixin, View):
+    """Eliminación permanente de una copia de seguridad para liberar espacio."""
+
+    def post(self, request, nombre_archivo):
+        try:
+            eliminar_respaldo_bd(nombre_archivo, usuario=request.user)
+            messages.success(request, f"La copia de seguridad '{nombre_archivo}' fue eliminada permanentemente del almacenamiento.")
+        except Exception as exc:
+            messages.error(request, f"No se pudo eliminar el archivo de respaldo: {exc}")
+        return redirect("inventario:respaldo-lista")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

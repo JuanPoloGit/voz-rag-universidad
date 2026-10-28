@@ -136,7 +136,10 @@
                                                         <input type="hidden" name="next" value="{{ request.get_full_path }}">
                                                         <button type="submit" class="type-chip-btn danger"
                                                                 title="Eliminar tipo"
-                                                                onclick="return confirm('¿Eliminar el tipo «{{ t.nombre }}»?');">&times;</button>
+                                                                data-confirm="¿Eliminar el tipo «{{ t.nombre }}»?"
+                                                                data-confirm-title="Eliminar Tipo"
+                                                                data-confirm-btn="Eliminar"
+                                                                data-confirm-danger="true">&times;</button>
                                                     </form>
                                                 </span>
                                             {% endfor %}
@@ -190,7 +193,10 @@
                                     {% endif %}
 
                                     <form method="post" action="{% url 'inventario:categoria-eliminar' cat.id %}" style="display: inline; margin: 0;"
-                                          onsubmit="return confirm('¿Eliminar la categoría «{{ cat.nombre }}»?');">
+                                          data-confirm="¿Eliminar la categoría «{{ cat.nombre }}»?"
+                                          data-confirm-title="Eliminar Categoría"
+                                          data-confirm-btn="Eliminar Categoría"
+                                          data-confirm-danger="true">
                                         {% csrf_token %}
                                         <input type="hidden" name="next" value="{{ request.get_full_path }}">
                                         <button type="submit" class="btn btn-sm btn-danger">
