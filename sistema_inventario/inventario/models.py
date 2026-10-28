@@ -929,6 +929,11 @@ class ConteoFisico(models.Model):
         verbose_name_plural = _("conteos físicos")
         ordering = ["-fecha_conteo"]
 
+    @property
+    def estado(self) -> str:
+        """Estado legible para plantillas y vistas ('CONFIRMADO' o 'PENDIENTE')."""
+        return "CONFIRMADO" if self.confirmado else "PENDIENTE"
+
     def __str__(self):
         estado = "✓" if self.confirmado else "⏳"
         return (
