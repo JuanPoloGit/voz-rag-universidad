@@ -420,8 +420,8 @@
                                 {% elif c.estado == 'PENDIENTE' %}
                                     <span style="font-size: 11.5px; color: var(--warn); font-weight: 500;">Requiere Administrador</span>
                                 {% else %}
-                                    <span style="font-size: 11.5px; color: var(--text-faint);">
-                                        {% if c.usuario_confirmacion %}Aprobado por {{ c.usuario_confirmacion.username }}{% else %}Aplicado{% endif %}
+                                    <span style="font-size: 11.5px; color: var(--text-faint);" {% if c.fecha_confirmacion %}title="Aprobado el {{ c.fecha_confirmacion|date:'d/m/Y H:i' }}"{% endif %}>
+                                        Aprobado por Administración
                                     </span>
                                 {% endif %}
                             </td>
