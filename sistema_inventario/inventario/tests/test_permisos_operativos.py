@@ -167,11 +167,11 @@ class PermisosOperativosTest(TestCase):
             producto=self.prod,
             almacen_origen=self.almacen_a,
             almacen_destino=self.almacen_b,
-            cantidad=3,
+            cantidad=10,
             usuario=self.user_op,
         )
-        self.assertEqual(ex_orig.stock_disponible, 7)
-        self.assertEqual(ex_dest.stock_disponible, 3)
+        self.assertEqual(ex_orig.stock_disponible, 0)
+        self.assertEqual(ex_dest.stock_disponible, 10)
 
     def test_traslado_interno_denegado_sin_permiso(self):
         """No se puede realizar traslado interno de ubicación sin movimientos.traslado_interno."""

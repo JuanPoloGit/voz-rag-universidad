@@ -146,7 +146,7 @@ class AuditoriaGeneralizacionHakuTestCase(TestCase):
             stock_en_prestamo=0,
         )
 
-        # 6. Fibra Óptica: agotado en Central (0), pero disponible en Norte (8)
+        # 6. Fibra Óptica: agotado en Central (0)
         self.prod_fibra = Producto.objects.create(
             codigo_interno="FO-606",
             nombre="Rollo Fibra Óptica Monomodo",
@@ -158,12 +158,6 @@ class AuditoriaGeneralizacionHakuTestCase(TestCase):
             producto=self.prod_fibra,
             almacen=self.almacen_principal,
             stock_disponible=0,
-            stock_en_prestamo=0,
-        )
-        self.exist_fibra_norte = Existencia.objects.create(
-            producto=self.prod_fibra,
-            almacen=self.almacen_secundario,
-            stock_disponible=8,
             stock_en_prestamo=0,
         )
 
@@ -419,12 +413,11 @@ class AuditoriaGeneralizacionHakuTestCase(TestCase):
         self.assertFalse(self.exist_rj45.sin_stock)
 
     def test_semantica_producto_agotado_en_un_almacen_pero_disponible_en_otro(self):
-        """Fibra óptica: 0 en Central, 8 en Norte. Admin puede consultar otro almacén, Operario limitado."""
+        """Fibra óptica: 0 en Central. El producto solo pertenece a Almacén Central (invariante 1 producto = 1 almacén)."""
         sesion_admin = {"haku_ultimo_producto_id": str(self.prod_fibra.id)}
         resp_admin = procesar_comando_inventario(self.admin, "y del otro almacén qué queda", sesion=sesion_admin)
         self.assertEqual(resp_admin["tipo"], "consulta")
-        self.assertIn("Bodega Norte", resp_admin["mensaje_pantalla"])
-        self.assertIn("8 disponibles", resp_admin["mensaje_pantalla"])
+        self.assertIn("No hay existencias registradas", resp_admin["mensaje_pantalla"])
 
         # Operario asignado solo a Central no puede consultar existencias en almacenes no autorizados
         sesion_op = {"haku_ultimo_producto_id": str(self.prod_fibra.id)}

@@ -1520,13 +1520,10 @@ class UbicacionTrasladarView(LoginRequiredMixin, RolRequeridoMixin, View):
 
                 ex_ori = Existencia.objects.select_for_update().filter(producto=p, almacen=almacen_anterior).first()
                 cant = ex_ori.stock_disponible if ex_ori else 0
+                cant_prest = ex_ori.stock_en_prestamo if ex_ori else 0
 
                 if ex_ori:
-                    ex_ori.stock_disponible = 0
-                    if ex_ori.stock_en_prestamo == 0:
-                        ex_ori.delete()
-                    else:
-                        ex_ori.save()
+                    ex_ori.delete()
 
                 ex_dest, _ = Existencia.objects.select_for_update().get_or_create(
                     producto=p,
@@ -1536,7 +1533,10 @@ class UbicacionTrasladarView(LoginRequiredMixin, RolRequeridoMixin, View):
                 stock_ant = ex_dest.stock_disponible
                 stock_post = stock_ant + cant
                 ex_dest.stock_disponible = stock_post
+                ex_dest.stock_en_prestamo += cant_prest
                 ex_dest.save()
+
+                Prestamo.objects.filter(producto=p, almacen=almacen_anterior).update(almacen=almacen_destino)
 
                 Existencia.objects.filter(
                     producto=p, stock_disponible=0, stock_en_prestamo=0
@@ -1670,13 +1670,10 @@ class CategoriaTrasladarView(LoginRequiredMixin, RolRequeridoMixin, View):
 
                 ex_ori = Existencia.objects.select_for_update().filter(producto=p, almacen=almacen_anterior).first()
                 cant = ex_ori.stock_disponible if ex_ori else 0
+                cant_prest = ex_ori.stock_en_prestamo if ex_ori else 0
 
                 if ex_ori:
-                    ex_ori.stock_disponible = 0
-                    if ex_ori.stock_en_prestamo == 0:
-                        ex_ori.delete()
-                    else:
-                        ex_ori.save()
+                    ex_ori.delete()
 
                 ex_dest, _ = Existencia.objects.select_for_update().get_or_create(
                     producto=p,
@@ -1686,7 +1683,10 @@ class CategoriaTrasladarView(LoginRequiredMixin, RolRequeridoMixin, View):
                 stock_ant = ex_dest.stock_disponible
                 stock_post = stock_ant + cant
                 ex_dest.stock_disponible = stock_post
+                ex_dest.stock_en_prestamo += cant_prest
                 ex_dest.save()
+
+                Prestamo.objects.filter(producto=p, almacen=almacen_anterior).update(almacen=almacen_destino)
 
                 Existencia.objects.filter(
                     producto=p, stock_disponible=0, stock_en_prestamo=0

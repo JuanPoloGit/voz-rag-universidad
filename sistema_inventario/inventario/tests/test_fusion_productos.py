@@ -74,12 +74,12 @@ class FusionProductosBaseTestCase(TestCase):
             usuario=self.admin,
         )
 
-        # Producto duplicado: 30 unidades, en ubic_1 y ubic_2
+        # Producto duplicado: 30 unidades, en ubic_2
         self.prod_b = crear_producto(
             nombre="Cable HDMI 2 metros Duplicado",
             categoria=self.cat,
             stock_inicial=30,
-            ubicaciones=[self.ubic_1.pk, self.ubic_2.pk],
+            ubicaciones=[self.ubic_2.pk],
             usuario=self.admin,
         )
 
@@ -125,7 +125,8 @@ class TestFusionarProductosServicio(FusionProductosBaseTestCase):
         ubics = set(
             ProductoUbicacion.objects.filter(producto=self.prod_a).values_list("ubicacion_id", flat=True)
         )
-        self.assertEqual(ubics, {self.ubic_1.pk, self.ubic_2.pk})
+        # El producto principal mantiene su ubicación física única (invariante 1 producto = 1 ubicación)
+        self.assertEqual(ubics, {self.ubic_1.pk})
         self.assertFalse(ProductoUbicacion.objects.filter(producto=self.prod_b).exists())
 
     def test_usuario_normal_no_puede_fusionar(self):

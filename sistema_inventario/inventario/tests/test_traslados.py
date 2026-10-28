@@ -89,18 +89,31 @@ class TrasladosTest(TestCase):
             producto=self.producto,
             almacen_origen=self.almacen_origen,
             almacen_destino=self.almacen_destino,
-            cantidad=2,
+            cantidad=5,
             usuario=self.user_origen,
             ubicacion_destino=self.ub_destino,
             motivo="Envío para proyecto sede norte",
             clave_idempotencia="TRAS-ENTRE-001",
         )
-        self.assertEqual(ex_orig.stock_disponible, 3)
-        self.assertEqual(ex_dest.stock_disponible, 2)
+        self.assertEqual(ex_orig.stock_disponible, 0)
+        self.assertEqual(ex_dest.stock_disponible, 5)
         self.assertEqual(mov.tipo, Movimiento.Tipo.TRASLADO_ENTRE)
-        self.assertEqual(mov.cantidad, 2)
+        self.assertEqual(mov.cantidad, 5)
         self.assertEqual(mov.almacen_origen, self.almacen_origen)
         self.assertEqual(mov.almacen_destino, self.almacen_destino)
+
+    def test_traslado_entre_almacenes_rechaza_traslado_parcial(self):
+        """No permite traslado parcial entre almacenes; exige trasladar todo el stock (invariante 1 almacén por producto)."""
+        with self.assertRaises(ValidationError) as ctx:
+            registrar_traslado_entre_almacenes(
+                producto=self.producto,
+                almacen_origen=self.almacen_origen,
+                almacen_destino=self.almacen_destino,
+                cantidad=2,
+                usuario=self.user_origen,
+                ubicacion_destino=self.ub_destino,
+            )
+        self.assertIn("un producto solo puede estar en un único almacén", str(ctx.exception))
 
     def test_traslado_entre_almacenes_rechaza_stock_insuficiente(self):
         """No permite transferir más stock del disponible en origen."""

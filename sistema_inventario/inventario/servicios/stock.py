@@ -16,6 +16,7 @@ from inventario.models import (
     Categoria,
     Existencia,
     Movimiento,
+    Prestamo,
     Producto,
     ProductoUbicacion,
     Ubicacion,
@@ -129,41 +130,11 @@ def crear_existencia_excepcion(
     motivo: str,
     ip_origen: Optional[str] = None,
 ) -> Existencia:
-    """Crea una existencia en un almacén distinto al almacén principal de la categoría (§7.3).
-    
-    Requiere confirmación explícita y motivo registrado en auditoría.
-    """
-    if not confirmacion or not (motivo or "").strip():
-        raise ValidationError(
-            "Crear existencias en un almacén distinto al principal de la categoría "
-            "requiere confirmación explícita y un motivo justificado."
-        )
-
-    with transaction.atomic():
-        existencia, _ = Existencia.objects.get_or_create(
-            producto=producto,
-            almacen=almacen,
-            defaults={"stock_disponible": 0, "stock_en_prestamo": 0},
-        )
-
-        registrar_auditoria(
-            usuario=usuario,
-            accion="EXCEPCION_CATEGORIA_ALMACEN",
-            tipo_entidad="Producto",
-            id_entidad=str(producto.id),
-            valores_anteriores=None,
-            valores_nuevos={
-                "producto_id": producto.id,
-                "almacen_id": almacen.id,
-                "almacen_principal_cat_id": producto.categoria.almacen_principal_id,
-            },
-            motivo=motivo.strip(),
-            resultado="OK",
-            via_haku=False,
-            ip_origen=ip_origen,
-        )
-
-    return existencia
+    """Prohibido por regla de negocio estricta: un producto solo puede estar en un único almacén."""
+    raise ValidationError(
+        "Regla de negocio estricta: un producto solo puede pertenecer y residir en un único almacén. "
+        "No se permite crear existencias en múltiples almacenes."
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -184,19 +155,37 @@ def trasladar_productos_almacen(
     total_trasladados = 0
 
     with transaction.atomic():
-        existencias_origen = Existencia.objects.select_for_update().filter(
-            almacen=almacen_origen, stock_disponible__gt=0
-        )
+        # 1. Actualizar categorías cuyo almacén principal sea el de origen para que apunten al destino
+        Categoria.objects.filter(almacen_principal=almacen_origen).update(almacen_principal=almacen_destino)
+
+        # 2. Limpiar asignaciones de ubicaciones físicas pertenecientes al almacén de origen
+        ProductoUbicacion.objects.filter(ubicacion__almacen=almacen_origen).delete()
+
+        existencias_origen = list(Existencia.objects.select_for_update().filter(
+            almacen=almacen_origen
+        ))
 
         for ex_ori in existencias_origen:
             cant = ex_ori.stock_disponible
             cant_prest = ex_ori.stock_en_prestamo
-            ex_ori.stock_disponible = 0
-            ex_ori.stock_en_prestamo = 0
-            ex_ori.save()
+            prod = ex_ori.producto
+
+            # Asegurar que la categoría del producto apunte al almacén destino
+            if prod.categoria and prod.categoria.almacen_principal_id != almacen_destino.id:
+                cat_dest = Categoria.objects.filter(almacen_principal=almacen_destino, activo=True, eliminado=False).first()
+                if not cat_dest:
+                    cat_dest = Categoria.objects.create(
+                        nombre=f"{prod.categoria.nombre} ({almacen_destino.nombre})",
+                        almacen_principal=almacen_destino,
+                    )
+                prod.categoria = cat_dest
+                prod.save(update_fields=["categoria"])
+
+            # Eliminar primero origen para respetar la restricción única de 1 existencia por producto
+            ex_ori.delete()
 
             ex_dest, _ = Existencia.objects.select_for_update().get_or_create(
-                producto=ex_ori.producto,
+                producto=prod,
                 almacen=almacen_destino,
                 defaults={"stock_disponible": 0, "stock_en_prestamo": 0},
             )
@@ -207,9 +196,12 @@ def trasladar_productos_almacen(
             ex_dest.stock_en_prestamo += cant_prest
             ex_dest.save()
 
+            # Reasignar préstamos abiertos al almacén destino
+            Prestamo.objects.filter(producto=prod, almacen=almacen_origen).update(almacen=almacen_destino)
+
             Movimiento.objects.create(
-                clave_idempotencia=f"TRAS-ALM-{ex_ori.producto_id}-{almacen_origen.id}-{almacen_destino.id}-{uuid.uuid4().hex[:8]}",
-                producto=ex_ori.producto,
+                clave_idempotencia=f"TRAS-ALM-{prod.id}-{almacen_origen.id}-{almacen_destino.id}-{uuid.uuid4().hex[:8]}",
+                producto=prod,
                 tipo=Movimiento.Tipo.TRASLADO_ENTRE,
                 almacen_origen=almacen_origen,
                 almacen_destino=almacen_destino,
@@ -259,11 +251,8 @@ def trasladar_productos_ubicacion(
     with transaction.atomic():
         relaciones = list(ProductoUbicacion.objects.filter(ubicacion=ubicacion_origen))
         for rel in relaciones:
-            ProductoUbicacion.objects.get_or_create(
-                producto=rel.producto,
-                ubicacion=ubicacion_destino,
-            )
-            rel.delete()
+            rel.ubicacion = ubicacion_destino
+            rel.save()
             total_movidos += 1
 
         registrar_auditoria(
@@ -297,12 +286,21 @@ def trasladar_productos_categoria(
     almacen_origen = categoria.almacen_principal
 
     with transaction.atomic():
+        # Actualizar primero el almacén principal de la categoría antes de crear las nuevas existencias
+        categoria.almacen_principal = almacen_destino
+        categoria.save(update_fields=["almacen_principal"])
+
+        # Limpiar ubicaciones de productos que pertenecían al almacén anterior
+        ProductoUbicacion.objects.filter(producto__categoria=categoria).exclude(ubicacion__almacen=almacen_destino).delete()
+
         for prod in categoria.productos.filter(archivado=False):
             ex_ori = Existencia.objects.select_for_update().filter(producto=prod, almacen=almacen_origen).first()
-            if ex_ori and ex_ori.stock_disponible > 0:
+            if ex_ori:
                 cant = ex_ori.stock_disponible
-                ex_ori.stock_disponible = 0
-                ex_ori.save()
+                cant_prest = ex_ori.stock_en_prestamo
+
+                # Eliminar primero para respetar la restricción única de 1 existencia por producto
+                ex_ori.delete()
 
                 ex_dest, _ = Existencia.objects.select_for_update().get_or_create(
                     producto=prod,
@@ -312,7 +310,10 @@ def trasladar_productos_categoria(
                 stock_ant = ex_dest.stock_disponible
                 stock_post = stock_ant + cant
                 ex_dest.stock_disponible = stock_post
+                ex_dest.stock_en_prestamo += cant_prest
                 ex_dest.save()
+
+                Prestamo.objects.filter(producto=prod, almacen=almacen_origen).update(almacen=almacen_destino)
 
                 Movimiento.objects.create(
                     clave_idempotencia=f"TRAS-CAT-{prod.id}-{almacen_origen.id}-{almacen_destino.id}-{uuid.uuid4().hex[:8]}",
@@ -327,9 +328,6 @@ def trasladar_productos_categoria(
                     motivo=f"Traslado por cambio de almacén principal de la categoría '{categoria.nombre}'",
                 )
             total_trasladados += 1
-
-        categoria.almacen_principal = almacen_destino
-        categoria.save()
 
         registrar_auditoria(
             usuario=usuario,

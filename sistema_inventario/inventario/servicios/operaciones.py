@@ -722,15 +722,17 @@ def registrar_traslado_entre_almacenes(
                 f"Stock insuficiente en almacén origen. Disponible: {existencia_origen.stock_disponible}, solicitado: {cantidad}."
             )
 
-        existencia_destino, _ = Existencia.objects.select_for_update().get_or_create(
-            producto=producto,
-            almacen=almacen_destino,
-            defaults={"stock_disponible": 0, "stock_en_prestamo": 0},
-        )
+        if cantidad < existencia_origen.stock_disponible:
+            raise ValidationError(
+                f"Regla de negocio: un producto solo puede estar en un único almacén. "
+                f"Para trasladar '{producto.nombre}' a '{almacen_destino.nombre}', debe trasladar la totalidad del stock disponible ({existencia_origen.stock_disponible} unidades)."
+            )
 
+        cant_prest = existencia_origen.stock_en_prestamo
         stock_ant_origen = existencia_origen.stock_disponible
-        stock_post_origen = stock_ant_origen - cantidad
+        stock_post_origen = 0
 
+        # 1. Actualizar categoría y ubicación física al almacén destino antes de crear la existencia de destino
         if categoria_destino:
             if categoria_destino.almacen_principal_id != almacen_destino.id:
                 raise ValidationError(f"La categoría '{categoria_destino.nombre}' no pertenece al almacén destino '{almacen_destino.nombre}'.")
@@ -738,27 +740,40 @@ def registrar_traslado_entre_almacenes(
             producto.save(update_fields=["categoria"])
         elif producto.categoria and producto.categoria.almacen_principal_id != almacen_destino.id:
             cat_dest = Categoria.objects.filter(almacen_principal=almacen_destino, activo=True, eliminado=False).first()
-            if cat_dest:
-                producto.categoria = cat_dest
-                producto.save(update_fields=["categoria"])
+            if not cat_dest:
+                cat_dest = Categoria.objects.create(
+                    nombre=f"{producto.categoria.nombre} ({almacen_destino.nombre})",
+                    almacen_principal=almacen_destino,
+                )
+            producto.categoria = cat_dest
+            producto.save(update_fields=["categoria"])
 
         if ubicacion_destino:
             ProductoUbicacion.objects.filter(producto=producto).delete()
             ProductoUbicacion.objects.create(producto=producto, ubicacion=ubicacion_destino)
-
-        # Mantenimiento del invariante de almacén único (§5):
-        # Si el stock en origen queda en 0 sin préstamos, se retira la existencia residual
-        existencia_origen.stock_disponible = stock_post_origen
-        if stock_post_origen == 0 and existencia_origen.stock_en_prestamo == 0:
-            existencia_origen.delete()
         else:
-            existencia_origen.save()
+            ProductoUbicacion.objects.filter(producto=producto).exclude(ubicacion__almacen=almacen_destino).delete()
+
+        # 2. Eliminar la existencia en el almacén de origen para respetar la regla de 1 existencia única por producto
+        existencia_origen.delete()
+        existencia_origen.stock_disponible = 0
+
+        # 3. Crear o actualizar existencia en almacén destino
+        existencia_destino, _ = Existencia.objects.select_for_update().get_or_create(
+            producto=producto,
+            almacen=almacen_destino,
+            defaults={"stock_disponible": 0, "stock_en_prestamo": 0},
+        )
 
         stock_ant_destino = existencia_destino.stock_disponible
         stock_post_destino = stock_ant_destino + cantidad
 
         existencia_destino.stock_disponible = stock_post_destino
+        existencia_destino.stock_en_prestamo += cant_prest
         existencia_destino.save()
+
+        # Reasignar préstamos abiertos al almacén destino
+        Prestamo.objects.filter(producto=producto, almacen=almacen_origen).update(almacen=almacen_destino)
 
         # Limpiar cualquier otra existencia huérfana en 0 para este producto en otros almacenes
         Existencia.objects.filter(

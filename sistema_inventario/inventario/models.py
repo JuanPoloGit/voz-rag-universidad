@@ -353,10 +353,9 @@ class Producto(models.Model):
 
 
 class ProductoUbicacion(models.Model):
-    """Relación Producto ↔ Ubicación (M2M explícita).
+    """Relación Producto ↔ Ubicación física.
 
-    Un producto puede estar en varias ubicaciones dentro de un almacén.
-    No se gestiona cantidad por ubicación (sección 7.2).
+    Regla de negocio estricta: un producto solo puede estar en una sola ubicación física.
     """
 
     producto = models.ForeignKey(
@@ -375,10 +374,37 @@ class ProductoUbicacion(models.Model):
     class Meta:
         verbose_name = _("producto en ubicación")
         verbose_name_plural = _("productos en ubicaciones")
-        unique_together = [("producto", "ubicacion")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["producto"],
+                name="unique_producto_una_sola_ubicacion",
+            )
+        ]
 
     def __str__(self):
         return f"{self.producto.codigo_interno} en {self.ubicacion}"
+
+    def clean(self):
+        super().clean()
+        if self.producto_id and self.ubicacion_id:
+            alm_cat = self.producto.categoria.almacen_principal_id
+            if self.ubicacion.almacen_id != alm_cat:
+                from django.core.exceptions import ValidationError
+                raise ValidationError(
+                    f"La ubicación '{self.ubicacion.nombre}' está en '{self.ubicacion.almacen.nombre}', "
+                    f"pero la categoría del producto pertenece a '{self.producto.categoria.almacen_principal.nombre}'."
+                )
+            otra = ProductoUbicacion.objects.filter(producto_id=self.producto_id).exclude(pk=self.pk)
+            if otra.exists():
+                from django.core.exceptions import ValidationError
+                raise ValidationError(
+                    f"El producto '{self.producto.nombre}' ya tiene asignada una ubicación física ('{otra.first().ubicacion.nombre}'). "
+                    "Un producto solo puede estar en una sola ubicación."
+                )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -389,8 +415,8 @@ class ProductoUbicacion(models.Model):
 class Existencia(models.Model):
     """Stock de un producto en un almacén específico.
 
-    Separa stock_disponible (unidades físicamente disponibles) de
-    stock_en_prestamo (unidades prestadas pendientes de devolución).
+    Regla de negocio estricta: un producto solo puede residir en un único almacén.
+    Separa stock_disponible de stock_en_prestamo.
 
     Toda modificación DEBE ocurrir dentro de transaction.atomic() con
     select_for_update() para evitar condiciones de carrera (sección 9).
@@ -422,13 +448,40 @@ class Existencia(models.Model):
     class Meta:
         verbose_name = _("existencia")
         verbose_name_plural = _("existencias")
-        unique_together = [("producto", "almacen")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["producto"],
+                name="unique_existencia_un_solo_almacen",
+            )
+        ]
 
     def __str__(self):
         return (
             f"{self.producto.codigo_interno} en {self.almacen.nombre}: "
             f"{self.stock_disponible} disponible, {self.stock_en_prestamo} en préstamo"
         )
+
+    def clean(self):
+        super().clean()
+        if self.producto_id and self.almacen_id:
+            alm_cat = self.producto.categoria.almacen_principal_id
+            if self.almacen_id != alm_cat:
+                from django.core.exceptions import ValidationError
+                raise ValidationError(
+                    f"El producto '{self.producto.nombre}' pertenece a la categoría '{self.producto.categoria.nombre}' "
+                    f"cuyo almacén es '{self.producto.categoria.almacen_principal.nombre}'. No puede tener existencias en '{self.almacen.nombre}'."
+                )
+            otra = Existencia.objects.filter(producto_id=self.producto_id).exclude(pk=self.pk)
+            if otra.exists():
+                from django.core.exceptions import ValidationError
+                raise ValidationError(
+                    f"El producto '{self.producto.nombre}' ya tiene existencias registradas en '{otra.first().almacen.nombre}'. "
+                    "Un producto solo puede residir en un único almacén."
+                )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 
     @property
     def stock_total(self):

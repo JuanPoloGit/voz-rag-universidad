@@ -527,16 +527,12 @@ class EntradaForm(forms.Form):
         user_alms = self.usuario.get_almacenes_asignados() if is_normal else None
 
         if producto:
-            if not almacen:
-                if is_normal:
-                    ex_user = producto.existencias.filter(almacen__in=user_alms).first()
-                    ub_user = producto.ubicaciones.filter(almacen__in=user_alms).first()
-                    almacen = ex_user.almacen if ex_user else (ub_user.almacen if ub_user else producto.categoria.almacen_principal)
-                else:
-                    ex_prod = producto.existencias.filter(cantidad__gt=0).first() or producto.existencias.first()
-                    ub_prod = producto.ubicaciones.first()
-                    almacen = ex_prod.almacen if ex_prod else (ub_prod.almacen if ub_prod else producto.categoria.almacen_principal)
-                cleaned_data["almacen"] = almacen
+            alm_cat = producto.categoria.almacen_principal
+            if almacen and almacen.id != alm_cat.id:
+                self.add_error("almacen", f"El producto '{producto.nombre}' solo pertenece al almacén '{alm_cat.nombre}'. No puede operarse en '{almacen.nombre}'.")
+            elif not almacen:
+                cleaned_data["almacen"] = alm_cat
+                almacen = alm_cat
 
             if is_normal and not user_alms.filter(id=almacen.id).exists():
                 self.add_error("almacen", "No tienes acceso al almacén donde ingresa este producto.")
@@ -615,16 +611,12 @@ class SalidaForm(forms.Form):
         user_alms = self.usuario.get_almacenes_asignados() if is_normal else None
 
         if producto:
-            if not almacen:
-                if is_normal:
-                    ex_user = producto.existencias.filter(almacen__in=user_alms).first()
-                    ub_user = producto.ubicaciones.filter(almacen__in=user_alms).first()
-                    almacen = ex_user.almacen if ex_user else (ub_user.almacen if ub_user else producto.categoria.almacen_principal)
-                else:
-                    ex_prod = producto.existencias.filter(cantidad__gt=0).first() or producto.existencias.first()
-                    ub_prod = producto.ubicaciones.first()
-                    almacen = ex_prod.almacen if ex_prod else (ub_prod.almacen if ub_prod else producto.categoria.almacen_principal)
-                cleaned_data["almacen"] = almacen
+            alm_cat = producto.categoria.almacen_principal
+            if almacen and almacen.id != alm_cat.id:
+                self.add_error("almacen", f"El producto '{producto.nombre}' solo pertenece al almacén '{alm_cat.nombre}'. No puede operarse en '{almacen.nombre}'.")
+            elif not almacen:
+                cleaned_data["almacen"] = alm_cat
+                almacen = alm_cat
 
             if is_normal and not user_alms.filter(id=almacen.id).exists():
                 self.add_error("almacen", "No tienes acceso al almacén donde se encuentra este producto.")
@@ -703,16 +695,12 @@ class PrestamoForm(forms.Form):
         user_alms = self.usuario.get_almacenes_asignados() if is_normal else None
 
         if producto:
-            if not almacen:
-                if is_normal:
-                    ex_user = producto.existencias.filter(almacen__in=user_alms).first()
-                    ub_user = producto.ubicaciones.filter(almacen__in=user_alms).first()
-                    almacen = ex_user.almacen if ex_user else (ub_user.almacen if ub_user else producto.categoria.almacen_principal)
-                else:
-                    ex_prod = producto.existencias.filter(cantidad__gt=0).first() or producto.existencias.first()
-                    ub_prod = producto.ubicaciones.first()
-                    almacen = ex_prod.almacen if ex_prod else (ub_prod.almacen if ub_prod else producto.categoria.almacen_principal)
-                cleaned_data["almacen"] = almacen
+            alm_cat = producto.categoria.almacen_principal
+            if almacen and almacen.id != alm_cat.id:
+                self.add_error("almacen", f"El producto '{producto.nombre}' solo pertenece al almacén '{alm_cat.nombre}'. No puede operarse en '{almacen.nombre}'.")
+            elif not almacen:
+                cleaned_data["almacen"] = alm_cat
+                almacen = alm_cat
 
             if is_normal and not user_alms.filter(id=almacen.id).exists():
                 self.add_error("almacen", "No tienes acceso al almacén donde se encuentra este producto.")

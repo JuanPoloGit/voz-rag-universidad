@@ -105,9 +105,8 @@ class TestTrasladoAlmacen(TrasladosBaseTestCase):
         )
         self.assertEqual(n, 1)
 
-        ex_a = Existencia.objects.get(producto=self.prod_a, almacen=self.almacen_a)
+        self.assertFalse(Existencia.objects.filter(producto=self.prod_a, almacen=self.almacen_a).exists())
         ex_b = Existencia.objects.get(producto=self.prod_a, almacen=self.almacen_b)
-        self.assertEqual(ex_a.stock_disponible, 0)
         self.assertEqual(ex_b.stock_disponible, 50)
 
         mov = Movimiento.objects.filter(
@@ -144,9 +143,8 @@ class TestTrasladoAlmacen(TrasladosBaseTestCase):
         self.almacen_a.refresh_from_db()
         self.assertFalse(self.almacen_a.activo)
 
-        ex_a = Existencia.objects.get(producto=self.prod_a, almacen=self.almacen_a)
+        self.assertFalse(Existencia.objects.filter(producto=self.prod_a, almacen=self.almacen_a).exists())
         ex_b = Existencia.objects.get(producto=self.prod_a, almacen=self.almacen_b)
-        self.assertEqual(ex_a.stock_disponible, 0)
         self.assertEqual(ex_b.stock_disponible, 50)
 
         aud = Auditoria.objects.filter(accion="DESACTIVAR_ALMACEN", id_entidad=str(self.almacen_a.id)).first()

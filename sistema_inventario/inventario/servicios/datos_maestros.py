@@ -959,8 +959,17 @@ def crear_producto(
         producto.save()
 
         if ubicaciones:
-            for uid in ubicaciones:
-                ProductoUbicacion.objects.get_or_create(producto=producto, ubicacion_id=uid)
+            if len(ubicaciones) > 1:
+                raise ValidationError({"ubicaciones": "Un producto solo puede estar asignado a una sola ubicación física."})
+            uid = ubicaciones[0]
+            ub = Ubicacion.objects.filter(id=uid, activo=True, eliminado=False).first()
+            if not ub:
+                raise ValidationError({"ubicaciones": "La ubicación física seleccionada no existe o está inactiva."})
+            if ub.almacen_id != categoria.almacen_principal_id:
+                raise ValidationError({
+                    "ubicaciones": f"La ubicación '{ub.nombre}' pertenece a '{ub.almacen.nombre}', pero la categoría del producto pertenece a '{categoria.almacen_principal.nombre}'."
+                })
+            ProductoUbicacion.objects.create(producto=producto, ubicacion=ub)
 
         # Crear existencia en almacén principal por defecto
         Existencia.objects.get_or_create(
@@ -1186,24 +1195,22 @@ def fusionar_productos(
         prod_pri = Producto.objects.select_for_update().get(pk=producto_principal.pk)
         prod_dup = Producto.objects.select_for_update().get(pk=producto_duplicado.pk)
 
-        # 1. Sumar existencias por cada almacén donde esté el duplicado
-        for ex_dup in prod_dup.existencias.select_for_update():
-            cant_disp = ex_dup.stock_disponible
-            cant_prest = ex_dup.stock_en_prestamo
-
-            ex_pri, _ = Existencia.objects.select_for_update().get_or_create(
-                producto=prod_pri,
-                almacen=ex_dup.almacen,
-                defaults={"stock_disponible": 0, "stock_en_prestamo": 0},
-            )
-
-            ex_pri.stock_disponible += cant_disp
-            ex_pri.stock_en_prestamo += cant_prest
-            ex_pri.save()
-
+        # 1. Sumar existencias al almacén del producto principal
+        alm_pri = prod_pri.categoria.almacen_principal
+        ex_pri, _ = Existencia.objects.select_for_update().get_or_create(
+            producto=prod_pri,
+            almacen=alm_pri,
+            defaults={"stock_disponible": 0, "stock_en_prestamo": 0},
+        )
+        for ex_dup in list(prod_dup.existencias.select_for_update()):
+            ex_pri.stock_disponible += ex_dup.stock_disponible
+            ex_pri.stock_en_prestamo += ex_dup.stock_en_prestamo
             ex_dup.stock_disponible = 0
             ex_dup.stock_en_prestamo = 0
             ex_dup.save()
+            if ex_dup.almacen_id != alm_pri.id:
+                ex_dup.delete()
+        ex_pri.save()
 
         # 2. Reasignar movimientos
         Movimiento.objects.filter(producto=prod_dup).update(producto=prod_pri)
@@ -1214,12 +1221,14 @@ def fusionar_productos(
         # 4. Reasignar conteos físicos si los hubiera
         ConteoFisico.objects.filter(producto=prod_dup).update(producto=prod_pri)
 
-        # 5. Unificar ubicaciones físicas
-        for pu_dup in prod_dup.producto_ubicaciones.all():
-            ProductoUbicacion.objects.get_or_create(
-                producto=prod_pri,
-                ubicacion=pu_dup.ubicacion,
-            )
+        # 5. Unificar ubicación física única
+        if not prod_pri.producto_ubicaciones.exists():
+            pu_dup = prod_dup.producto_ubicaciones.filter(ubicacion__almacen=alm_pri).first()
+            if pu_dup:
+                ProductoUbicacion.objects.get_or_create(
+                    producto=prod_pri,
+                    ubicacion=pu_dup.ubicacion,
+                )
         prod_dup.producto_ubicaciones.all().delete()
 
         # 6. Archivar producto duplicado
