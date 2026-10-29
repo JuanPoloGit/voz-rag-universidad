@@ -309,6 +309,7 @@ class UsuarioAudacIA(AbstractUser):
             "movimientos.baja",
             "movimientos.traslado_interno",
             "movimientos.traslado_almacen",
+            "movimientos.revertir",
         )
 
     @property
@@ -453,6 +454,13 @@ PERMISOS_CATALOGO = [
         "nombre": "Ejecutar traslados entre almacenes",
         "descripcion": "Transferir productos y existencias entre distintos almacenes del sistema.",
         "orden": 8,
+    },
+    {
+        "codigo": "movimientos.revertir",
+        "modulo": "MOVIMIENTOS",
+        "nombre": "Revertir movimientos",
+        "descripcion": "Ejecutar movimientos de reversión compensatoria de operaciones previas.",
+        "orden": 9,
     },
 
     # Módulo 3: INFRAESTRUCTURA

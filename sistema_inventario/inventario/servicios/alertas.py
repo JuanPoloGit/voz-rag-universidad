@@ -6,9 +6,33 @@ de la especificación de requisitos.
 """
 
 from typing import Any, Dict, Optional
+from django.core.cache import cache
 from django.db.models import F
 
 from inventario.models import Almacen, Existencia, AlertaStockLeida
+
+CACHE_ALERTA_VERSION_KEY = "alertas:version"
+CACHE_ALERTA_TTL = 60
+
+
+def obtener_version_alertas() -> int:
+    """Retorna la versión actual del caché de alertas de stock.
+
+    Si no existe la clave en la caché, se inicializa en 1.
+    """
+    version = cache.get(CACHE_ALERTA_VERSION_KEY)
+    if version is None:
+        version = 1
+        cache.set(CACHE_ALERTA_VERSION_KEY, version, None)
+    return int(version)
+
+
+def invalidar_cache_alertas() -> None:
+    """Incrementa la versión global de alertas para invalidar claves de usuario atómicamente."""
+    try:
+        cache.incr(CACHE_ALERTA_VERSION_KEY)
+    except Exception:
+        cache.set(CACHE_ALERTA_VERSION_KEY, 1, None)
 
 
 def verificar_estado_alerta(existencia: Existencia) -> Dict[str, Any]:
@@ -109,12 +133,14 @@ def marcar_alerta_stock_leida(usuario, clave: str) -> None:
     """Marca una alerta específica como leída para el usuario."""
     if usuario and usuario.is_authenticated and clave:
         AlertaStockLeida.objects.get_or_create(usuario=usuario, clave=clave)
+        invalidar_cache_alertas()
 
 
 def desmarcar_alerta_stock_leida(usuario, clave: str) -> None:
     """Desmarca una alerta como leída (vuelve a estado pendiente)."""
     if usuario and usuario.is_authenticated and clave:
         AlertaStockLeida.objects.filter(usuario=usuario, clave=clave).delete()
+        invalidar_cache_alertas()
 
 
 def marcar_todas_alertas_stock_leidas(usuario, claves: list) -> None:
@@ -126,9 +152,11 @@ def marcar_todas_alertas_stock_leidas(usuario, claves: list) -> None:
         nuevas = [AlertaStockLeida(usuario=usuario, clave=k) for k in claves if k not in existentes]
         if nuevas:
             AlertaStockLeida.objects.bulk_create(nuevas, ignore_conflicts=True)
+        invalidar_cache_alertas()
 
 
 def limpiar_alertas_stock_leidas(usuario) -> None:
     """Elimina todas las alertas leídas registradas para el usuario."""
     if usuario and usuario.is_authenticated:
         AlertaStockLeida.objects.filter(usuario=usuario).delete()
+        invalidar_cache_alertas()

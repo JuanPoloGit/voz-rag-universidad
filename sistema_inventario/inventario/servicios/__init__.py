@@ -3,20 +3,26 @@
 Autoridad única para mutaciones de datos maestros y existencias.
 """
 
-class InventarioServiceError(Exception):
-    """Excepción base para errores en la capa de servicios de inventario."""
-    pass
+from .excepciones import (
+    ExcepcionDominioInventario,
+    InconsistenciaInventario,
+    InventarioServiceError,
+    NecesitaTraslado,
+    OperacionDuplicada,
+    StockInsuficiente,
+)
 
 
-class NecesitaTraslado(InventarioServiceError):
-    """Se lanza cuando una operación requiere trasladar existencias o reasignar ubicaciones."""
-
-    def __init__(self, mensaje: str, entidad=None, destino=None):
-        super().__init__(mensaje)
-        self.entidad = entidad
-        self.destino = destino
-
-
+from .stock import (
+    ajustar_stock_conteo,
+    bloquear_existencias,
+    dar_baja_prestamo,
+    descontar_disponible,
+    inicializar_stock,
+    mover_a_prestamo,
+    retornar_de_prestamo,
+    sumar_disponible,
+)
 from .alertas import (
     desmarcar_alerta_stock_leida,
     limpiar_alertas_stock_leidas,
@@ -28,6 +34,7 @@ from .alertas import (
 )
 from .operaciones import (
     confirmar_conteo_fisico,
+    rechazar_conteo_fisico,
     registrar_baja_prestamo,
     registrar_conteo_fisico,
     registrar_devolucion_prestamo,

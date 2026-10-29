@@ -1,16 +1,30 @@
 """Context processors para la aplicación inventario."""
 
 from typing import Any, Dict
+from django.core.cache import cache
+
 from inventario.models import ConteoFisico
 from inventario.servicios.alertas import (
+    CACHE_ALERTA_TTL,
     obtener_alertas_stock,
     obtener_claves_alertas_leidas,
+    obtener_version_alertas,
 )
 
 
 def alertas_stock(request) -> Dict[str, Any]:
-    """Inyecta el resumen de alertas de stock y notificaciones pendientes para el usuario."""
-    if not hasattr(request, "user") or not request.user.is_authenticated:
+    """Inyecta el resumen de alertas de stock y notificaciones pendientes para el usuario.
+
+    Optimizado bajo la Fase 4 con caché atómica por usuario/versión y omisión en AJAX/JSON.
+    """
+    if (
+        not hasattr(request, "user")
+        or not request.user.is_authenticated
+        or request.headers.get("x-requested-with") == "XMLHttpRequest"
+        or "application/json" in request.headers.get("Accept", "")
+        or request.path_info.startswith("/static/")
+        or request.path_info.startswith("/media/")
+    ):
         return {
             "alertas_resumen": {
                 "criticas": [],
@@ -25,6 +39,12 @@ def alertas_stock(request) -> Dict[str, Any]:
                 "total_no_leidas": 0,
             }
         }
+
+    version = obtener_version_alertas()
+    cache_key = f"alertas:{request.user.id}:{version}"
+    resumen_en_cache = cache.get(cache_key)
+    if resumen_en_cache is not None:
+        return {"alertas_resumen": resumen_en_cache}
 
     alertas = obtener_alertas_stock(usuario=request.user)
     leidas = obtener_claves_alertas_leidas(request.user)
@@ -52,7 +72,7 @@ def alertas_stock(request) -> Dict[str, Any]:
     conteos_pendientes = []
     conteos_no_leidos = []
     if getattr(request.user, "es_administrador", False):
-        conteos_qs = ConteoFisico.objects.filter(confirmado=False).select_related(
+        conteos_qs = ConteoFisico.objects.filter(estado=ConteoFisico.Estado.PENDIENTE).select_related(
             "producto", "almacen", "usuario_conteo"
         ).order_by("-fecha_conteo")
         for c in conteos_qs:
@@ -70,7 +90,7 @@ def alertas_stock(request) -> Dict[str, Any]:
     alertas["total_alertas"] = alertas["total_alertas_stock"] + len(conteos_pendientes)
     alertas["total_no_leidas"] = len(criticas_no_leidas) + len(bajas_no_leidas) + len(conteos_no_leidos)
 
+    cache.set(cache_key, alertas, CACHE_ALERTA_TTL)
     return {
         "alertas_resumen": alertas,
     }
-

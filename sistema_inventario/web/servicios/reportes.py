@@ -47,7 +47,7 @@ def obtener_metricas_dashboard(usuario: Any, almacen: Optional[Almacen] = None) 
         ).filter(
             Q(categoria__almacen_principal=alm_especifico)
             | Q(existencias__almacen=alm_especifico)
-            | Q(ubicaciones__almacen=alm_especifico)
+            | Q(ubicacion__almacen=alm_especifico)
         ).distinct()
         ex_qs = Existencia.objects.filter(
             producto__archivado=False,
@@ -69,7 +69,7 @@ def obtener_metricas_dashboard(usuario: Any, almacen: Optional[Almacen] = None) 
             ).filter(
                 Q(categoria__almacen_principal__in=alms_permitidos)
                 | Q(existencias__almacen__in=alms_permitidos)
-                | Q(ubicaciones__almacen__in=alms_permitidos)
+                | Q(ubicacion__almacen__in=alms_permitidos)
             ).distinct()
             ex_qs = Existencia.objects.filter(
                 producto__archivado=False,
@@ -315,14 +315,14 @@ def obtener_reporte_productos_estancados(
         prods = prods.filter(
             Q(categoria__almacen_principal__in=alms_permitidos)
             | Q(existencias__almacen__in=alms_permitidos)
-            | Q(ubicaciones__almacen__in=alms_permitidos)
+            | Q(ubicacion__almacen__in=alms_permitidos)
         ).distinct()
 
     if almacen:
         prods = prods.filter(
             Q(categoria__almacen_principal=almacen)
             | Q(existencias__almacen=almacen)
-            | Q(ubicaciones__almacen=almacen)
+            | Q(ubicacion__almacen=almacen)
         ).distinct()
 
     limite = timezone.now() - timedelta(days=dias_inactividad)

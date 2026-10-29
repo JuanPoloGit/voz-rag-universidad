@@ -11,6 +11,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import models, transaction
 
 from inventario.auditoria import registrar_auditoria
+from inventario.db.transacciones import transaccion_con_reintento
 from inventario.models import (
     Almacen,
     Categoria,
@@ -18,11 +19,154 @@ from inventario.models import (
     Movimiento,
     Prestamo,
     Producto,
-    ProductoUbicacion,
     Ubicacion,
 )
+from inventario.servicios.excepciones import InconsistenciaInventario, StockInsuficiente
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# PRIMITIVAS ATÓMICAS DE MUTACIÓN DE STOCK (Autoridad única sobre Existencia)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def bloquear_existencias(*existencia_ids: int) -> dict[int, Existencia]:
+    """Bloquea existencias en orden determinista por ID para evitar interbloqueos.
+
+    En PostgreSQL, select_for_update() impone un bloqueo exclusivo sobre las filas.
+    En SQLite, asegura la lectura consistente dentro de la transacción.
+    """
+    if not existencia_ids:
+        return {}
+    ids_ordenados = sorted(set(existencia_ids))
+    qs = Existencia.objects.select_for_update().filter(id__in=ids_ordenados).order_by("id")
+    return {ex.id: ex for ex in qs}
+
+
+def sumar_disponible(existencia_id: int, cantidad: int) -> Existencia:
+    """Incrementa stock_disponible de forma atómica en base de datos."""
+    cantidad = int(cantidad)
+    if cantidad <= 0:
+        raise ValidationError("La cantidad a sumar debe ser mayor a cero.")
+
+    filas = Existencia.objects.filter(pk=existencia_id).update(
+        stock_disponible=models.F("stock_disponible") + cantidad
+    )
+    if filas == 0:
+        raise InconsistenciaInventario(f"No existe el registro de existencia con ID {existencia_id}.")
+
+    return Existencia.objects.get(pk=existencia_id)
+
+
+def descontar_disponible(existencia_id: int, cantidad: int) -> Existencia:
+    """Deduce stock_disponible de forma atómica con verificación estricta de no negatividad."""
+    cantidad = int(cantidad)
+    if cantidad <= 0:
+        raise ValidationError("La cantidad a descontar debe ser mayor a cero.")
+
+    filas = Existencia.objects.filter(
+        pk=existencia_id,
+        stock_disponible__gte=cantidad,
+    ).update(
+        stock_disponible=models.F("stock_disponible") - cantidad
+    )
+    if filas == 0:
+        ex_actual = Existencia.objects.filter(pk=existencia_id).first()
+        disp = ex_actual.stock_disponible if ex_actual else 0
+        raise StockInsuficiente(
+            f"Stock insuficiente. Disponible: {disp}, solicitado: {cantidad}.",
+            disponible=disp,
+            solicitado=cantidad,
+            almacen_id=ex_actual.almacen_id if ex_actual else None,
+            producto_id=ex_actual.producto_id if ex_actual else None,
+        )
+
+    return Existencia.objects.get(pk=existencia_id)
+
+
+def mover_a_prestamo(existencia_id: int, cantidad: int) -> Existencia:
+    """Traslada unidades de stock_disponible a stock_en_prestamo de forma atómica."""
+    cantidad = int(cantidad)
+    if cantidad <= 0:
+        raise ValidationError("La cantidad a prestar debe ser mayor a cero.")
+
+    filas = Existencia.objects.filter(
+        pk=existencia_id,
+        stock_disponible__gte=cantidad,
+    ).update(
+        stock_disponible=models.F("stock_disponible") - cantidad,
+        stock_en_prestamo=models.F("stock_en_prestamo") + cantidad,
+    )
+    if filas == 0:
+        ex_actual = Existencia.objects.filter(pk=existencia_id).first()
+        disp = ex_actual.stock_disponible if ex_actual else 0
+        raise StockInsuficiente(
+            f"Stock insuficiente para préstamo. Disponible: {disp}, solicitado: {cantidad}.",
+            disponible=disp,
+            solicitado=cantidad,
+            almacen_id=ex_actual.almacen_id if ex_actual else None,
+            producto_id=ex_actual.producto_id if ex_actual else None,
+        )
+
+    return Existencia.objects.get(pk=existencia_id)
+
+
+def retornar_de_prestamo(existencia_id: int, cantidad: int) -> Existencia:
+    """Retorna unidades de stock_en_prestamo a stock_disponible de forma atómica."""
+    cantidad = int(cantidad)
+    if cantidad <= 0:
+        raise ValidationError("La cantidad a retornar de préstamo debe ser mayor a cero.")
+
+    filas = Existencia.objects.filter(
+        pk=existencia_id,
+        stock_en_prestamo__gte=cantidad,
+    ).update(
+        stock_en_prestamo=models.F("stock_en_prestamo") - cantidad,
+        stock_disponible=models.F("stock_disponible") + cantidad,
+    )
+    if filas == 0:
+        ex_actual = Existencia.objects.filter(pk=existencia_id).first()
+        en_prestamo = ex_actual.stock_en_prestamo if ex_actual else 0
+        raise InconsistenciaInventario(
+            f"La cantidad a devolver ({cantidad}) supera las unidades registradas en préstamo ({en_prestamo}).",
+            detalles={"solicitado": cantidad, "en_prestamo": en_prestamo},
+        )
+
+    return Existencia.objects.get(pk=existencia_id)
+
+
+def dar_baja_prestamo(existencia_id: int, cantidad: int) -> Existencia:
+    """Reduce stock_en_prestamo sin retornarlo al stock_disponible (artículo dañado/perdido)."""
+    cantidad = int(cantidad)
+    if cantidad <= 0:
+        raise ValidationError("La cantidad a dar de baja debe ser mayor a cero.")
+
+    filas = Existencia.objects.filter(
+        pk=existencia_id,
+        stock_en_prestamo__gte=cantidad,
+    ).update(
+        stock_en_prestamo=models.F("stock_en_prestamo") - cantidad,
+    )
+    if filas == 0:
+        ex_actual = Existencia.objects.filter(pk=existencia_id).first()
+        en_prestamo = ex_actual.stock_en_prestamo if ex_actual else 0
+        raise InconsistenciaInventario(
+            f"La cantidad a dar de baja ({cantidad}) supera las unidades registradas en préstamo ({en_prestamo}).",
+            detalles={"solicitado": cantidad, "en_prestamo": en_prestamo},
+        )
+
+    return Existencia.objects.get(pk=existencia_id)
+
+
+def ajustar_stock_conteo(existencia_id: int, diferencia: int) -> Existencia:
+    """Aplica la diferencia (positiva o negativa) de un ajuste de conteo físico."""
+    diferencia = int(diferencia)
+    if diferencia > 0:
+        return sumar_disponible(existencia_id, diferencia)
+    elif diferencia < 0:
+        return descontar_disponible(existencia_id, abs(diferencia))
+    return Existencia.objects.get(pk=existencia_id)
+
+
+@transaccion_con_reintento
 def inicializar_stock(
     *,
     producto: Producto,
@@ -50,10 +194,9 @@ def inicializar_stock(
         )
 
         stock_ant = existencia.stock_disponible
-        stock_post = stock_ant + cantidad
-
-        existencia.stock_disponible = stock_post
-        existencia.save()
+        if cantidad > 0:
+            existencia = sumar_disponible(existencia.id, cantidad)
+        stock_post = existencia.stock_disponible
 
         clave_idempotencia = f"INI-{producto.id}-{almacen.id}-{uuid.uuid4().hex[:8]}"
 
@@ -159,7 +302,7 @@ def trasladar_productos_almacen(
         Categoria.objects.filter(almacen_principal=almacen_origen).update(almacen_principal=almacen_destino)
 
         # 2. Limpiar asignaciones de ubicaciones físicas pertenecientes al almacén de origen
-        ProductoUbicacion.objects.filter(ubicacion__almacen=almacen_origen).delete()
+        Producto.objects.filter(ubicacion__almacen=almacen_origen).update(ubicacion=None)
 
         existencias_origen = list(Existencia.objects.select_for_update().filter(
             almacen=almacen_origen
@@ -214,7 +357,7 @@ def trasladar_productos_almacen(
             total_trasladados += 1
 
         # Limpiar asignaciones de ubicaciones físicas pertenecientes al almacén de origen
-        ProductoUbicacion.objects.filter(ubicacion__almacen=almacen_origen).delete()
+        Producto.objects.filter(ubicacion__almacen=almacen_origen).update(ubicacion=None)
 
         registrar_auditoria(
             usuario=usuario,
@@ -249,11 +392,7 @@ def trasladar_productos_ubicacion(
     total_movidos = 0
 
     with transaction.atomic():
-        relaciones = list(ProductoUbicacion.objects.filter(ubicacion=ubicacion_origen))
-        for rel in relaciones:
-            rel.ubicacion = ubicacion_destino
-            rel.save()
-            total_movidos += 1
+        total_movidos = Producto.objects.filter(ubicacion=ubicacion_origen).update(ubicacion=ubicacion_destino)
 
         registrar_auditoria(
             usuario=usuario,
@@ -291,7 +430,7 @@ def trasladar_productos_categoria(
         categoria.save(update_fields=["almacen_principal"])
 
         # Limpiar ubicaciones de productos que pertenecían al almacén anterior
-        ProductoUbicacion.objects.filter(producto__categoria=categoria).exclude(ubicacion__almacen=almacen_destino).delete()
+        Producto.objects.filter(categoria=categoria).exclude(ubicacion__almacen=almacen_destino).update(ubicacion=None)
 
         for prod in categoria.productos.filter(archivado=False):
             ex_ori = Existencia.objects.select_for_update().filter(producto=prod, almacen=almacen_origen).first()
@@ -410,7 +549,7 @@ def desactivar_ubicacion(
     if not getattr(usuario, "es_administrador", False):
         raise PermissionDenied("Solo los Administradores o el Superusuario pueden desactivar ubicaciones.")
 
-    tiene_productos = ubicacion.producto_ubicaciones.exists()
+    tiene_productos = ubicacion.productos.filter(archivado=False).exists()
 
     if tiene_productos:
         if not ubicacion_destino:

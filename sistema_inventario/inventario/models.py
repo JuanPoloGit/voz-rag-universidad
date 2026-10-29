@@ -19,8 +19,10 @@ import uuid
 
 from django.conf import settings
 from django.core.validators import MinValueValidator
-from django.db import models
+from django.db import models, transaction
 from django.utils.translation import gettext_lazy as _
+
+from .utils import normalizar_texto
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -39,6 +41,14 @@ class Almacen(models.Model):
     nombre = models.CharField(
         _("nombre"),
         max_length=100,
+    )
+    nombre_normalizado = models.CharField(
+        _("nombre normalizado"),
+        max_length=100,
+        db_index=True,
+        blank=True,
+        default="",
+        editable=False,
     )
     descripcion = models.TextField(
         _("descripción"),
@@ -72,6 +82,15 @@ class Almacen(models.Model):
     def __str__(self):
         return self.nombre
 
+    def save(self, *args, **kwargs):
+        self.nombre_normalizado = normalizar_texto(self.nombre or "")
+        if "update_fields" in kwargs and kwargs["update_fields"] is not None:
+            update_fields = set(kwargs["update_fields"])
+            if "nombre" in update_fields:
+                update_fields.add("nombre_normalizado")
+            kwargs["update_fields"] = list(update_fields)
+        super().save(*args, **kwargs)
+
     @property
     def total_articulos(self) -> int:
         """Cantidad de productos no archivados presentes en este almacén."""
@@ -81,7 +100,7 @@ class Almacen(models.Model):
             .filter(
                 models.Q(categoria__almacen_principal=self)
                 | models.Q(existencias__almacen=self)
-                | models.Q(ubicaciones__almacen=self)
+                | models.Q(ubicacion__almacen=self)
             )
             .distinct()
             .count()
@@ -99,6 +118,14 @@ class Ubicacion(models.Model):
     nombre = models.CharField(
         _("nombre"),
         max_length=100,
+    )
+    nombre_normalizado = models.CharField(
+        _("nombre normalizado"),
+        max_length=100,
+        db_index=True,
+        blank=True,
+        default="",
+        editable=False,
     )
     descripcion = models.TextField(
         _("descripción"),
@@ -131,6 +158,15 @@ class Ubicacion(models.Model):
     def __str__(self):
         return f"{self.nombre} ({self.almacen.nombre})"
 
+    def save(self, *args, **kwargs):
+        self.nombre_normalizado = normalizar_texto(self.nombre or "")
+        if "update_fields" in kwargs and kwargs["update_fields"] is not None:
+            update_fields = set(kwargs["update_fields"])
+            if "nombre" in update_fields:
+                update_fields.add("nombre_normalizado")
+            kwargs["update_fields"] = list(update_fields)
+        super().save(*args, **kwargs)
+
     @property
     def total_articulos(self) -> int:
         """Cantidad de productos activos no archivados asignados a esta ubicación."""
@@ -147,6 +183,14 @@ class Categoria(models.Model):
     nombre = models.CharField(
         _("nombre"),
         max_length=100,
+    )
+    nombre_normalizado = models.CharField(
+        _("nombre normalizado"),
+        max_length=100,
+        db_index=True,
+        blank=True,
+        default="",
+        editable=False,
     )
     almacen_principal = models.ForeignKey(
         Almacen,
@@ -176,6 +220,15 @@ class Categoria(models.Model):
 
     def __str__(self):
         return self.nombre
+
+    def save(self, *args, **kwargs):
+        self.nombre_normalizado = normalizar_texto(self.nombre or "")
+        if "update_fields" in kwargs and kwargs["update_fields"] is not None:
+            update_fields = set(kwargs["update_fields"])
+            if "nombre" in update_fields:
+                update_fields.add("nombre_normalizado")
+            kwargs["update_fields"] = list(update_fields)
+        super().save(*args, **kwargs)
 
     @property
     def prefijo_codigo(self):
@@ -223,6 +276,36 @@ class TipoCategoria(models.Model):
         return f"{self.nombre} ({self.categoria.nombre})"
 
 
+class SecuenciaCodigo(models.Model):
+    """Control de secuencia numérica atómica para prefijos de código interno.
+
+    Garantiza que la asignación de códigos consecutivos (XXX-0001) sea atómica
+    y libre de condiciones de carrera bajo alta concurrencia (§8.1).
+    """
+
+    prefijo = models.CharField(
+        _("prefijo"),
+        max_length=10,
+        unique=True,
+        db_index=True,
+    )
+    ultimo_valor = models.PositiveIntegerField(
+        _("último valor"),
+        default=0,
+    )
+    fecha_modificacion = models.DateTimeField(
+        _("última modificación"),
+        auto_now=True,
+    )
+
+    class Meta:
+        verbose_name = _("secuencia de código")
+        verbose_name_plural = _("secuencias de código")
+
+    def __str__(self):
+        return f"{self.prefijo}: {self.ultimo_valor}"
+
+
 class Producto(models.Model):
     """Producto del inventario.
 
@@ -238,9 +321,23 @@ class Producto(models.Model):
         editable=False,
         help_text=_("Generado automáticamente. Inmutable."),
     )
+    numero_secuencia = models.PositiveIntegerField(
+        _("número de secuencia"),
+        default=0,
+        db_index=True,
+        help_text=_("Número correlativo asignado dentro de su prefijo."),
+    )
     nombre = models.CharField(
         _("nombre"),
         max_length=255,
+    )
+    nombre_normalizado = models.CharField(
+        _("nombre normalizado"),
+        max_length=255,
+        db_index=True,
+        blank=True,
+        default="",
+        editable=False,
     )
     codigo_barras = models.CharField(
         _("código de barras"),
@@ -299,13 +396,15 @@ class Producto(models.Model):
         blank=True,
         default="",
     )
-    # Ubicaciones dentro de almacenes (M2M a través de ProductoUbicacion).
-    ubicaciones = models.ManyToManyField(
+    # Ubicación física única dentro del almacén (§7.2, §8 - Fase 5)
+    ubicacion = models.ForeignKey(
         Ubicacion,
-        through="ProductoUbicacion",
+        on_delete=models.PROTECT,
+        null=True,
         blank=True,
         related_name="productos",
-        verbose_name=_("ubicaciones"),
+        verbose_name=_("ubicación física"),
+        help_text=_("Ubicación física única asignada al producto dentro de su almacén."),
     )
 
     activo = models.BooleanField(_("activo"), default=True)
@@ -329,82 +428,199 @@ class Producto(models.Model):
         return f"{self.codigo_interno} — {self.nombre}"
 
     def save(self, *args, **kwargs):
-        """Genera el código interno automáticamente al crear.
+        """Genera el código interno automáticamente al crear mediante secuencia atómica.
 
         Formato: XXX-0001, donde XXX son las 3 primeras letras de la
         categoría. El consecutivo es por prefijo, no por categoría
-        (sección 8.1).
+        (sección 8.1). Utiliza bloqueo pesimista en SecuenciaCodigo para
+        evitar colisiones en entornos de alta concurrencia.
         """
+        self.nombre_normalizado = normalizar_texto(self.nombre or "")
+        if "update_fields" in kwargs and kwargs["update_fields"] is not None:
+            update_fields = set(kwargs["update_fields"])
+            if "nombre" in update_fields:
+                update_fields.add("nombre_normalizado")
+            kwargs["update_fields"] = list(update_fields)
+
         if not self.codigo_interno:
             prefijo = self.categoria.prefijo_codigo
-            ultimo = (
-                Producto.objects
-                .filter(codigo_interno__startswith=f"{prefijo}-")
-                .order_by("-codigo_interno")
-                .values_list("codigo_interno", flat=True)
-                .first()
-            )
-            if ultimo:
-                numero = int(ultimo.split("-")[1]) + 1
-            else:
-                numero = 1
-            self.codigo_interno = f"{prefijo}-{numero:04d}"
-        super().save(*args, **kwargs)
+            with transaction.atomic():
+                secuencia, _ = SecuenciaCodigo.objects.select_for_update().get_or_create(
+                    prefijo=prefijo,
+                    defaults={"ultimo_valor": 0},
+                )
+                if secuencia.ultimo_valor == 0:
+                    ultimo_prod = (
+                        Producto.objects.filter(codigo_interno__startswith=f"{prefijo}-")
+                        .order_by("-codigo_interno")
+                        .values_list("codigo_interno", flat=True)
+                        .first()
+                    )
+                    if ultimo_prod:
+                        try:
+                            secuencia.ultimo_valor = int(ultimo_prod.split("-")[1])
+                        except (IndexError, ValueError):
+                            pass
 
+                SecuenciaCodigo.objects.filter(pk=secuencia.pk).update(
+                    ultimo_valor=models.F("ultimo_valor") + 1
+                )
+                secuencia.refresh_from_db()
+                self.numero_secuencia = secuencia.ultimo_valor
+                self.codigo_interno = f"{prefijo}-{self.numero_secuencia:04d}"
+                super().save(*args, **kwargs)
+        else:
+            if not self.numero_secuencia:
+                try:
+                    self.numero_secuencia = int(self.codigo_interno.split("-")[1])
+                except (IndexError, ValueError):
+                    pass
+            super().save(*args, **kwargs)
 
-class ProductoUbicacion(models.Model):
-    """Relación Producto ↔ Ubicación física.
-
-    Regla de negocio estricta: un producto solo puede estar en una sola ubicación física.
-    """
-
-    producto = models.ForeignKey(
-        Producto,
-        on_delete=models.CASCADE,
-        related_name="producto_ubicaciones",
-        verbose_name=_("producto"),
-    )
-    ubicacion = models.ForeignKey(
-        Ubicacion,
-        on_delete=models.PROTECT,
-        related_name="producto_ubicaciones",
-        verbose_name=_("ubicación"),
-    )
-
-    class Meta:
-        verbose_name = _("producto en ubicación")
-        verbose_name_plural = _("productos en ubicaciones")
-        constraints = [
-            models.UniqueConstraint(
-                fields=["producto"],
-                name="unique_producto_una_sola_ubicacion",
-            )
-        ]
-
-    def __str__(self):
-        return f"{self.producto.codigo_interno} en {self.ubicacion}"
 
     def clean(self):
         super().clean()
-        if self.producto_id and self.ubicacion_id:
-            alm_cat = self.producto.categoria.almacen_principal_id
+        if self.ubicacion_id and self.categoria_id:
+            alm_cat = self.categoria.almacen_principal_id
             if self.ubicacion.almacen_id != alm_cat:
                 from django.core.exceptions import ValidationError
                 raise ValidationError(
                     f"La ubicación '{self.ubicacion.nombre}' está en '{self.ubicacion.almacen.nombre}', "
-                    f"pero la categoría del producto pertenece a '{self.producto.categoria.almacen_principal.nombre}'."
-                )
-            otra = ProductoUbicacion.objects.filter(producto_id=self.producto_id).exclude(pk=self.pk)
-            if otra.exists():
-                from django.core.exceptions import ValidationError
-                raise ValidationError(
-                    f"El producto '{self.producto.nombre}' ya tiene asignada una ubicación física ('{otra.first().ubicacion.nombre}'). "
-                    "Un producto solo puede estar en una sola ubicación."
+                    f"pero la categoría del producto pertenece a '{self.categoria.almacen_principal.nombre}'."
                 )
 
-    def save(self, *args, **kwargs):
-        self.full_clean()
-        super().save(*args, **kwargs)
+    @property
+    def ubicaciones(self):
+        """Adaptador de compatibilidad hacia atrás con la API M2M previa."""
+        return _UbicacionesCompatManager(self)
+
+
+class _UbicacionesCompatManager:
+    """Administrador proxy para compatibilidad hacia atrás con la API M2M previa."""
+
+    def __init__(self, producto):
+        self.producto = producto
+
+    def all(self):
+        if self.producto.ubicacion_id:
+            return Ubicacion.objects.filter(pk=self.producto.ubicacion_id)
+        return Ubicacion.objects.none()
+
+    def filter(self, *args, **kwargs):
+        return self.all().filter(*args, **kwargs)
+
+    def exclude(self, *args, **kwargs):
+        return self.all().exclude(*args, **kwargs)
+
+    def select_related(self, *args, **kwargs):
+        return self.all().select_related(*args, **kwargs)
+
+    def first(self):
+        return self.producto.ubicacion
+
+    def count(self):
+        return 1 if self.producto.ubicacion_id else 0
+
+    def exists(self):
+        return bool(self.producto.ubicacion_id)
+
+    def add(self, *ubicaciones, **kwargs):
+        if ubicaciones:
+            self.producto.ubicacion = ubicaciones[0]
+            self.producto.save(update_fields=["ubicacion"])
+
+    def remove(self, *ubicaciones, **kwargs):
+        if self.producto.ubicacion in ubicaciones:
+            self.producto.ubicacion = None
+            self.producto.save(update_fields=["ubicacion"])
+
+    def clear(self):
+        self.producto.ubicacion = None
+        self.producto.save(update_fields=["ubicacion"])
+
+    def __iter__(self):
+        return iter(self.all())
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# COMPATIBILIDAD RETROSPECTIVA: ProductoUbicacion
+# ═══════════════════════════════════════════════════════════════════════════
+
+class _ProductoUbicacionCompatProxy:
+    def __init__(self, producto, ubicacion):
+        self.producto = producto
+        self.ubicacion = ubicacion
+        self.producto_id = producto.id if producto else None
+        self.ubicacion_id = ubicacion.id if ubicacion else None
+
+    def __repr__(self):
+        return f"<ProductoUbicacionCompat: prod={self.producto_id}, ubic={self.ubicacion_id}>"
+
+
+class _ProductoUbicacionCompatQuerySet:
+    def __init__(self, items=None):
+        self._items = items if items is not None else []
+
+    def exists(self):
+        return len(self._items) > 0
+
+    def count(self):
+        return len(self._items)
+
+    def first(self):
+        return self._items[0] if self._items else None
+
+    def values_list(self, field, flat=False):
+        return [getattr(it, field, None) for it in self._items]
+
+    def __iter__(self):
+        return iter(self._items)
+
+    def __len__(self):
+        return len(self._items)
+
+
+class _ProductoUbicacionCompatManager:
+    def create(self, producto=None, ubicacion=None, **kwargs):
+        if producto and ubicacion:
+            producto.ubicacion = ubicacion
+            producto.save(update_fields=["ubicacion"])
+        return _ProductoUbicacionCompatProxy(producto, ubicacion)
+
+    def get_or_create(self, producto=None, ubicacion=None, **kwargs):
+        if producto and ubicacion:
+            producto.ubicacion = ubicacion
+            producto.save(update_fields=["ubicacion"])
+        return _ProductoUbicacionCompatProxy(producto, ubicacion), True
+
+    def filter(self, **kwargs):
+        items = []
+        prod = kwargs.get("producto")
+        ubic = kwargs.get("ubicacion")
+        if prod:
+            prod_obj = prod if isinstance(prod, Producto) else Producto.objects.filter(pk=prod).first()
+            if prod_obj and prod_obj.ubicacion:
+                if ubic is None or prod_obj.ubicacion == ubic or prod_obj.ubicacion_id == getattr(ubic, "pk", ubic):
+                    items.append(_ProductoUbicacionCompatProxy(prod_obj, prod_obj.ubicacion))
+        elif ubic:
+            ubic_id = getattr(ubic, "pk", ubic)
+            for p in Producto.objects.filter(ubicacion_id=ubic_id):
+                items.append(_ProductoUbicacionCompatProxy(p, p.ubicacion))
+        else:
+            for p in Producto.objects.filter(ubicacion__isnull=False):
+                items.append(_ProductoUbicacionCompatProxy(p, p.ubicacion))
+        return _ProductoUbicacionCompatQuerySet(items)
+
+    def all(self):
+        return self.filter()
+
+
+class _ProductoUbicacionCompat:
+    """Clase proxy de compatibilidad para evitar roturas en código o pruebas legadas."""
+    objects = _ProductoUbicacionCompatManager()
+
+
+ProductoUbicacion = _ProductoUbicacionCompat
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -448,11 +664,22 @@ class Existencia(models.Model):
     class Meta:
         verbose_name = _("existencia")
         verbose_name_plural = _("existencias")
+        indexes = [
+            models.Index(fields=["producto", "stock_disponible"], name="idx_existencia_prod_disp"),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=["producto"],
                 name="unique_existencia_un_solo_almacen",
-            )
+            ),
+            models.CheckConstraint(
+                condition=models.Q(stock_disponible__gte=0),
+                name="chk_existencia_stock_disponible_gte_0",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(stock_en_prestamo__gte=0),
+                name="chk_existencia_stock_en_prestamo_gte_0",
+            ),
         ]
 
     def __str__(self):
@@ -679,6 +906,7 @@ class Movimiento(models.Model):
             models.Index(fields=["almacen_origen", "-fecha_hora"]),
             models.Index(fields=["tipo", "-fecha_hora"]),
             models.Index(fields=["usuario", "-fecha_hora"]),
+            models.Index(fields=["fecha_hora", "tipo"], name="idx_mov_fecha_tipo"),
         ]
 
     def __str__(self):
@@ -773,6 +1001,14 @@ class Prestamo(models.Model):
         indexes = [
             models.Index(fields=["estado", "-fecha_creacion"]),
             models.Index(fields=["destinatario"]),
+            models.Index(fields=["producto", "estado"], name="idx_prestamo_prod_estado"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(cantidad_pendiente_devolucion__gte=0)
+                & models.Q(cantidad_pendiente_devolucion__lte=models.F("cantidad_original")),
+                name="chk_prestamo_pendiente_valida",
+            ),
         ]
 
     def __str__(self):
@@ -895,18 +1131,35 @@ class ConteoFisico(models.Model):
     )
     fecha_conteo = models.DateTimeField(_("fecha del conteo"), auto_now_add=True)
 
-    # Confirmación (solo admin/super).
-    confirmado = models.BooleanField(_("confirmado"), default=False)
+    # Confirmación / Resolución (solo admin/super).
+    class Estado(models.TextChoices):
+        PENDIENTE = "PENDIENTE", _("Pendiente")
+        CONFIRMADO = "CONFIRMADO", _("Aprobado")
+        RECHAZADO = "RECHAZADO", _("Rechazado")
+
+    estado = models.CharField(
+        _("estado"),
+        max_length=15,
+        choices=Estado.choices,
+        default=Estado.PENDIENTE,
+        db_index=True,
+    )
+    motivo_rechazo = models.TextField(
+        _("motivo de rechazo"),
+        blank=True,
+        default="",
+        help_text=_("Explicación u observación del administrador en caso de rechazo."),
+    )
     usuario_confirmacion = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         null=True,
         blank=True,
         related_name="conteos_confirmados",
-        verbose_name=_("confirmado por"),
+        verbose_name=_("resuelto por"),
     )
     fecha_confirmacion = models.DateTimeField(
-        _("fecha de confirmación"),
+        _("fecha de resolución"),
         null=True,
         blank=True,
     )
@@ -928,18 +1181,57 @@ class ConteoFisico(models.Model):
         verbose_name = _("conteo físico")
         verbose_name_plural = _("conteos físicos")
         ordering = ["-fecha_conteo"]
+        indexes = [
+            models.Index(fields=["estado", "-fecha_conteo"]),
+            models.Index(fields=["producto", "estado"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(estado__in=["PENDIENTE", "CONFIRMADO", "RECHAZADO"]),
+                name="chk_conteo_estado_valido",
+            ),
+            models.UniqueConstraint(
+                fields=["producto"],
+                condition=models.Q(estado="PENDIENTE"),
+                name="unique_conteo_pendiente_por_producto",
+            ),
+        ]
+
+    def __init__(self, *args, **kwargs):
+        if "confirmado" in kwargs:
+            conf = kwargs.pop("confirmado")
+            if "estado" not in kwargs:
+                kwargs["estado"] = self.Estado.CONFIRMADO if conf else self.Estado.PENDIENTE
+        super().__init__(*args, **kwargs)
 
     @property
-    def estado(self) -> str:
-        """Estado legible para plantillas y vistas ('CONFIRMADO' o 'PENDIENTE')."""
-        return "CONFIRMADO" if self.confirmado else "PENDIENTE"
+    def confirmado(self) -> bool:
+        """Compatibilidad hacia atrás: True si el estado es CONFIRMADO."""
+        return self.estado == self.Estado.CONFIRMADO
+
+    @confirmado.setter
+    def confirmado(self, value: bool) -> None:
+        self.estado = self.Estado.CONFIRMADO if value else self.Estado.PENDIENTE
+
+    @property
+    def usuario_resolucion(self):
+        return self.usuario_confirmacion
+
+    @property
+    def fecha_resolucion(self):
+        return self.fecha_confirmacion
 
     def __str__(self):
-        estado = "✓" if self.confirmado else "⏳"
+        iconos = {
+            self.Estado.PENDIENTE: "⏳",
+            self.Estado.CONFIRMADO: "✓",
+            self.Estado.RECHAZADO: "✗",
+        }
+        icono = iconos.get(self.estado, "?")
         return (
-            f"{estado} Conteo {self.producto.codigo_interno} en "
+            f"{icono} Conteo {self.producto.codigo_interno} en "
             f"{self.almacen.nombre}: contado={self.cantidad_contada}, "
-            f"sistema={self.stock_sistema}, dif={self.diferencia:+d}"
+            f"sistema={self.stock_sistema}, dif={self.diferencia:+d} ({self.get_estado_display()})"
         )
 
     def save(self, *args, **kwargs):

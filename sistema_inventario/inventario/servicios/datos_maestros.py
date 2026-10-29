@@ -18,7 +18,6 @@ from inventario.models import (
     Movimiento,
     Prestamo,
     Producto,
-    ProductoUbicacion,
     TipoCategoria,
     Ubicacion,
 )
@@ -343,7 +342,7 @@ def actualizar_ubicacion(
 
     almacen_efectivo = almacen or ubicacion_db.almacen
     if almacen and almacen.id != ubicacion_db.almacen_id:
-        if ProductoUbicacion.objects.filter(ubicacion=ubicacion_db, producto__archivado=False).exists():
+        if Producto.objects.filter(ubicacion=ubicacion_db, archivado=False).exists():
             raise NecesitaTraslado(
                 f"No se puede cambiar el almacén de la ubicación '{ubicacion_db.nombre}' porque tiene productos asignados. "
                 f"Reasigne o traslade los productos primero."
@@ -437,7 +436,7 @@ def eliminar_ubicacion(
         if not usuario.tiene_acceso_almacen(ubicacion.almacen):
             raise PermissionDenied("No tienes permisos para eliminar ubicaciones de otros almacenes.")
 
-    if ProductoUbicacion.objects.filter(ubicacion=ubicacion, producto__archivado=False).exists():
+    if Producto.objects.filter(ubicacion=ubicacion, archivado=False).exists():
         raise NecesitaTraslado(
             f"La ubicación '{ubicacion.nombre}' tiene productos asignados. Reasígnelos antes de eliminarla.",
             entidad=ubicacion,
@@ -969,7 +968,8 @@ def crear_producto(
                 raise ValidationError({
                     "ubicaciones": f"La ubicación '{ub.nombre}' pertenece a '{ub.almacen.nombre}', pero la categoría del producto pertenece a '{categoria.almacen_principal.nombre}'."
                 })
-            ProductoUbicacion.objects.create(producto=producto, ubicacion=ub)
+            producto.ubicacion = ub
+            producto.save(update_fields=["ubicacion"])
 
         # Crear existencia en almacén principal por defecto
         Existencia.objects.get_or_create(
@@ -1222,14 +1222,11 @@ def fusionar_productos(
         ConteoFisico.objects.filter(producto=prod_dup).update(producto=prod_pri)
 
         # 5. Unificar ubicación física única
-        if not prod_pri.producto_ubicaciones.exists():
-            pu_dup = prod_dup.producto_ubicaciones.filter(ubicacion__almacen=alm_pri).first()
-            if pu_dup:
-                ProductoUbicacion.objects.get_or_create(
-                    producto=prod_pri,
-                    ubicacion=pu_dup.ubicacion,
-                )
-        prod_dup.producto_ubicaciones.all().delete()
+        if not prod_pri.ubicacion and prod_dup.ubicacion and prod_dup.ubicacion.almacen_id == alm_pri.id:
+            prod_pri.ubicacion = prod_dup.ubicacion
+            prod_pri.save(update_fields=["ubicacion"])
+        prod_dup.ubicacion = None
+        prod_dup.save(update_fields=["ubicacion"])
 
         # 6. Archivar producto duplicado
         prod_dup.archivado = True

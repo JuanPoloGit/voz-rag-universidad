@@ -23,7 +23,6 @@ from inventario.models import (
     Movimiento,
     Prestamo,
     Producto,
-    ProductoUbicacion,
     TipoCategoria,
     Ubicacion,
 )
@@ -67,7 +66,6 @@ class Command(BaseCommand):
                 Prestamo.objects.all().delete()
                 Movimiento.objects.all().delete()
                 Existencia.objects.all().delete()
-                ProductoUbicacion.objects.all().delete()
                 Producto.objects.all().delete()
                 TipoCategoria.objects.all().delete()
                 Categoria.objects.all().delete()
@@ -79,9 +77,9 @@ class Command(BaseCommand):
                 UsuarioAudacIA.objects.all().update(almacen_asignado=None, creado_por=None)
                 Almacen.objects.all().delete()
 
-                from django.db import connection
-                with connection.cursor() as cursor:
-                    cursor.execute("DELETE FROM inventario_auditoria;")
+                # Auditoria tiene un pre_delete signal que protege inmutabilidad;
+                # en poblar_datos_prueba --limpiar usamos _raw_delete() del ORM para limpieza masiva portable
+                Auditoria.objects.all()._raw_delete(Auditoria.objects.db)
                 IntentoFallido.objects.all().delete()
                 # El superusuario es ineliminable por diseño de seguridad; eliminamos el resto de cuentas de prueba
                 UsuarioAudacIA.objects.filter(is_superuser=False).delete()
@@ -320,9 +318,9 @@ class Command(BaseCommand):
                         prod.save(update_fields=["tipo"])
                     # Asegurar ubicación única asignada
                     ub_target = ubicaciones[ub_nombre]
-                    if not prod.ubicaciones.filter(id=ub_target.id).exists():
-                        prod.ubicaciones.clear()
-                        ProductoUbicacion.objects.create(producto=prod, ubicacion=ub_target)
+                    if prod.ubicacion_id != ub_target.id:
+                        prod.ubicacion = ub_target
+                        prod.save(update_fields=["ubicacion"])
                 productos[nombre_p] = prod
 
             # 6. Historial de movimientos, préstamos y conteos

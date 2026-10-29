@@ -174,8 +174,12 @@ def exportar_inventario_completo_csv(usuario, almacen=None) -> HttpResponse:
             producto__archivado=False,
             almacen__activo=True,
             almacen__eliminado=False,
-        ).select_related("producto", "almacen", "producto__categoria", "producto__tipo").prefetch_related(
-            "producto__producto_ubicaciones__ubicacion"
+        ).select_related(
+            "producto",
+            "almacen",
+            "producto__categoria",
+            "producto__tipo",
+            "producto__ubicacion",
         ).order_by("producto__codigo_interno")
 
         for ex in qs:
@@ -189,12 +193,10 @@ def exportar_inventario_completo_csv(usuario, almacen=None) -> HttpResponse:
             else:
                 estado = "ÓPTIMO"
 
-            ubicaciones_alm = [
-                pu.ubicacion.nombre
-                for pu in prod.producto_ubicaciones.all()
-                if pu.ubicacion.almacen_id == ex.almacen_id and not getattr(pu.ubicacion, "eliminado", False)
-            ]
-            ubicaciones_str = ", ".join(ubicaciones_alm) if ubicaciones_alm else "Sin ubicación específica"
+            if prod.ubicacion and prod.ubicacion.almacen_id == ex.almacen_id and not getattr(prod.ubicacion, "eliminado", False):
+                ubicaciones_str = prod.ubicacion.nombre
+            else:
+                ubicaciones_str = "Sin ubicación específica"
 
             writer.writerow([
                 prod.codigo_interno,
@@ -221,9 +223,8 @@ def exportar_inventario_completo_csv(usuario, almacen=None) -> HttpResponse:
         prods_qs = Producto.objects.filter(
             activo=True,
             archivado=False,
-        ).select_related("categoria", "tipo").prefetch_related(
+        ).select_related("categoria", "tipo", "ubicacion").prefetch_related(
             "existencias__almacen",
-            "producto_ubicaciones__ubicacion",
         ).annotate(
             stock_disp_total=Sum("existencias__stock_disponible", filter=filtro_alms),
             stock_prest_total=Sum("existencias__stock_en_prestamo", filter=filtro_alms),
@@ -249,13 +250,11 @@ def exportar_inventario_completo_csv(usuario, almacen=None) -> HttpResponse:
             ]
             alms_str = ", ".join(sorted(set(alms_activos))) if alms_activos else "Todos los almacenes"
 
-            # Ubicaciones del producto
-            ubicaciones = [
-                pu.ubicacion.nombre
-                for pu in prod.producto_ubicaciones.all()
-                if not getattr(pu.ubicacion, "eliminado", False)
-            ]
-            ubicaciones_str = ", ".join(sorted(set(ubicaciones))) if ubicaciones else "Sin ubicación específica"
+            # Ubicación del producto
+            if prod.ubicacion and not getattr(prod.ubicacion, "eliminado", False):
+                ubicaciones_str = prod.ubicacion.nombre
+            else:
+                ubicaciones_str = "Sin ubicación específica"
 
             writer.writerow([
                 prod.codigo_interno,

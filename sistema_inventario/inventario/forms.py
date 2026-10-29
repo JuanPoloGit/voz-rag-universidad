@@ -382,7 +382,7 @@ class ProductoForm(forms.ModelForm):
             self.fields["ubicacion"].required = False
             self.fields["categoria"].required = False
             self.fields["tipo"].required = False
-            ub_actual = self.instance.ubicaciones.first()
+            ub_actual = self.instance.ubicacion
             if ub_actual and ub_actual.almacen_id:
                 self.fields["almacen"].initial = ub_actual.almacen_id
             else:
@@ -396,7 +396,7 @@ class ProductoForm(forms.ModelForm):
         if self.instance and self.instance.pk:
             cleaned_data["categoria"] = self.instance.categoria
             cleaned_data["tipo"] = self.instance.tipo
-            ub_actual = self.instance.ubicaciones.first()
+            ub_actual = self.instance.ubicacion
             cleaned_data["ubicaciones_seleccionadas"] = [ub_actual] if ub_actual else []
             return cleaned_data
 
@@ -509,7 +509,7 @@ class EntradaForm(forms.Form):
             ).filter(
                 Q(categoria__almacen_principal__in=user_alms)
                 | Q(existencias__almacen__in=user_alms)
-                | Q(ubicaciones__almacen__in=user_alms)
+                | Q(ubicacion__almacen__in=user_alms)
             ).distinct().order_by("nombre")
             self.fields["ubicacion"].queryset = Ubicacion.objects.filter(
                 activo=True, eliminado=False, almacen__in=user_alms
@@ -598,7 +598,7 @@ class SalidaForm(forms.Form):
             ).filter(
                 Q(categoria__almacen_principal__in=user_alms)
                 | Q(existencias__almacen__in=user_alms)
-                | Q(ubicaciones__almacen__in=user_alms)
+                | Q(ubicacion__almacen__in=user_alms)
             ).distinct().order_by("nombre")
 
     def clean(self):
@@ -682,7 +682,7 @@ class PrestamoForm(forms.Form):
             ).filter(
                 Q(categoria__almacen_principal__in=user_alms)
                 | Q(existencias__almacen__in=user_alms)
-                | Q(ubicaciones__almacen__in=user_alms)
+                | Q(ubicacion__almacen__in=user_alms)
             ).distinct().order_by("nombre")
 
     def clean(self):
@@ -838,7 +838,7 @@ class TrasladoForm(forms.Form):
             ).filter(
                 Q(categoria__almacen_principal__in=user_alms)
                 | Q(existencias__almacen__in=user_alms)
-                | Q(ubicaciones__almacen__in=user_alms)
+                | Q(ubicacion__almacen__in=user_alms)
             ).distinct().order_by("nombre")
             self.fields["ubicacion_origen"].queryset = Ubicacion.objects.filter(
                 activo=True, eliminado=False, almacen__in=user_alms
@@ -865,11 +865,11 @@ class TrasladoForm(forms.Form):
             if alm_orig is None:
                 if is_normal:
                     ex_user = prod.existencias.filter(almacen__in=user_alms).first()
-                    ub_user = prod.ubicaciones.filter(almacen__in=user_alms).first()
+                    ub_user = prod.ubicacion if (prod.ubicacion and user_alms.filter(id=prod.ubicacion.almacen_id).exists()) else None
                     alm_orig = ex_user.almacen if ex_user else (ub_user.almacen if ub_user else prod.categoria.almacen_principal)
                 else:
                     ex_prod = prod.existencias.filter(cantidad__gt=0).first() or prod.existencias.first()
-                    ub_prod = prod.ubicaciones.first()
+                    ub_prod = prod.ubicacion
                     alm_orig = ex_prod.almacen if ex_prod else (ub_prod.almacen if ub_prod else prod.categoria.almacen_principal)
                 cleaned_data["almacen_origen"] = alm_orig
 
@@ -887,7 +887,7 @@ class TrasladoForm(forms.Form):
             elif cant > stock_disp:
                 self.add_error("cantidad", f"No puedes trasladar {cant} unidades. Stock disponible en origen: {stock_disp} unidades.")
 
-            ub_actual = prod.ubicaciones.filter(almacen=alm_orig).first() if alm_orig else prod.ubicaciones.first()
+            ub_actual = prod.ubicacion if (not alm_orig or (prod.ubicacion and prod.ubicacion.almacen_id == alm_orig.id)) else None
             es_cambio_ubicacion_interna = ub_orig and ((ub_actual and ub_orig.id != ub_actual.id) or not ub_actual)
 
             if is_normal and user_alms.count() <= 1:
@@ -974,7 +974,7 @@ class ConteoFisicoForm(forms.Form):
             ).filter(
                 Q(categoria__almacen_principal__in=user_alms)
                 | Q(existencias__almacen__in=user_alms)
-                | Q(ubicaciones__almacen__in=user_alms)
+                | Q(ubicacion__almacen__in=user_alms)
             ).distinct().order_by("nombre")
 
     def clean(self):

@@ -380,6 +380,26 @@
          VISTA B: SUBSECCIÓN DE CONTEOS FÍSICOS Y AJUSTES
          ═══════════════════════════════════════════════════════════════ -->
     {% elif vista_actual == 'CONTEOS' %}
+        <!-- Filtros por estado del conteo físico -->
+        <div style="display: flex; gap: 8px; margin-bottom: 1rem; flex-wrap: wrap;">
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=CONTEOS{% if q %}&q={{ q }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
+               class="btn btn-sm {% if not estado_conteo %}btn-primary{% else %}btn-secondary{% endif %}" style="border-radius: 20px; font-size: 12px; padding: 4px 12px;">
+                Todos
+            </a>
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=CONTEOS&estado_conteo=PENDIENTE{% if q %}&q={{ q }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
+               class="btn btn-sm {% if estado_conteo == 'PENDIENTE' %}btn-primary{% else %}btn-secondary{% endif %}" style="border-radius: 20px; font-size: 12px; padding: 4px 12px;">
+                Pendientes
+            </a>
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=CONTEOS&estado_conteo=CONFIRMADO{% if q %}&q={{ q }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
+               class="btn btn-sm {% if estado_conteo == 'CONFIRMADO' %}btn-primary{% else %}btn-secondary{% endif %}" style="border-radius: 20px; font-size: 12px; padding: 4px 12px;">
+                Aprobados
+            </a>
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=CONTEOS&estado_conteo=RECHAZADO{% if q %}&q={{ q }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
+               class="btn btn-sm {% if estado_conteo == 'RECHAZADO' %}btn-primary{% else %}btn-secondary{% endif %}" style="border-radius: 20px; font-size: 12px; padding: 4px 12px;">
+                Rechazados
+            </a>
+        </div>
+
         <div class="table-responsive">
             <table class="data-table">
                 <thead>
@@ -418,8 +438,10 @@
                                     <span class="badge badge-ok">Ajuste Aplicado</span>
                                 {% elif c.estado == 'PENDIENTE' %}
                                     <span class="badge badge-warn">Pendiente Aprobación</span>
+                                {% elif c.estado == 'RECHAZADO' %}
+                                    <span class="badge badge-crit" {% if c.motivo_rechazo %}title="Motivo: {{ c.motivo_rechazo }}"{% endif %}>Rechazado</span>
                                 {% else %}
-                                    <span class="badge badge-crit">{{ c.get_estado_display }}</span>
+                                    <span class="badge">{{ c.get_estado_display }}</span>
                                 {% endif %}
                             </td>
                             <td style="text-align: right; white-space: nowrap;">
@@ -431,11 +453,19 @@
                                                 data-confirm="¿Confirmar ajuste de stock a {{ c.cantidad_contada }} unidades para {{ c.producto.codigo_interno }}?"
                                                 data-confirm-title="Confirmar Ajuste de Stock"
                                                 data-confirm-btn="Aprobar Ajuste">
-                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><polyline points="20 6 9 17 4 12"/></svg>Aprobar Ajuste
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><polyline points="20 6 9 17 4 12"/></svg>Aprobar
                                         </button>
                                     </form>
+                                    <button type="button" class="btn btn-sm btn-secondary" style="color: var(--crit); margin-left: 6px;"
+                                            onclick="abrirModalRechazoConteo('{{ c.pk }}', '{{ c.producto.codigo_interno }}')">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>Rechazar
+                                    </button>
                                 {% elif c.estado == 'PENDIENTE' %}
                                     <span style="font-size: 11.5px; color: var(--warn); font-weight: 500;">Requiere Administrador</span>
+                                {% elif c.estado == 'RECHAZADO' %}
+                                    <span style="font-size: 11.5px; color: var(--text-faint);" {% if c.motivo_rechazo %}title="Motivo: {{ c.motivo_rechazo }}"{% endif %}>
+                                        Rechazado {% if c.motivo_rechazo %}({{ c.motivo_rechazo|truncatechars:20 }}){% endif %}
+                                    </span>
                                 {% else %}
                                     <span style="font-size: 11.5px; color: var(--text-faint);" {% if c.fecha_confirmacion %}title="Aprobado el {{ c.fecha_confirmacion|date:'d/m/Y H:i' }}"{% endif %}>
                                         Aprobado por Administración
@@ -604,9 +634,13 @@
                             </td>
                             <td style="text-align: right; white-space: nowrap;">
                                 {% if mov.estado != 'REVERTIDO' and mov.tipo in 'ENTRADA,SALIDA,TRASLADO_ENTRE,AJUSTE_CONTEO' %}
-                                    <a href="{% url 'inventario:movimiento-revertir' mov.pk %}" class="btn btn-sm btn-secondary" style="color: var(--crit);">
-                                        Revertir
-                                    </a>
+                                    {% if request.user.es_administrador or 'movimientos.revertir' in request.user.get_permisos_codigos and mov.tipo in 'ENTRADA,SALIDA' %}
+                                        <a href="{% url 'inventario:movimiento-revertir' mov.pk %}" class="btn btn-sm btn-secondary" style="color: var(--crit);">
+                                            Revertir
+                                        </a>
+                                    {% else %}
+                                        <span style="color: var(--text-faint); font-size: 11px;">—</span>
+                                    {% endif %}
                                 {% elif mov.tipo == 'PRESTAMO' and mov.prestamo_vinculado and mov.prestamo_vinculado.estado != 'CERRADO' %}
                                     <a href="{% url 'inventario:movimiento-lista' %}?vista=PRESTAMOS&q={{ mov.producto.codigo_interno }}" class="btn btn-sm btn-secondary">
                                         Gestionar Préstamo
@@ -626,26 +660,26 @@
                 </tbody>
             </table>
         </div>
+    {% endif %}
 
-        {% if page_obj and page_obj.paginator.count > 0 %}
-            <div class="pagination" style="display: flex; justify-content: center; align-items: center; gap: 0.75rem; margin-top: 1.5rem;">
-                {% if page_obj.has_previous %}
-                    <a href="?vista={{ vista_actual }}&page={{ page_obj.previous_page_number }}{% if q %}&q={{ q }}{% endif %}" class="btn btn-sm btn-secondary">&laquo; Anterior</a>
-                {% else %}
-                    <span class="btn btn-sm btn-secondary" style="opacity: 0.45; pointer-events: none; cursor: default;">&laquo; Anterior</span>
-                {% endif %}
+    {% if page_obj and page_obj.paginator.count > 0 %}
+        <div class="pagination" style="display: flex; justify-content: center; align-items: center; gap: 0.75rem; margin-top: 1.5rem;">
+            {% if page_obj.has_previous %}
+                <a href="?vista={{ vista_actual }}&page={{ page_obj.previous_page_number }}{% if q %}&q={{ q }}{% endif %}{% if fecha_desde %}&fecha_desde={{ fecha_desde }}{% endif %}{% if fecha_hasta %}&fecha_hasta={{ fecha_hasta }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}{% if estado_conteo %}&estado_conteo={{ estado_conteo }}{% endif %}{% if estado_prestamo %}&estado_prestamo={{ estado_prestamo }}{% endif %}{% if dias_estancados %}&dias={{ dias_estancados }}{% endif %}" class="btn btn-sm btn-secondary">&laquo; Anterior</a>
+            {% else %}
+                <span class="btn btn-sm btn-secondary" style="opacity: 0.45; pointer-events: none; cursor: default;">&laquo; Anterior</span>
+            {% endif %}
 
-                <span class="page-info" style="font-size: 12.5px; color: var(--text-dim);">
-                    Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }} &bull; {{ page_obj.paginator.count }} movimiento{{ page_obj.paginator.count|pluralize }}
-                </span>
+            <span class="page-info" style="font-size: 12.5px; color: var(--text-dim);">
+                Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }} &bull; {{ page_obj.paginator.count }} registro{{ page_obj.paginator.count|pluralize }}
+            </span>
 
-                {% if page_obj.has_next %}
-                    <a href="?vista={{ vista_actual }}&page={{ page_obj.next_page_number }}{% if q %}&q={{ q }}{% endif %}" class="btn btn-sm btn-secondary">Siguiente &raquo;</a>
-                {% else %}
-                    <span class="btn btn-sm btn-secondary" style="opacity: 0.45; pointer-events: none; cursor: default;">Siguiente &raquo;</span>
-                {% endif %}
-            </div>
-        {% endif %}
+            {% if page_obj.has_next %}
+                <a href="?vista={{ vista_actual }}&page={{ page_obj.next_page_number }}{% if q %}&q={{ q }}{% endif %}{% if fecha_desde %}&fecha_desde={{ fecha_desde }}{% endif %}{% if fecha_hasta %}&fecha_hasta={{ fecha_hasta }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}{% if estado_conteo %}&estado_conteo={{ estado_conteo }}{% endif %}{% if estado_prestamo %}&estado_prestamo={{ estado_prestamo }}{% endif %}{% if dias_estancados %}&dias={{ dias_estancados }}{% endif %}" class="btn btn-sm btn-secondary">Siguiente &raquo;</a>
+            {% else %}
+                <span class="btn btn-sm btn-secondary" style="opacity: 0.45; pointer-events: none; cursor: default;">Siguiente &raquo;</span>
+            {% endif %}
+        </div>
     {% endif %}
     {% else %}
         <div style="background: rgba(59, 111, 240, 0.08); border: 1px solid rgba(59, 111, 240, 0.22); border-radius: var(--radius); padding: 3rem 1.5rem; text-align: center; margin-top: 1rem;">
@@ -1132,6 +1166,29 @@
         <div class="app-modal-footer">
             <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalBajaPrestamo')">Cancelar</button>
             <button type="submit" class="btn btn-danger">Confirmar Baja</button>
+        </div>
+    </form>
+</dialog>
+
+<!-- ═══ MODAL RECHAZO DE CONTEO FÍSICO (Fase 3 Remediacíón) ═══ -->
+<dialog id="modalRechazarConteo" class="app-modal">
+    <form method="post" id="formRechazarConteoModal" style="display: flex; flex-direction: column;">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{% url 'inventario:movimiento-lista' %}?vista=CONTEOS">
+        <div class="app-modal-header">
+            <h2 class="app-modal-title">Rechazar Conteo Físico</h2>
+            <button type="button" class="app-modal-close" onclick="closeAppModal('modalRechazarConteo')">&times;</button>
+        </div>
+        <div class="app-modal-body">
+            <p id="infoConteoRechazar" style="font-size: 13px; color: var(--crit); margin-bottom: 14px;"></p>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="motivoRechazoConteo">Motivo del Rechazo *</label>
+                <textarea name="motivo_rechazo" id="motivoRechazoConteo" class="form-control" rows="3" placeholder="Explique brevemente por qué se rechaza o descarta este conteo..." required></textarea>
+            </div>
+        </div>
+        <div class="app-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalRechazarConteo')">Cancelar</button>
+            <button type="submit" class="btn btn-danger">Confirmar Rechazo</button>
         </div>
     </form>
 </dialog>
@@ -2181,6 +2238,23 @@ document.addEventListener("DOMContentLoaded", function() {
             openAppModal("modalBajaPrestamo");
         });
     });
+
+    // Modal Rechazo de Conteo Físico (Fase 3 Remediacíón)
+    window.abrirModalRechazoConteo = function(conteoId, productoCodigo) {
+        var form = document.getElementById("formRechazarConteoModal");
+        if (form) {
+            form.action = "{% url 'inventario:conteo-rechazar' '00000000-0000-0000-0000-000000000000' %}".replace("00000000-0000-0000-0000-000000000000", conteoId);
+        }
+        var info = document.getElementById("infoConteoRechazar");
+        if (info) {
+            info.textContent = "El conteo pendiente para el producto [" + productoCodigo + "] será descartado sin alterar el stock del sistema.";
+        }
+        var txt = document.getElementById("motivoRechazoConteo");
+        if (txt) {
+            txt.value = "";
+        }
+        openAppModal("modalRechazarConteo");
+    };
 });
 </script>
 {% endblock %}

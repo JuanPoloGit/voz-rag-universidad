@@ -8,6 +8,7 @@ Ver .env.example para la lista completa.
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 # ─── Rutas ───────────────────────────────────────────────────────────────────
@@ -20,6 +21,12 @@ load_dotenv(BASE_DIR / ".env")
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-insecure-key-change-me")
 
 DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() in ("true", "1", "yes")
+
+if not DEBUG and (not SECRET_KEY or SECRET_KEY == "dev-insecure-key-change-me"):
+    raise ImproperlyConfigured(
+        "DJANGO_SECRET_KEY no está configurada o usa el valor inseguro por defecto en entorno de producción. "
+        "Genere una clave segura usando el script 'scripts/generar_secret_key.py' y configúrela en el archivo .env."
+    )
 
 ALLOWED_HOSTS = [
     h.strip()
@@ -100,20 +107,48 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "inventario_audacia.wsgi.application"
 
-USE_SQLITE = os.getenv("USE_SQLITE", "True").lower() in ("true", "1", "yes")                                                                                                                                                      
-DB_ENGINE = os.getenv("DB_ENGINE", "sqlite" if USE_SQLITE else "postgresql").lower()                                                                                                                                              
 
-if USE_SQLITE or "sqlite" in DB_ENGINE: 
+def _resolver_motor_bd(entorno=None):
+    """Resuelve el motor activo preservando compatibilidad entre DB_ENGINE y USE_SQLITE."""
+    env = os.environ if entorno is None else entorno
+    motor_explicito = env.get("DB_ENGINE", "").strip().lower()
+    if motor_explicito:
+        return motor_explicito, ("sqlite" in motor_explicito)
+
+    usar_sqlite = env.get("USE_SQLITE", "True").strip().lower() in ("true", "1", "yes")
+    motor = "sqlite" if usar_sqlite else "postgresql"
+    return motor, usar_sqlite
+
+
+DB_ENGINE, USE_SQLITE = _resolver_motor_bd()
+
+if USE_SQLITE:
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": BASE_DIR / "db.sqlite3",
+            # En SQLite, transaction_mode="IMMEDIATE" serializa escritores desde el
+            # inicio de cada atomic(), evitando bloqueos cruzados por promoción tardía.
             "OPTIONS": {
+                "transaction_mode": "IMMEDIATE",
                 "timeout": 20,
+                "init_command": (
+                    "PRAGMA journal_mode=WAL; "
+                    "PRAGMA synchronous=NORMAL; "
+                    "PRAGMA busy_timeout=20000;"
+                ),
             },
         }
     }
 else:
+    _pg_options = {}
+    try:
+        from django.db.backends.postgresql.psycopg_any import IsolationLevel
+
+        _pg_options["isolation_level"] = IsolationLevel.READ_COMMITTED
+    except ImportError:
+        _pg_options["options"] = "-c default_transaction_isolation=read\\ committed"
+
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
@@ -122,11 +157,11 @@ else:
             "PASSWORD": os.getenv("DB_PASSWORD", ""),
             "HOST": os.getenv("DB_HOST", "localhost"),
             "PORT": os.getenv("DB_PORT", "5432"),
-            # Aislamiento SERIALIZABLE garantiza que las transacciones con
-            # select_for_update() no generen anomalías en los movimientos.
-            "OPTIONS": {
-                "options": "-c default_transaction_isolation=read\\ committed",
-            },
+            "CONN_MAX_AGE": int(os.getenv("DB_CONN_MAX_AGE", "60")),
+            "CONN_HEALTH_CHECKS": True,
+            # Aislamiento READ COMMITTED combinado con select_for_update() y
+            # actualizaciones atómicas F() garantiza consistencia sin contención excesiva.
+            "OPTIONS": _pg_options,
         }
     }
 
@@ -152,15 +187,26 @@ LOGIN_MAX_ATTEMPTS = int(os.getenv("LOGIN_MAX_ATTEMPTS", "5"))
 LOGIN_LOCKOUT_MINUTES = int(os.getenv("LOGIN_LOCKOUT_MINUTES", "15"))
 LOGIN_IP_MAX_ATTEMPTS = int(os.getenv("LOGIN_IP_MAX_ATTEMPTS", "20"))
 
-# ─── Cachés en RAM (LocMemCache) para Haku Inventario ─────────────────────────
+# ─── Cachés (LocMemCache / DatabaseCache) para Inventario y Haku ──────────────
 # LocMemCache es nativo de Django, seguro para subprocesos y opera 100% en RAM
-# sin requerir Redis, Memcached ni servicios externos.
+# para desarrollo y SQLite. En producción multi-proceso con PostgreSQL se soporta
+# DatabaseCache configurando CACHE_BACKEND=database sin requerir Redis.
 
-CACHES = {
-    "default": {
+CACHE_BACKEND = os.environ.get("CACHE_BACKEND", "locmem").lower().strip()
+
+if CACHE_BACKEND in ("db", "database"):
+    _default_cache = {
+        "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+        "LOCATION": "audacia_cache_table",
+    }
+else:
+    _default_cache = {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
         "LOCATION": "haku-inventario-default",
-    },
+    }
+
+CACHES = {
+    "default": _default_cache,
     "haku_contexto": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
         "LOCATION": "haku-inventario-contexto",
@@ -214,9 +260,13 @@ SESSION_COOKIE_SECURE = (
 ) 
 SESSION_COOKIE_SAMESITE = "Lax"
 
-# ─── CSRF ────────────────────────────────────────────────────────────────────
-CSRF_COOKIE_HTTPONLY = False  # Permitir que JS lea el csrftoken para peticiones fetch/AJAX
+# ─── CSRF y Cabeceras de Seguridad ───────────────────────────────────────────
+CSRF_COOKIE_HTTPONLY = True  # Protegido contra lectura por scripts; clientes leen <meta name="csrf-token">
 CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE
+
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = "DENY"
+SECURE_REFERRER_POLICY = "same-origin"
 CSRF_TRUSTED_ORIGINS = [
     f"https://{h}:8000"
     for h in ALLOWED_HOSTS

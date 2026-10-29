@@ -41,7 +41,7 @@ class PermisosGranularesModelTest(TestCase):
     def test_catalogo_permisos_completo(self):
         """Verifica que el catálogo inicial tenga los permisos cargados."""
         total = PermisoAudacIA.objects.count()
-        self.assertEqual(total, 18)
+        self.assertEqual(total, 19)
         # Verificar permisos clave
         codigos = PermisoAudacIA.get_todos_codigos()
         self.assertIn("catalogo.ver", codigos)
@@ -50,6 +50,7 @@ class PermisosGranularesModelTest(TestCase):
         self.assertIn("movimientos.prestamo", codigos)
         self.assertIn("movimientos.traslado_interno", codigos)
         self.assertIn("movimientos.traslado_almacen", codigos)
+        self.assertIn("movimientos.revertir", codigos)
 
     def test_bypass_administrador_y_superusuario(self):
         """El administrador y superusuario tienen todos los permisos sin necesidad de M2M."""
@@ -162,8 +163,8 @@ class PermisosDesacopladosViewsTest(TestCase):
             nombre="Taladro Percutor",
             categoria=self.categoria,
             activo=True,
+            ubicacion=self.ubicacion,
         )
-        ProductoUbicacion.objects.create(producto=self.producto, ubicacion=self.ubicacion)
         Existencia.objects.create(producto=self.producto, almacen=self.almacen, stock_disponible=10)
 
         self.user = User.objects.create_user(

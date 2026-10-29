@@ -10,13 +10,17 @@ Autoridad única para ejecutar mutaciones transaccionales de stock:
 - Reversiones compensatorias de movimientos (§9.6).
 """
 
+import hashlib
+import time
 import uuid
+import warnings
 from typing import Any, Dict, Optional, Tuple
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from inventario.auditoria import registrar_auditoria
+from inventario.db.transacciones import transaccion_con_reintento
 from inventario.models import (
     AlertaStockLeida,
     Almacen,
@@ -27,10 +31,23 @@ from inventario.models import (
     Movimiento,
     Prestamo,
     Producto,
-    ProductoUbicacion,
     Ubicacion,
 )
+from inventario.servicios import stock
 from inventario.servicios.alertas import verificar_estado_alerta
+from inventario.servicios.excepciones import InconsistenciaInventario, StockInsuficiente
+
+
+def _generar_clave_idempotencia(prefijo: str, usuario: Any, producto_id: Any, almacen_id: Any, cantidad: int) -> str:
+    """Genera una clave de idempotencia determinista basada en ventana temporal de 10 segundos.
+
+    Protege contra doble-clic del usuario o reintentos automáticos de red sin token explícito.
+    """
+    ventana = int(time.time() // 10)
+    uid = getattr(usuario, "id", "anon")
+    semilla = f"{prefijo}:{uid}:{producto_id}:{almacen_id}:{cantidad}:{ventana}"
+    token = hashlib.sha256(semilla.encode()).hexdigest()[:12]
+    return f"{prefijo}-{producto_id}-{almacen_id}-{token}"
 
 
 def _validar_acceso_almacen(usuario: Any, almacen: Almacen) -> None:
@@ -53,6 +70,7 @@ def _validar_permiso_operativo(usuario: Any, codigo_permiso: str) -> None:
         raise PermissionDenied(f"No tienes permisos suficientes ({codigo_permiso}) para realizar esta operación.")
 
 
+@transaccion_con_reintento
 def registrar_entrada(
     *,
     producto: Producto,
@@ -75,8 +93,17 @@ def registrar_entrada(
     _validar_acceso_almacen(usuario, almacen)
     _validar_permiso_operativo(usuario, "movimientos.entrada")
 
+    if ubicacion is not None:
+        warnings.warn(
+            "El parámetro 'ubicacion' en registrar_entrada está deprecado. La ubicación física es propiedad directa de Producto.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+    else:
+        ubicacion = producto.ubicacion
+
     if not clave_idempotencia:
-        clave_idempotencia = f"ENT-{producto.id}-{almacen.id}-{uuid.uuid4().hex[:12]}"
+        clave_idempotencia = _generar_clave_idempotencia("ENT", usuario, producto.id, almacen.id, cantidad)
 
     # Verificación de idempotencia
     mov_existente = Movimiento.objects.filter(clave_idempotencia=clave_idempotencia).first()
@@ -111,15 +138,15 @@ def registrar_entrada(
             )
 
             stock_anterior = existencia.stock_disponible
-            stock_posterior = stock_anterior + cantidad_base
-
-            existencia.stock_disponible = stock_posterior
-            existencia.save()
+            existencia = stock.sumar_disponible(existencia.id, cantidad_base)
+            stock_posterior = existencia.stock_disponible
 
             if ubicacion:
                 if ubicacion.almacen_id != almacen.id:
                     raise ValidationError("La ubicación especificada no pertenece al almacén de destino.")
-                ProductoUbicacion.objects.get_or_create(producto=producto, ubicacion=ubicacion)
+                if producto.ubicacion_id != ubicacion.id:
+                    producto.ubicacion = ubicacion
+                    producto.save(update_fields=["ubicacion"])
 
             movimiento = Movimiento(
                 clave_idempotencia=clave_idempotencia,
@@ -157,8 +184,10 @@ def registrar_entrada(
             existencia = Existencia.objects.get(producto=producto, almacen=almacen)
             return existencia, mov_existente
         raise
+        raise
 
 
+@transaccion_con_reintento
 def registrar_salida(
     *,
     producto: Producto,
@@ -180,6 +209,15 @@ def registrar_salida(
     _validar_acceso_almacen(usuario, almacen)
     _validar_permiso_operativo(usuario, "movimientos.dotacion")
 
+    if ubicacion is not None:
+        warnings.warn(
+            "El parámetro 'ubicacion' en registrar_salida está deprecado. La ubicación física es propiedad directa de Producto.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+    else:
+        ubicacion = producto.ubicacion
+
     motivo = (motivo or "").strip()
     if not motivo:
         raise ValidationError("El motivo de la salida es obligatorio.")
@@ -193,7 +231,7 @@ def registrar_salida(
         raise ValidationError("La cantidad a retirar debe ser mayor a cero.")
 
     if not clave_idempotencia:
-        clave_idempotencia = f"SAL-{producto.id}-{almacen.id}-{uuid.uuid4().hex[:12]}"
+        clave_idempotencia = _generar_clave_idempotencia("SAL", usuario, producto.id, almacen.id, cantidad)
 
     mov_existente = Movimiento.objects.filter(clave_idempotencia=clave_idempotencia).first()
     if mov_existente:
@@ -211,17 +249,9 @@ def registrar_salida(
             except Existencia.DoesNotExist:
                 raise ValidationError(f"No hay existencias registradas para el producto '{producto.nombre}' en {almacen.nombre}.")
 
-            # Protección estricta contra stock negativo (§9.3)
-            if existencia.stock_disponible < cantidad:
-                raise ValidationError(
-                    f"Stock insuficiente. Disponible: {existencia.stock_disponible}, solicitado: {cantidad}."
-                )
-
             stock_anterior = existencia.stock_disponible
-            stock_posterior = stock_anterior - cantidad
-
-            existencia.stock_disponible = stock_posterior
-            existencia.save()
+            existencia = stock.descontar_disponible(existencia.id, cantidad)
+            stock_posterior = existencia.stock_disponible
 
             # Observación autogenerada editable si no se proveyó una personalizada
             if not observacion:
@@ -270,6 +300,7 @@ def registrar_salida(
         raise
 
 
+@transaccion_con_reintento
 def registrar_prestamo(
     *,
     producto: Producto,
@@ -287,6 +318,15 @@ def registrar_prestamo(
     _validar_acceso_almacen(usuario, almacen)
     _validar_permiso_operativo(usuario, "movimientos.prestamo")
 
+    if ubicacion is not None:
+        warnings.warn(
+            "El parámetro 'ubicacion' en registrar_prestamo está deprecado. La ubicación física es propiedad directa de Producto.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+    else:
+        ubicacion = producto.ubicacion
+
     destinatario = (destinatario or "").strip()
     if not destinatario:
         raise ValidationError("El destinatario o responsable del préstamo es obligatorio.")
@@ -296,7 +336,7 @@ def registrar_prestamo(
         raise ValidationError("La cantidad a prestar debe ser mayor a cero.")
 
     if not clave_idempotencia:
-        clave_idempotencia = f"PRES-{producto.id}-{almacen.id}-{uuid.uuid4().hex[:12]}"
+        clave_idempotencia = _generar_clave_idempotencia("PRES", usuario, producto.id, almacen.id, cantidad)
 
     mov_existente = Movimiento.objects.filter(clave_idempotencia=clave_idempotencia).first()
     if mov_existente and hasattr(mov_existente, "prestamo"):
@@ -314,17 +354,9 @@ def registrar_prestamo(
             except Existencia.DoesNotExist:
                 raise ValidationError(f"No hay existencias registradas para el producto '{producto.nombre}' en {almacen.nombre}.")
 
-            if existencia.stock_disponible < cantidad:
-                raise ValidationError(
-                    f"Stock insuficiente para préstamo. Disponible: {existencia.stock_disponible}, solicitado: {cantidad}."
-                )
-
             stock_anterior = existencia.stock_disponible
-            stock_posterior = stock_anterior - cantidad
-
-            existencia.stock_disponible = stock_posterior
-            existencia.stock_en_prestamo += cantidad
-            existencia.save()
+            existencia = stock.mover_a_prestamo(existencia.id, cantidad)
+            stock_posterior = existencia.stock_disponible
 
             movimiento = Movimiento(
                 clave_idempotencia=clave_idempotencia,
@@ -382,6 +414,7 @@ def registrar_prestamo(
         raise
 
 
+@transaccion_con_reintento
 def registrar_devolucion_prestamo(
     *,
     prestamo: Prestamo,
@@ -408,7 +441,14 @@ def registrar_devolucion_prestamo(
         raise ValidationError("La cantidad a devolver debe ser mayor a cero.")
 
     if not clave_idempotencia:
-        clave_idempotencia = f"DEV-{prestamo.id}-{uuid.uuid4().hex[:12]}"
+        clave_idempotencia = _generar_clave_idempotencia("DEV", usuario, prestamo.producto_id, prestamo.almacen_id, cantidad)
+
+    mov_existente = Movimiento.objects.filter(clave_idempotencia=clave_idempotencia).first()
+    if mov_existente:
+        devolucion = DevolucionPrestamo.objects.filter(movimiento=mov_existente).first()
+        if devolucion:
+            prestamo.refresh_from_db()
+            return prestamo, devolucion, mov_existente
 
     with transaction.atomic():
         prestamo_db = Prestamo.objects.select_for_update().get(pk=prestamo.pk)
@@ -427,11 +467,8 @@ def registrar_devolucion_prestamo(
         )
 
         stock_anterior = existencia.stock_disponible
-        stock_posterior = stock_anterior + cantidad
-
-        existencia.stock_disponible = stock_posterior
-        existencia.stock_en_prestamo = max(0, existencia.stock_en_prestamo - cantidad)
-        existencia.save()
+        existencia = stock.retornar_de_prestamo(existencia.id, cantidad)
+        stock_posterior = existencia.stock_disponible
 
         nuevo_pendiente = prestamo_db.cantidad_pendiente_devolucion - cantidad
         prestamo_db.cantidad_pendiente_devolucion = nuevo_pendiente
@@ -488,6 +525,7 @@ def registrar_devolucion_prestamo(
     return prestamo_db, devolucion, movimiento
 
 
+@transaccion_con_reintento
 def registrar_baja_prestamo(
     *,
     prestamo: Prestamo,
@@ -514,7 +552,14 @@ def registrar_baja_prestamo(
         raise ValidationError("La cantidad dada de baja debe ser mayor a cero.")
 
     if not clave_idempotencia:
-        clave_idempotencia = f"BAJA-{prestamo.id}-{uuid.uuid4().hex[:12]}"
+        clave_idempotencia = _generar_clave_idempotencia("BAJA", usuario, prestamo.producto_id, prestamo.almacen_id, cantidad)
+
+    mov_existente = Movimiento.objects.filter(clave_idempotencia=clave_idempotencia).first()
+    if mov_existente:
+        baja = DevolucionPrestamo.objects.filter(movimiento=mov_existente).first()
+        if baja:
+            prestamo.refresh_from_db()
+            return prestamo, baja, mov_existente
 
     with transaction.atomic():
         prestamo_db = Prestamo.objects.select_for_update().get(pk=prestamo.pk)
@@ -532,10 +577,9 @@ def registrar_baja_prestamo(
             almacen=prestamo_db.almacen,
         )
 
-        # Regla innegociable §9.4: NO suma al stock disponible
+        # Regla innegociable §9.4: NO suma al stock disponible, descuenta atómicamente de préstamo
         stock_anterior = existencia.stock_disponible
-        existencia.stock_en_prestamo = max(0, existencia.stock_en_prestamo - cantidad)
-        existencia.save()
+        existencia = stock.dar_baja_prestamo(existencia.id, cantidad)
 
         nuevo_pendiente = prestamo_db.cantidad_pendiente_devolucion - cantidad
         prestamo_db.cantidad_pendiente_devolucion = nuevo_pendiente
@@ -592,6 +636,7 @@ def registrar_baja_prestamo(
     return prestamo_db, baja, movimiento
 
 
+@transaccion_con_reintento
 def registrar_traslado_interno(
     *,
     producto: Producto,
@@ -618,7 +663,15 @@ def registrar_traslado_interno(
         raise ValidationError("La ubicación origen y destino no pueden ser la misma.")
 
     if not clave_idempotencia:
-        clave_idempotencia = f"TRAS-INT-{producto.id}-{ubicacion_origen.id}-{ubicacion_destino.id}-{uuid.uuid4().hex[:8]}"
+        clave_idempotencia = _generar_clave_idempotencia(
+            "TRAS-INT", usuario, producto.id, f"{ubicacion_origen.id}-{ubicacion_destino.id}", 1
+        )
+
+    mov_existente = Movimiento.objects.filter(clave_idempotencia=clave_idempotencia).first()
+    if mov_existente:
+        existencia = Existencia.objects.filter(producto=producto, almacen=almacen).first()
+        if existencia:
+            return existencia, mov_existente
 
     with transaction.atomic():
         try:
@@ -629,9 +682,9 @@ def registrar_traslado_interno(
         except Existencia.DoesNotExist:
             raise ValidationError(f"No hay existencias de '{producto.nombre}' en {almacen.nombre}.")
 
-        # Actualiza las asignaciones físicas (un producto solo está en una única ubicación)
-        ProductoUbicacion.objects.filter(producto=producto).delete()
-        ProductoUbicacion.objects.create(producto=producto, ubicacion=ubicacion_destino)
+        # Actualiza la asignación física directa (un producto solo está en una única ubicación)
+        producto.ubicacion = ubicacion_destino
+        producto.save(update_fields=["ubicacion"])
 
         movimiento = Movimiento(
             clave_idempotencia=clave_idempotencia,
@@ -666,6 +719,7 @@ def registrar_traslado_interno(
     return existencia, movimiento
 
 
+@transaccion_con_reintento
 def registrar_traslado_entre_almacenes(
     *,
     producto: Producto,
@@ -707,7 +761,7 @@ def registrar_traslado_entre_almacenes(
         raise ValidationError("La ubicación destino no pertenece al almacén destino.")
 
     if not clave_idempotencia:
-        clave_idempotencia = f"TRAS-ENTRE-{producto.id}-{almacen_origen.id}-{almacen_destino.id}-{uuid.uuid4().hex[:8]}"
+        clave_idempotencia = _generar_clave_idempotencia("TRAS-ENTRE", usuario, producto.id, f"{almacen_origen.id}-{almacen_destino.id}", cantidad)
 
     with transaction.atomic():
         try:
@@ -750,16 +804,18 @@ def registrar_traslado_entre_almacenes(
             producto.save(update_fields=["categoria"])
 
         if ubicacion_destino:
-            ProductoUbicacion.objects.filter(producto=producto).delete()
-            ProductoUbicacion.objects.create(producto=producto, ubicacion=ubicacion_destino)
+            producto.ubicacion = ubicacion_destino
+            producto.save(update_fields=["ubicacion"])
         else:
-            ProductoUbicacion.objects.filter(producto=producto).exclude(ubicacion__almacen=almacen_destino).delete()
+            if producto.ubicacion and producto.ubicacion.almacen_id != almacen_destino.id:
+                producto.ubicacion = None
+                producto.save(update_fields=["ubicacion"])
 
         # 2. Eliminar la existencia en el almacén de origen para respetar la regla de 1 existencia única por producto
         existencia_origen.delete()
         existencia_origen.stock_disponible = 0
 
-        # 3. Crear o actualizar existencia en almacén destino
+        # 3. Crear o actualizar existencia en almacén destino de forma atómica
         existencia_destino, _ = Existencia.objects.select_for_update().get_or_create(
             producto=producto,
             almacen=almacen_destino,
@@ -767,11 +823,15 @@ def registrar_traslado_entre_almacenes(
         )
 
         stock_ant_destino = existencia_destino.stock_disponible
-        stock_post_destino = stock_ant_destino + cantidad
+        if cantidad > 0:
+            existencia_destino = stock.sumar_disponible(existencia_destino.id, cantidad)
+        stock_post_destino = existencia_destino.stock_disponible
 
-        existencia_destino.stock_disponible = stock_post_destino
-        existencia_destino.stock_en_prestamo += cant_prest
-        existencia_destino.save()
+        if cant_prest > 0:
+            Existencia.objects.filter(pk=existencia_destino.pk).update(
+                stock_en_prestamo=models.F("stock_en_prestamo") + cant_prest
+            )
+            existencia_destino.refresh_from_db()
 
         # Reasignar préstamos abiertos al almacén destino
         Prestamo.objects.filter(producto=producto, almacen=almacen_origen).update(almacen=almacen_destino)
@@ -859,6 +919,11 @@ def registrar_conteo_fisico(
     )
     stock_sistema = existencia.stock_disponible
 
+    if ConteoFisico.objects.filter(producto=producto, estado=ConteoFisico.Estado.PENDIENTE).exists():
+        raise ValidationError(
+            f"Ya existe un conteo físico pendiente de aprobación para el producto '{producto.nombre}'."
+        )
+
     conteo = ConteoFisico(
         producto=producto,
         almacen=almacen,
@@ -867,7 +932,7 @@ def registrar_conteo_fisico(
         diferencia=cantidad_contada - stock_sistema,
         usuario_conteo=usuario,
         motivo=motivo,
-        confirmado=False,
+        estado=ConteoFisico.Estado.PENDIENTE,
     )
     conteo.full_clean()
     conteo.save()
@@ -888,6 +953,7 @@ def registrar_conteo_fisico(
     return conteo
 
 
+@transaccion_con_reintento
 def confirmar_conteo_fisico(
     *,
     conteo: ConteoFisico,
@@ -901,13 +967,13 @@ def confirmar_conteo_fisico(
     if not getattr(usuario, "es_administrador", False):
         raise PermissionDenied("Solo un Administrador o Superusuario puede confirmar y aplicar ajustes de conteo físico.")
 
-    if conteo.confirmado:
-        raise ValidationError("Este conteo físico ya fue confirmado.")
+    if conteo.estado != ConteoFisico.Estado.PENDIENTE:
+        raise ValidationError(f"Este conteo físico ya fue resuelto previamente (estado actual: {conteo.get_estado_display()}).")
 
     with transaction.atomic():
         conteo_db = ConteoFisico.objects.select_for_update().get(pk=conteo.pk)
-        if conteo_db.confirmado:
-            raise ValidationError("Este conteo físico ya fue confirmado.")
+        if conteo_db.estado != ConteoFisico.Estado.PENDIENTE:
+            raise ValidationError(f"Este conteo físico ya fue resuelto previamente (estado actual: {conteo_db.get_estado_display()}).")
 
         try:
             existencia = Existencia.objects.select_for_update().get(
@@ -933,8 +999,8 @@ def confirmar_conteo_fisico(
         stock_posterior = conteo_db.cantidad_contada
         diferencia = stock_posterior - stock_anterior
 
-        existencia.stock_disponible = stock_posterior
-        existencia.save()
+        existencia = stock.ajustar_stock_conteo(existencia.id, diferencia)
+        stock_posterior = existencia.stock_disponible
 
         clave_idempotencia = f"AJUSTE-CONTEO-{conteo_db.id}"
 
@@ -954,7 +1020,7 @@ def confirmar_conteo_fisico(
         movimiento.full_clean()
         movimiento.save()
 
-        conteo_db.confirmado = True
+        conteo_db.estado = ConteoFisico.Estado.CONFIRMADO
         conteo_db.usuario_confirmacion = usuario
         conteo_db.fecha_confirmacion = timezone.now()
         conteo_db.movimiento_ajuste = movimiento
@@ -980,6 +1046,59 @@ def confirmar_conteo_fisico(
     return conteo_db, movimiento
 
 
+@transaccion_con_reintento
+def rechazar_conteo_fisico(
+    *,
+    conteo: ConteoFisico,
+    usuario: Any,
+    motivo: str,
+    ip_origen: Optional[str] = None,
+) -> ConteoFisico:
+    """Rechaza un conteo físico pendiente sin alterar existencias (§6.2, §9.7).
+    
+    Permiso exclusivo de Administrador o Superusuario.
+    """
+    if not getattr(usuario, "es_administrador", False):
+        raise PermissionDenied("Solo un Administrador o Superusuario puede rechazar conteos físicos.")
+
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise ValidationError("El motivo de rechazo del conteo físico es obligatorio.")
+
+    if conteo.estado != ConteoFisico.Estado.PENDIENTE:
+        raise ValidationError(f"Este conteo físico ya fue resuelto previamente (estado actual: {conteo.get_estado_display()}).")
+
+    with transaction.atomic():
+        conteo_db = ConteoFisico.objects.select_for_update().get(pk=conteo.pk)
+        if conteo_db.estado != ConteoFisico.Estado.PENDIENTE:
+            raise ValidationError(f"Este conteo físico ya fue resuelto previamente (estado actual: {conteo_db.get_estado_display()}).")
+
+        conteo_db.estado = ConteoFisico.Estado.RECHAZADO
+        conteo_db.motivo_rechazo = motivo
+        conteo_db.usuario_confirmacion = usuario
+        conteo_db.fecha_confirmacion = timezone.now()
+        conteo_db.save(update_fields=["estado", "motivo_rechazo", "usuario_confirmacion", "fecha_confirmacion"])
+
+        # Limpiar registros de notificación leída para este conteo ya resuelto
+        AlertaStockLeida.objects.filter(clave=f"conteo:{conteo_db.id}").delete()
+
+        registrar_auditoria(
+            usuario=usuario,
+            accion="RECHAZAR_CONTEO",
+            tipo_entidad="ConteoFisico",
+            id_entidad=str(conteo_db.id),
+            valores_anteriores={"estado": ConteoFisico.Estado.PENDIENTE},
+            valores_nuevos={"estado": ConteoFisico.Estado.RECHAZADO, "motivo_rechazo": motivo},
+            motivo=f"Conteo físico rechazado: {motivo}",
+            resultado="OK",
+            via_haku=False,
+            ip_origen=ip_origen,
+        )
+
+    return conteo_db
+
+
+@transaccion_con_reintento
 def revertir_movimiento(
     *,
     movimiento: Movimiento,
@@ -1001,6 +1120,8 @@ def revertir_movimiento(
     if not getattr(usuario, "is_authenticated", False):
         raise PermissionDenied("Se requiere autenticación para revertir movimientos.")
 
+    _validar_permiso_operativo(usuario, "movimientos.revertir")
+
     with transaction.atomic():
         mov_db = Movimiento.objects.select_for_update().get(pk=movimiento.pk)
         if mov_db.estado == Movimiento.Estado.REVERTIDO:
@@ -1009,6 +1130,17 @@ def revertir_movimiento(
         tipo = mov_db.tipo
         prod = mov_db.producto
         cant = mov_db.cantidad
+
+        if not getattr(usuario, "es_administrador", False):
+            if tipo in (
+                Movimiento.Tipo.AJUSTE_CONTEO,
+                Movimiento.Tipo.BAJA_PRESTAMO,
+                Movimiento.Tipo.TRASLADO_ENTRE,
+                Movimiento.Tipo.TRASLADO_INTERNO,
+            ):
+                raise PermissionDenied(
+                    f"Solo un Administrador o Superusuario puede revertir movimientos de tipo {mov_db.get_tipo_display()}."
+                )
 
         almacen_reversion_origen = None
         almacen_reversion_destino = None
@@ -1020,9 +1152,8 @@ def revertir_movimiento(
             if existencia.stock_disponible < cant:
                 raise ValidationError("No es posible revertir: provocaría stock negativo en el almacén.")
             stock_ant = existencia.stock_disponible
-            stock_post = stock_ant - cant
-            existencia.stock_disponible = stock_post
-            existencia.save()
+            existencia = stock.descontar_disponible(existencia.id, cant)
+            stock_post = existencia.stock_disponible
             almacen_reversion_origen = alm
 
         elif tipo == Movimiento.Tipo.SALIDA:
@@ -1030,23 +1161,20 @@ def revertir_movimiento(
             _validar_acceso_almacen(usuario, alm)
             existencia = Existencia.objects.select_for_update().get(producto=prod, almacen=alm)
             stock_ant = existencia.stock_disponible
-            stock_post = stock_ant + cant
-            existencia.stock_disponible = stock_post
-            existencia.save()
+            existencia = stock.sumar_disponible(existencia.id, cant)
+            stock_post = existencia.stock_disponible
             almacen_reversion_destino = alm
 
         elif tipo == Movimiento.Tipo.TRASLADO_ENTRE:
             _validar_acceso_almacen(usuario, mov_db.almacen_origen)
             ex_dest = Existencia.objects.select_for_update().get(producto=prod, almacen=mov_db.almacen_destino)
             if ex_dest.stock_disponible < cant:
-                raise ValidationError("No es posible revertir traslado: stock insuficiente en el almacén destino.")
-            ex_dest.stock_disponible -= cant
-            ex_dest.save()
-            ex_orig = Existencia.objects.select_for_update().get(producto=prod, almacen=mov_db.almacen_origen)
-            ex_orig.stock_disponible += cant
-            ex_orig.save()
-            stock_ant = ex_dest.stock_disponible + cant
+                raise ValidationError("No es posible revertir traslado: provocaría stock negativo en el almacén destino.")
+            stock_ant = ex_dest.stock_disponible
+            ex_dest = stock.descontar_disponible(ex_dest.id, cant)
             stock_post = ex_dest.stock_disponible
+            ex_orig = Existencia.objects.select_for_update().get(producto=prod, almacen=mov_db.almacen_origen)
+            ex_orig = stock.sumar_disponible(ex_orig.id, cant)
             almacen_reversion_origen = mov_db.almacen_destino
             almacen_reversion_destino = mov_db.almacen_origen
 
@@ -1055,10 +1183,19 @@ def revertir_movimiento(
             _validar_acceso_almacen(usuario, alm)
             existencia = Existencia.objects.select_for_update().get(producto=prod, almacen=alm)
             stock_ant = existencia.stock_disponible
-            stock_post = mov_db.stock_disponible_anterior
-            existencia.stock_disponible = stock_post
-            existencia.save()
-            almacen_reversion_origen = alm
+            # Reversión delta-relativa (§1.C):
+            delta = mov_db.stock_disponible_posterior - mov_db.stock_disponible_anterior
+            if delta > 0:
+                # El ajuste sumó unidades; revertir requiere restar delta al stock actual.
+                if existencia.stock_disponible < delta:
+                    raise ValidationError("No es posible revertir: provocaría stock negativo en el almacén.")
+                existencia = stock.descontar_disponible(existencia.id, delta)
+                almacen_reversion_origen = alm
+            elif delta < 0:
+                # El ajuste restó unidades; revertir requiere sumar abs(delta) al stock actual.
+                existencia = stock.sumar_disponible(existencia.id, abs(delta))
+                almacen_reversion_destino = alm
+            stock_post = existencia.stock_disponible
 
         else:
             raise ValidationError(f"No se admite reversión directa automática para movimientos de tipo {tipo}.")

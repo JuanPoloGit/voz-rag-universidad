@@ -51,25 +51,35 @@
                         </td>
                         <td style="font-size: 0.85rem;">{{ c.usuario_conteo.nombre_completo|default:c.usuario_conteo.username }}</td>
                         <td>
-                            {% if c.confirmado %}
+                            {% if c.estado == 'CONFIRMADO' %}
                                 <span class="badge" style="background: var(--success); color: white;">Ajustado</span><br>
                                 <small style="color: var(--text-muted); font-size: 0.75rem;">por Administración</small>
+                            {% elif c.estado == 'RECHAZADO' %}
+                                <span class="badge" style="background: var(--danger); color: white;" {% if c.motivo_rechazo %}title="Motivo: {{ c.motivo_rechazo }}"{% endif %}>Rechazado</span><br>
+                                <small style="color: var(--text-muted); font-size: 0.75rem;">{{ c.motivo_rechazo|default:"Descartado"|truncatechars:20 }}</small>
                             {% else %}
                                 <span class="badge" style="background: var(--warning); color: white;">Pendiente</span>
                             {% endif %}
                         </td>
                         <td>
-                            {% if not c.confirmado %}
+                            {% if c.estado == 'PENDIENTE' %}
                                 {% if user.es_administrador %}
                                     <form action="{% url 'inventario:conteo-confirmar' c.pk %}" method="post" style="display: inline;">
                                         {% csrf_token %}
+                                        <input type="hidden" name="next" value="{% url 'inventario:conteo-lista' %}">
                                         <button type="submit" class="btn btn-sm btn-primary" data-confirm="¿Confirmar y aplicar este ajuste al stock de sistema para {{ c.producto.codigo_interno }}?" data-confirm-title="Confirmar Ajuste por Conteo" data-confirm-btn="Confirmar Ajuste">
-                                            Aprobar Ajuste
+                                            Aprobar
                                         </button>
                                     </form>
+                                    <button type="button" class="btn btn-sm btn-secondary" style="color: var(--danger); margin-left: 4px;"
+                                            onclick="abrirModalRechazoConteo('{{ c.pk }}', '{{ c.producto.codigo_interno }}')">
+                                        Rechazar
+                                    </button>
                                 {% else %}
                                     <span style="font-size: 0.8rem; color: var(--text-muted);">Requiere Admin</span>
                                 {% endif %}
+                            {% elif c.estado == 'RECHAZADO' %}
+                                <span style="font-size: 0.8rem; color: var(--text-muted);">Rechazado{% if c.fecha_resolucion %} el {{ c.fecha_resolucion|date:"Y-m-d" }}{% endif %}</span>
                             {% else %}
                                 <span style="font-size: 0.8rem; color: var(--text-muted);">Aplicado el {{ c.fecha_confirmacion|date:"Y-m-d" }}</span>
                             {% endif %}
@@ -104,4 +114,47 @@
         </p>
     {% endif %}
 </div>
+
+<!-- Modal Rechazo de Conteo Físico -->
+<dialog id="modalRechazarConteo" class="app-modal">
+    <form method="post" id="formRechazarConteoModal" style="display: flex; flex-direction: column;">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{% url 'inventario:conteo-lista' %}">
+        <div class="app-modal-header">
+            <h2 class="app-modal-title">Rechazar Conteo Físico</h2>
+            <button type="button" class="app-modal-close" onclick="closeAppModal('modalRechazarConteo')">&times;</button>
+        </div>
+        <div class="app-modal-body">
+            <p id="infoConteoRechazar" style="font-size: 13px; color: var(--danger); margin-bottom: 14px;"></p>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="motivoRechazoConteo">Motivo del Rechazo *</label>
+                <textarea name="motivo_rechazo" id="motivoRechazoConteo" class="form-control" rows="3" placeholder="Explique brevemente por qué se rechaza o descarta este conteo..." required></textarea>
+            </div>
+        </div>
+        <div class="app-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalRechazarConteo')">Cancelar</button>
+            <button type="submit" class="btn btn-danger">Confirmar Rechazo</button>
+        </div>
+    </form>
+</dialog>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+window.abrirModalRechazoConteo = function(conteoId, productoCodigo) {
+    var form = document.getElementById("formRechazarConteoModal");
+    if (form) {
+        form.action = "{% url 'inventario:conteo-rechazar' '00000000-0000-0000-0000-000000000000' %}".replace("00000000-0000-0000-0000-000000000000", conteoId);
+    }
+    var info = document.getElementById("infoConteoRechazar");
+    if (info) {
+        info.textContent = "El conteo pendiente para el producto [" + productoCodigo + "] será descartado sin alterar el stock del sistema.";
+    }
+    var txt = document.getElementById("motivoRechazoConteo");
+    if (txt) {
+        txt.value = "";
+    }
+    openAppModal("modalRechazarConteo");
+};
+</script>
 {% endblock %}

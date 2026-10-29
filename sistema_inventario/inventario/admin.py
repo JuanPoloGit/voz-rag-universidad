@@ -12,7 +12,6 @@ from .models import (
     Movimiento,
     Prestamo,
     Producto,
-    ProductoUbicacion,
     TipoCategoria,
     Ubicacion,
 )
@@ -52,6 +51,7 @@ class ProductoAdmin(admin.ModelAdmin):
         "codigo_interno",
         "nombre",
         "categoria",
+        "ubicacion",
         "tipo",
         "stock_inicial",
         "stock_minimo",
@@ -68,13 +68,6 @@ class ExistenciaAdmin(admin.ModelAdmin):
     list_display = ("producto", "almacen", "stock_disponible", "stock_en_prestamo")
     list_filter = ("almacen",)
     search_fields = ("producto__nombre", "producto__codigo_interno", "almacen__nombre")
-
-
-@admin.register(ProductoUbicacion)
-class ProductoUbicacionAdmin(admin.ModelAdmin):
-    list_display = ("producto", "ubicacion")
-    list_filter = ("ubicacion__almacen",)
-    search_fields = ("producto__nombre", "producto__codigo_interno", "ubicacion__nombre")
 
 
 @admin.register(Movimiento)
@@ -129,11 +122,11 @@ class ConteoFisicoAdmin(admin.ModelAdmin):
         "cantidad_contada",
         "stock_sistema",
         "diferencia",
-        "confirmado",
+        "estado",
         "usuario_conteo",
         "usuario_confirmacion",
     )
-    list_filter = ("confirmado", "almacen")
+    list_filter = ("estado", "almacen")
     search_fields = ("producto__nombre", "motivo")
 
 
