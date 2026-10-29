@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block page_title %}Artículos Sin Rotación{% endblock %}
+{% block sidebar_rep_estancados %}active{% endblock %}
+
+{% block title %}Artículos Sin Rotación — Inventario AudacIA{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h1 class="card-title">Artículos Sin Rotación / Inactivos</h1>
+            <p style="color: var(--text-muted); font-size: 12.5px; margin-top: 2px;">
+                Detección de productos activos que no han registrado movimientos en el período seleccionado.
+            </p>
+        </div>
+        <!-- Filtro automático por umbral de días (sin botón manual) -->
+        <form method="get" data-auto-filter="true" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <label for="selectDiasEstancados" style="font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin: 0;">
+                Sin movimiento en más de:
+            </label>
+            <select name="dias" id="selectDiasEstancados" class="form-control" style="width: 150px;">
+                <option value="15" {% if dias == 15 %}selected{% endif %}>15 días</option>
+                <option value="30" {% if dias == 30 %}selected{% endif %}>30 días</option>
+                <option value="60" {% if dias == 60 %}selected{% endif %}>60 días</option>
+                <option value="90" {% if dias == 90 %}selected{% endif %}>90 días</option>
+            </select>
+        </form>
+    </div>
+
+    <!-- Buscador rápido en tiempo real -->
+    <div style="margin-bottom: 14px; max-width: 400px;">
+        <input type="text" id="inputFiltroEstancados" class="form-control"
+               placeholder="🔍 Filtrar por código, nombre o categoría..." autocomplete="off">
+    </div>
+
+    {% if estancados %}
+        <div class="table-responsive">
+            <table class="data-table" id="tablaEstancados">
+                <thead>
+                    <tr>
+                        <th>Código</th>
+                        <th>Producto</th>
+                        <th>Categoría</th>
+                        <th>Última Actividad</th>
+                        <th>Inactividad Estimada</th>
+                        <th style="text-align: right;">Acción</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in estancados %}
+                        <tr>
+                            <td><code>{{ p.codigo_interno }}</code></td>
+                            <td><strong>{{ p.nombre }}</strong></td>
+                            <td><span class="badge badge-accent">{{ p.categoria.nombre }}</span></td>
+                            <td>
+                                {% if p.ultima_actividad %}
+                                    {{ p.ultima_actividad|date:"d/m/Y" }}
+                                {% else %}
+                                    <span style="color: var(--text-faint); font-style: italic;">Sin movimientos</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="badge badge-warn">
+                                    &ge; {{ p.dias_sin_movimiento }} días
+                                </span>
+                            </td>
+                            <td style="text-align: right;">
+                                <a href="{% url 'inventario:producto-detalle' p.pk %}" class="btn btn-sm btn-secondary">Ver Ficha</a>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p style="text-align: center; color: var(--text-muted); margin: 2.5rem 0;">
+            No hay productos sin rotación en el umbral de {{ dias }} días seleccionado.
+        </p>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    var input = document.getElementById("inputFiltroEstancados");
+    var tabla = document.getElementById("tablaEstancados");
+    if (input && tabla) {
+        input.addEventListener("input", function() {
+            var q = input.value.trim().toLowerCase();
+            tabla.querySelectorAll("tbody tr").forEach(function(tr) {
+                var txt = tr.textContent.toLowerCase();
+                tr.style.display = (!q || txt.indexOf(q) !== -1) ? "" : "none";
+            });
+        });
+    }
+});
+</script>
+{% endblock %}

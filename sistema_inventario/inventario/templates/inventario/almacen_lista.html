@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block page_title %}Categorías y Almacenes{% endblock %}
+{% block sidebar_almacenes %}active{% endblock %}
+
+{% block title %}Almacenes — Inventario AudacIA{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h1 class="card-title">Almacenes y Bodegas</h1>
+            <p style="font-size: 12.5px; color: var(--text-muted); margin-top: 2px;">
+                Gestión de bodegas y depósitos físicos autorizados en el sistema.
+            </p>
+        </div>
+        {% if request.user.es_administrador %}
+        <div class="action-group">
+            <button type="button" class="btn btn-primary" id="btnNuevoAlmacenModal">
+                + Nuevo Almacén
+            </button>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if puede_ver_almacenes %}
+    <!-- Buscador y filtro automático -->
+    <form method="get" action="{% url 'inventario:almacen-lista' %}" data-auto-filter="true"
+          style="margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 220px; max-width: 420px;">
+            <input type="text" name="q" value="{{ q }}" class="form-control"
+                   placeholder="Buscar almacén por nombre o descripción..." autocomplete="off">
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-dim); cursor: pointer; margin: 0;">
+                <input type="checkbox" name="mostrar_inactivos" value="1" {% if mostrar_inactivos %}checked{% endif %}>
+                <span>Mostrar inhabilitados</span>
+            </label>
+            {% if q or mostrar_inactivos %}
+                <a href="{% url 'inventario:almacen-lista' %}" class="btn btn-sm btn-secondary">Limpiar</a>
+            {% endif %}
+        </div>
+    </form>
+
+    <div class="table-responsive">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th style="width: {% if user.es_administrador %}20%{% else %}30%{% endif %};">Nombre de Bodega</th>
+                    <th style="width: {% if user.es_administrador %}28%{% else %}42%{% endif %};">Descripción</th>
+                    <th style="width: 12%;">Estado</th>
+                    <th style="width: 14%;">Fecha Registro</th>
+                    {% if user.es_administrador %}
+                        <th style="text-align: right; width: 26%; white-space: nowrap;">Acciones</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for almacen in almacenes %}
+                    <tr {% if not almacen.activo %}style="opacity: 0.62;"{% endif %}>
+                        <td>
+                            <a href="{% url 'inventario:producto-lista' %}?almacen_id={{ almacen.id }}"
+                               class="table-item-link"
+                               title="Ver productos en {{ almacen.nombre }}">
+                                <strong>{{ almacen.nombre }}</strong>
+                            </a>
+                            <div style="font-size: 11px; color: var(--text-faint);">
+                                {{ almacen.total_articulos }} artículo(s)
+                            </div>
+                        </td>
+                        <td>{{ almacen.descripcion|default:"—" }}</td>
+                        <td>
+                            {% if almacen.activo %}
+                                <span class="badge badge-ok">Activo</span>
+                            {% else %}
+                                <span class="badge badge-warn">Inhabilitado</span>
+                            {% endif %}
+                        </td>
+                        <td style="font-size: 12px; color: var(--text-muted); white-space: nowrap;">
+                            {{ almacen.fecha_creacion|date:"d/m/Y H:i" }}
+                        </td>
+                        {% if request.user.es_administrador %}
+                            <td style="text-align: right; white-space: nowrap;">
+                                <div class="action-group" style="display: inline-flex; flex-direction: row; flex-wrap: nowrap; gap: 6px; justify-content: flex-end;">
+                                    <button type="button"
+                                            class="btn btn-sm btn-secondary btn-editar-almacen-modal"
+                                            data-url="{% url 'inventario:almacen-editar' almacen.id %}"
+                                            data-nombre="{{ almacen.nombre }}"
+                                            data-descripcion="{{ almacen.descripcion|default:'' }}">
+                                        Editar
+                                    </button>
+
+                                    {% if almacen.activo %}
+                                        <a href="{% url 'inventario:almacen-desactivar' almacen.id %}" class="btn btn-sm btn-secondary" style="color: var(--warn); white-space: nowrap;">
+                                            Inhabilitar
+                                        </a>
+                                    {% else %}
+                                        <form method="post" action="{% url 'inventario:almacen-reactivar' almacen.id %}" style="display: inline; margin: 0;">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                            <button type="submit" class="btn btn-sm btn-secondary" style="color: var(--ok); white-space: nowrap;">
+                                                Habilitar
+                                            </button>
+                                        </form>
+                                    {% endif %}
+
+                                    <form method="post" action="{% url 'inventario:almacen-eliminar' almacen.id %}" style="display: inline; margin: 0;"
+                                          data-confirm="¿Eliminar el almacén «{{ almacen.nombre }}»? Si tiene existencias se solicitará trasladarlas primero."
+                                          data-confirm-title="Eliminar Almacén"
+                                          data-confirm-btn="Eliminar Almacén"
+                                          data-confirm-danger="true">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                        <button type="submit" class="btn btn-sm btn-danger" style="white-space: nowrap;">
+                                            Eliminar
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        {% endif %}
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="{% if user.es_administrador %}5{% else %}4{% endif %}" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                            No hay almacenes registrados{% if not mostrar_inactivos %} activos{% endif %}.
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+        <div style="background: rgba(59, 111, 240, 0.08); border: 1px solid rgba(59, 111, 240, 0.22); border-radius: var(--radius); padding: 3rem 1.5rem; text-align: center; margin-top: 1rem;">
+            <div style="width: 52px; height: 52px; border-radius: 50%; background: rgba(59, 111, 240, 0.14); display: inline-grid; place-items: center; margin-bottom: 1rem;">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent-bright);"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            </div>
+            <h2 style="font-family: var(--font-heading); font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 8px;">
+                Listado de Almacenes Restringido
+            </h2>
+            <p style="color: var(--text-dim); font-size: 13px; max-width: 500px; margin: 0 auto; line-height: 1.55;">
+                Tu cuenta no cuenta con el permiso para consultar el listado de almacenes (<code>infraestructura.ver</code>).
+                Puedes acceder a las secciones de Categorías o Ubicaciones según tus permisos autorizados.
+            </p>
+        </div>
+    {% endif %}
+</div>
+
+{% if user.es_administrador %}
+<!-- ═══ MODAL NUEVO / EDITAR ALMACÉN ═══ -->
+<dialog id="modalAlmacen" class="app-modal">
+    <form method="post" action="{% url 'inventario:almacen-crear' %}" id="formModalAlmacen" style="display: flex; flex-direction: column;">
+        {% csrf_token %}
+        <div class="app-modal-header">
+            <h2 class="app-modal-title" id="tituloModalAlmacen">Nuevo Almacén</h2>
+            <button type="button" class="app-modal-close" onclick="closeAppModal('modalAlmacen')">&times;</button>
+        </div>
+        <div class="app-modal-body">
+            <div class="form-group">
+                <label>Nombre del Almacén *</label>
+                {{ almacen_form.nombre }}
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Descripción / Notas</label>
+                {{ almacen_form.descripcion }}
+            </div>
+        </div>
+        <div class="app-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalAlmacen')">Cancelar</button>
+            <button type="submit" class="btn btn-primary" id="btnSubmitModalAlmacen">Guardar Almacén</button>
+        </div>
+    </form>
+</dialog>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% if user.es_administrador %}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    var formAlm = document.getElementById("formModalAlmacen");
+    var tituloAlm = document.getElementById("tituloModalAlmacen");
+    var btnSubAlm = document.getElementById("btnSubmitModalAlmacen");
+    var urlCrearAlm = "{% url 'inventario:almacen-crear' %}";
+
+    var btnNuevo = document.getElementById("btnNuevoAlmacenModal");
+    if (btnNuevo) {
+        btnNuevo.addEventListener("click", function() {
+            formAlm.reset();
+            formAlm.action = urlCrearAlm;
+            tituloAlm.textContent = "Nuevo Almacén";
+            btnSubAlm.textContent = "Crear Almacén";
+            openAppModal("modalAlmacen");
+        });
+    }
+
+    document.querySelectorAll(".btn-editar-almacen-modal").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            formAlm.reset();
+            formAlm.action = btn.getAttribute("data-url");
+            tituloAlm.textContent = "Editar Almacén";
+            btnSubAlm.textContent = "Guardar Cambios";
+            var inpNom = formAlm.querySelector('[name="nombre"]');
+            var inpDesc = formAlm.querySelector('[name="descripcion"]');
+            if (inpNom) inpNom.value = btn.getAttribute("data-nombre") || "";
+            if (inpDesc) inpDesc.value = btn.getAttribute("data-descripcion") || "";
+            openAppModal("modalAlmacen");
+        });
+    });
+});
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+{% block page_title %}Categorías y Almacenes{% endblock %}
+{% block sidebar_ubicaciones %}active{% endblock %}
+
+{% block title %}Ubicaciones Físicas — Inventario AudacIA{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h1 class="card-title">Ubicaciones Físicas</h1>
+            <p style="font-size: 12.5px; color: var(--text-muted); margin-top: 2px;">
+                Estanterías, gavetas, racks y secciones registradas dentro de los almacenes.
+            </p>
+        </div>
+        <div class="action-group">
+            {% if request.user.es_administrador or 'infraestructura.gestionar_ubicaciones' in request.user.get_permisos_codigos %}
+            <button type="button" class="btn btn-primary" id="btnNuevaUbicacionModal">
+                + Nueva Ubicación
+            </button>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if puede_ver_ubicaciones %}
+    <!-- Filtros automáticos -->
+    <form method="get" action="{% url 'inventario:ubicacion-lista' %}" data-auto-filter="true"
+          style="margin-bottom: 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+        <div style="flex: 2; min-width: 220px;">
+            <input type="text" name="q" value="{{ q }}" class="form-control"
+                   placeholder="Buscar ubicación por nombre, descripción o bodega..." autocomplete="off">
+        </div>
+        {% if almacenes %}
+            <div style="flex: 1; min-width: 180px;">
+                <select name="almacen_id" class="form-control" aria-label="Filtrar por almacén">
+                    <option value="">Todos los almacenes</option>
+                    {% for alm in almacenes %}
+                        <option value="{{ alm.id }}" {% if almacen_seleccionado == alm.id|stringformat:'s' %}selected{% endif %}>
+                            {{ alm.nombre }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+        {% endif %}
+        <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-dim); cursor: pointer; margin: 0;">
+            <input type="checkbox" name="mostrar_inactivos" value="1" {% if mostrar_inactivos %}checked{% endif %}>
+            <span>Mostrar inhabilitadas</span>
+        </label>
+        {% if q or almacen_seleccionado or mostrar_inactivos %}
+            <a href="{% url 'inventario:ubicacion-lista' %}" class="btn btn-sm btn-secondary">Limpiar</a>
+        {% endif %}
+    </form>
+
+    <div class="table-responsive">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Nombre de Ubicación</th>
+                        <th>Almacén</th>
+                        <th>Descripción</th>
+                        <th>Estado</th>
+                        <th style="text-align: right;">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for ubic in ubicaciones %}
+                        <tr {% if not ubic.activo %}style="opacity: 0.62;"{% endif %}>
+                            <td>
+                                <a href="{% url 'inventario:producto-lista' %}?almacen_id={{ ubic.almacen_id }}&ubicacion_id={{ ubic.id }}"
+                                   class="table-item-link"
+                                   title="Ver productos en {{ ubic.nombre }}">
+                                    <strong>{{ ubic.nombre }}</strong>
+                                </a>
+                                <div style="font-size: 11px; color: var(--text-faint);">
+                                    {{ ubic.total_articulos }} artículo(s)
+                                </div>
+                            </td>
+                            <td>
+                                <a href="{% url 'inventario:producto-lista' %}?almacen_id={{ ubic.almacen_id }}" style="text-decoration: none;" title="Ver productos en {{ ubic.almacen.nombre }}">
+                                    <span class="badge badge-accent">{{ ubic.almacen.nombre }}</span>
+                                </a>
+                            </td>
+                            <td>{{ ubic.descripcion|default:"—" }}</td>
+                            <td>
+                                {% if ubic.activo %}
+                                    <span class="badge badge-ok">Activa</span>
+                                {% else %}
+                                    <span class="badge badge-warn">Inhabilitada</span>
+                                {% endif %}
+                            </td>
+                            <td style="text-align: right; white-space: nowrap;">
+                                <div class="action-group">
+                                    {% if request.user.es_administrador or 'infraestructura.gestionar_ubicaciones' in request.user.get_permisos_codigos %}
+                                    <button type="button"
+                                            class="btn btn-sm btn-secondary btn-editar-ubic-modal"
+                                            data-url="{% url 'inventario:ubicacion-editar' ubic.id %}"
+                                            data-nombre="{{ ubic.nombre }}"
+                                            data-almacen="{{ ubic.almacen_id }}"
+                                            data-descripcion="{{ ubic.descripcion|default:'' }}">
+                                        Editar
+                                    </button>
+
+                                    {% if ubic.activo %}
+                                        <a href="{% url 'inventario:ubicacion-desactivar' ubic.id %}" class="btn btn-sm btn-secondary" style="color: var(--warn);">
+                                            Inhabilitar
+                                        </a>
+                                    {% else %}
+                                        <form method="post" action="{% url 'inventario:ubicacion-reactivar' ubic.id %}" style="display: inline; margin: 0;">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                            <button type="submit" class="btn btn-sm btn-secondary" style="color: var(--ok);">
+                                                Habilitar
+                                            </button>
+                                        </form>
+                                    {% endif %}
+
+                                    <form method="post" action="{% url 'inventario:ubicacion-eliminar' ubic.id %}" style="display: inline; margin: 0;"
+                                          data-confirm="¿Eliminar la ubicación «{{ ubic.nombre }}»?"
+                                          data-confirm-title="Eliminar Ubicación"
+                                          data-confirm-btn="Eliminar Ubicación"
+                                          data-confirm-danger="true">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                        <button type="submit" class="btn btn-sm btn-danger">
+                                            Eliminar
+                                        </button>
+                                    </form>
+                                    {% else %}
+                                    <span style="font-size: 11.5px; color: var(--text-faint);">Solo lectura</span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="5" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                                No hay ubicaciones registradas con los criterios actuales.
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div style="background: rgba(59, 111, 240, 0.08); border: 1px solid rgba(59, 111, 240, 0.22); border-radius: var(--radius); padding: 3rem 1.5rem; text-align: center; margin-top: 1rem;">
+            <div style="width: 52px; height: 52px; border-radius: 50%; background: rgba(59, 111, 240, 0.14); display: inline-grid; place-items: center; margin-bottom: 1rem;">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent-bright);"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            </div>
+            <h2 style="font-family: var(--font-heading); font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 8px;">
+                Listado de Ubicaciones Restringido
+            </h2>
+            <p style="color: var(--text-dim); font-size: 13px; max-width: 500px; margin: 0 auto 1.5rem; line-height: 1.55;">
+                Tu cuenta no cuenta con el permiso para consultar el listado de ubicaciones (<code>infraestructura.ver</code>).
+                {% if request.user.es_administrador or 'infraestructura.gestionar_ubicaciones' in request.user.get_permisos_codigos %}
+                Puedes registrar nuevas ubicaciones físicas utilizando el botón superior <strong>"+ Nueva Ubicación"</strong>.
+                {% endif %}
+            </p>
+            {% if request.user.es_administrador or 'infraestructura.gestionar_ubicaciones' in request.user.get_permisos_codigos %}
+            <div>
+                <button type="button" class="btn btn-primary" onclick="document.getElementById('btnNuevaUbicacionModal').click();">
+                    + Registrar Nueva Ubicación
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    {% endif %}
+</div>
+
+<!-- ═══ MODAL NUEVA / EDITAR UBICACIÓN ═══ -->
+<dialog id="modalUbicacion" class="app-modal">
+    <form method="post" action="{% url 'inventario:ubicacion-crear' %}" id="formModalUbicacion" style="display: flex; flex-direction: column;">
+        {% csrf_token %}
+        <div class="app-modal-header">
+            <h2 class="app-modal-title" id="tituloModalUbicacion">Nueva Ubicación Física</h2>
+            <button type="button" class="app-modal-close" onclick="closeAppModal('modalUbicacion')">&times;</button>
+        </div>
+        <div class="app-modal-body">
+            <div class="form-group">
+                <label>Nombre de la Ubicación *</label>
+                {{ ubicacion_form.nombre }}
+            </div>
+            {% if not user.es_usuario_normal %}
+            <div class="form-group">
+                <label>Almacén *</label>
+                {{ ubicacion_form.almacen }}
+            </div>
+            {% else %}
+                {{ ubicacion_form.almacen }}
+            {% endif %}
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Descripción / Referencia Física</label>
+                {{ ubicacion_form.descripcion }}
+            </div>
+        </div>
+        <div class="app-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalUbicacion')">Cancelar</button>
+            <button type="submit" class="btn btn-primary" id="btnSubmitModalUbicacion">Guardar Ubicación</button>
+        </div>
+    </form>
+</dialog>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    var formUbic = document.getElementById("formModalUbicacion");
+    var tituloUbic = document.getElementById("tituloModalUbicacion");
+    var btnSubUbic = document.getElementById("btnSubmitModalUbicacion");
+    var urlCrearUbic = "{% url 'inventario:ubicacion-crear' %}";
+
+    document.getElementById("btnNuevaUbicacionModal").addEventListener("click", function() {
+        formUbic.reset();
+        formUbic.action = urlCrearUbic;
+        tituloUbic.textContent = "Nueva Ubicación Física";
+        btnSubUbic.textContent = "Crear Ubicación";
+        openAppModal("modalUbicacion");
+    });
+
+    document.querySelectorAll(".btn-editar-ubic-modal").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            formUbic.reset();
+            formUbic.action = btn.getAttribute("data-url");
+            tituloUbic.textContent = "Editar Ubicación Física";
+            btnSubUbic.textContent = "Guardar Cambios";
+            var inpNom = formUbic.querySelector('[name="nombre"]');
+            var selAlm = formUbic.querySelector('[name="almacen"]');
+            var inpDesc = formUbic.querySelector('[name="descripcion"]');
+            if (inpNom) inpNom.value = btn.getAttribute("data-nombre") || "";
+            if (selAlm) selAlm.value = btn.getAttribute("data-almacen") || "";
+            if (inpDesc) inpDesc.value = btn.getAttribute("data-descripcion") || "";
+            openAppModal("modalUbicacion");
+        });
+    });
+});
+</script>
+{% endblock %}

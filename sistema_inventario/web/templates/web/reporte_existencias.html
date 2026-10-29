@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block page_title %}Reporte de Existencias{% endblock %}
+{% block sidebar_rep_existencias %}active{% endblock %}
+
+{% block title %}Informe de Existencias de Inventario{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+        <div>
+            <h2>Informe de Existencias Físicas</h2>
+            <p style="color: var(--text-muted); font-size: 0.9rem;">
+                Consolidado de stock disponible y en préstamo por almacén y categoría (§11).
+            </p>
+        </div>
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <a href="{% url 'web:reporte-movimientos' %}" class="btn btn-secondary">Reporte Movimientos</a>
+            <a href="{% url 'web:reporte-prestamos' %}" class="btn btn-secondary">Reporte Préstamos</a>
+            <a href="{% url 'web:reporte-estancados' %}" class="btn btn-secondary">Productos Inactivos</a>
+        </div>
+    </div>
+
+    <!-- Barra de Filtros -->
+    <form method="get" style="display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; background: var(--bg-panel-2); padding: 1rem; border-radius: 0.5rem; border: 1px solid var(--border);">
+        {% if not user.es_usuario_normal %}
+            <div style="flex: 1; min-width: 180px;">
+                <label style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted);">Almacén</label>
+                <select name="almacen_id" class="form-control" style="margin-top: 0.25rem;">
+                    <option value="">-- Todos los almacenes --</option>
+                    {% for a in almacenes %}
+                        <option value="{{ a.id }}" {% if almacen_id == a.id %}selected{% endif %}>{{ a.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        {% endif %}
+
+        <div style="flex: 1; min-width: 180px;">
+            <label style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted);">Categoría</label>
+            <select name="categoria_id" class="form-control" style="margin-top: 0.25rem;">
+                <option value="">-- Todas las categorías --</option>
+                {% for c in categorias %}
+                    <option value="{{ c.id }}" {% if categoria_id == c.id %}selected{% endif %}>{{ c.nombre }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div style="flex: 1; min-width: 180px;">
+            <label style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted);">Nivel de Stock</label>
+            <select name="filtro_stock" class="form-control" style="margin-top: 0.25rem;">
+                <option value="">-- Todos los niveles --</option>
+                <option value="CRITICO" {% if filtro_stock == 'CRITICO' %}selected{% endif %}>🚨 Crítico (Agotado = 0)</option>
+                <option value="BAJO" {% if filtro_stock == 'BAJO' %}selected{% endif %}>⚠️ Stock Bajo (&lt; Mínimo)</option>
+                <option value="NORMAL" {% if filtro_stock == 'NORMAL' %}selected{% endif %}>✓ Normal / Óptimo</option>
+            </select>
+        </div>
+
+        <div style="align-self: flex-end;">
+            <button type="submit" class="btn btn-primary">Aplicar Filtros</button>
+            {% if almacen_id or categoria_id or filtro_stock %}
+                <a href="{% url 'web:reporte-existencias' %}" class="btn btn-secondary">Limpiar</a>
+            {% endif %}
+        </div>
+    </form>
+
+    {% if existencias %}
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Código</th>
+                    <th>Producto</th>
+                    <th>Categoría</th>
+                    <th>Almacén</th>
+                    <th>Disponible</th>
+                    <th>En Préstamo</th>
+                    <th>Total Físico</th>
+                    <th>Mínimo</th>
+                    <th>Estado</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ex in existencias %}
+                    <tr {% if ex.sin_stock %}style="background: var(--bg-panel-2);"{% elif ex.stock_bajo %}style="background: var(--bg-panel-2);"{% endif %}>
+                        <td><code>{{ ex.producto.codigo_interno }}</code></td>
+                        <td><strong>{{ ex.producto.nombre }}</strong></td>
+                        <td>{{ ex.producto.categoria.nombre }}</td>
+                        <td>{{ ex.almacen.nombre }}</td>
+                        <td>
+                            <strong style="color: {% if ex.sin_stock %}var(--danger){% elif ex.stock_bajo %}var(--warning){% else %}var(--text-main){% endif %};">
+                                {{ ex.stock_disponible }}
+                            </strong>
+                        </td>
+                        <td>{{ ex.stock_en_prestamo }}</td>
+                        <td><strong>{{ ex.stock_total }}</strong></td>
+                        <td>{{ ex.producto.stock_minimo }}</td>
+                        <td>
+                            {% if ex.sin_stock %}
+                                <span class="badge" style="background: var(--danger); color: white;">Agotado</span>
+                            {% elif ex.stock_bajo %}
+                                <span class="badge" style="background: var(--warning); color: white;">Stock Bajo</span>
+                            {% else %}
+                                <span class="badge" style="background: var(--success); color: white;">Normal</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p style="text-align: center; color: var(--text-muted); margin: 3rem 0;">
+            No se encontraron existencias con los filtros aplicados.
+        </p>
+    {% endif %}
+</div>
+{% endblock %}

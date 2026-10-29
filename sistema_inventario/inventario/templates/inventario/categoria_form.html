@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block page_title %}Categorías y Tipos{% endblock %}
+{% block sidebar_categorias %}active{% endblock %}
+
+{% block title %}
+    {% if object %}Editar Categoría: {{ object.nombre }}{% else %}Nueva Categoría{% endif %} — Inventario AudacIA
+{% endblock %}
+
+{% block content %}
+<div style="max-width: 640px; margin: 0 auto;">
+    <div class="card">
+        <div class="card-header">
+            <h1 class="card-title">
+                {% if object %}Editar Categoría: {{ object.nombre }}{% else %}Nueva Categoría{% endif %}
+            </h1>
+        </div>
+
+        <form method="post" novalidate>
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+                <div class="alert alert-danger" style="margin-bottom: 1rem;">
+                    {% for error in form.non_field_errors %}
+                        <p>{{ error }}</p>
+                    {% endfor %}
+                </div>
+            {% endif %}
+
+            <div class="form-group">
+                <label for="{{ form.nombre.id_for_label }}">Nombre de la categoría *</label>
+                {{ form.nombre }}
+                {% if form.nombre.errors %}
+                    <div class="form-error">
+                        {% for error in form.nombre.errors %}{{ error }}{% endfor %}
+                    </div>
+                {% endif %}
+                <div class="form-help">Ej: "Cables" generará códigos internos que inician con "CAB-".</div>
+            </div>
+
+            {% if form.almacen_principal.is_hidden %}
+                {{ form.almacen_principal }}
+                <div class="form-group">
+                    <label>Almacén Principal</label>
+                    <input type="text" class="form-control" value="{{ user.get_almacenes_asignados.first.nombre }}" disabled>
+                    <div class="form-help">Tu almacén asignado para los productos de esta categoría.</div>
+                </div>
+            {% else %}
+                <div class="form-group">
+                    <label for="{{ form.almacen_principal.id_for_label }}">Almacén Principal *</label>
+                    {{ form.almacen_principal }}
+                    {% if form.almacen_principal.errors %}
+                        <div class="form-error">
+                            {% for error in form.almacen_principal.errors %}{{ error }}{% endfor %}
+                        </div>
+                    {% endif %}
+                    <div class="form-help">Almacén al que pertenecerán los productos de esta categoría.</div>
+                </div>
+            {% endif %}
+
+            <div class="form-group">
+                <label for="{{ form.tipos_opcionales.id_for_label }}">Tipos asociados (Opcional)</label>
+                {{ form.tipos_opcionales }}
+                {% if form.tipos_opcionales.errors %}
+                    <div class="form-error">
+                        {% for error in form.tipos_opcionales.errors %}{{ error }}{% endfor %}
+                    </div>
+                {% endif %}
+                <div class="form-help">
+                    Opcional. Puedes escribir uno o varios tipos separados por coma (ej: <em>Destornillador, Alicate, Llave</em>).
+                    También puedes gestionarlos individualmente desde el listado de categorías.
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                <a href="{% url 'inventario:categoria-lista' %}" class="btn btn-secondary">
+                    Cancelar
+                </a>
+                <button type="submit" class="btn btn-primary">
+                    {% if object %}Guardar Cambios{% else %}Crear Categoría{% endif %}
+                </button>
+            </div>
+        </form>
+    </div>
+
+    {% if object and tipos_categoria %}
+        <div class="card">
+            <div class="card-header" style="margin-bottom: 0.75rem;">
+                <h2 class="card-title" style="font-size: 1rem;">Tipos Registrados en «{{ object.nombre }}»</h2>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                {% for t in tipos_categoria %}
+                    <div style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--bg-panel-2); border: 1px solid var(--border); border-radius: 999px; font-size: 12.5px;">
+                        <span><strong>{{ t.nombre }}</strong></span>
+                        <form method="post" action="{% url 'inventario:tipo-categoria-eliminar' t.id %}" style="display: inline; margin: 0;">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{{ request.path }}">
+                            <button type="submit"
+                                    style="background: none; border: none; color: var(--crit); cursor: pointer; font-size: 12px; padding: 0 2px;"
+                                    title="Eliminar tipo"
+                                    data-confirm="¿Eliminar el tipo «{{ t.nombre }}»?"
+                                    data-confirm-title="Eliminar Tipo"
+                                    data-confirm-btn="Eliminar"
+                                    data-confirm-danger="true">
+                                &times;
+                            </button>
+                        </form>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

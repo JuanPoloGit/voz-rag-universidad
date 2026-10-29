@@ -12,7 +12,7 @@ from .models import (
     Movimiento,
     Prestamo,
     Producto,
-    ProductoUbicacion,
+    TipoCategoria,
     Ubicacion,
 )
 
@@ -38,18 +38,27 @@ class CategoriaAdmin(admin.ModelAdmin):
     search_fields = ("nombre", "descripcion")
 
 
+@admin.register(TipoCategoria)
+class TipoCategoriaAdmin(admin.ModelAdmin):
+    list_display = ("nombre", "categoria", "activo", "fecha_creacion")
+    list_filter = ("categoria", "activo")
+    search_fields = ("nombre", "categoria__nombre")
+
+
 @admin.register(Producto)
 class ProductoAdmin(admin.ModelAdmin):
     list_display = (
         "codigo_interno",
         "nombre",
         "categoria",
+        "ubicacion",
+        "tipo",
         "stock_inicial",
         "stock_minimo",
         "activo",
         "archivado",
     )
-    list_filter = ("categoria", "activo", "archivado")
+    list_filter = ("categoria", "tipo", "activo", "archivado")
     search_fields = ("codigo_interno", "codigo_barras", "nombre")
     readonly_fields = ("codigo_interno", "stock_inicial", "fecha_creacion", "fecha_modificacion")
 
@@ -59,13 +68,6 @@ class ExistenciaAdmin(admin.ModelAdmin):
     list_display = ("producto", "almacen", "stock_disponible", "stock_en_prestamo")
     list_filter = ("almacen",)
     search_fields = ("producto__nombre", "producto__codigo_interno", "almacen__nombre")
-
-
-@admin.register(ProductoUbicacion)
-class ProductoUbicacionAdmin(admin.ModelAdmin):
-    list_display = ("producto", "ubicacion")
-    list_filter = ("ubicacion__almacen",)
-    search_fields = ("producto__nombre", "producto__codigo_interno", "ubicacion__nombre")
 
 
 @admin.register(Movimiento)
@@ -102,7 +104,7 @@ class PrestamoAdmin(admin.ModelAdmin):
         "fecha_creacion",
     )
     list_filter = ("estado", "almacen")
-    search_fields = ("producto__nombre", "destinatario", "motivo")
+    search_fields = ("producto__nombre", "destinatario", "movimiento__motivo")
 
 
 @admin.register(DevolucionPrestamo)
@@ -120,11 +122,11 @@ class ConteoFisicoAdmin(admin.ModelAdmin):
         "cantidad_contada",
         "stock_sistema",
         "diferencia",
-        "confirmado",
+        "estado",
         "usuario_conteo",
         "usuario_confirmacion",
     )
-    list_filter = ("confirmado", "almacen")
+    list_filter = ("estado", "almacen")
     search_fields = ("producto__nombre", "motivo")
 
 

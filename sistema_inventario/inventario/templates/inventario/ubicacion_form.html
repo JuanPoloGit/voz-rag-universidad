@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block page_title %}Ubicaciones{% endblock %}
+{% block sidebar_ubicaciones %}active{% endblock %}
+
+{% block title %}
+    {% if object %}Editar Ubicación: {{ object.nombre }}{% else %}Nueva Ubicación{% endif %} — Inventario AudacIA
+{% endblock %}
+
+{% block content %}
+<div style="max-width: 600px; margin: 0 auto;">
+    <div class="card">
+        <div class="card-header">
+            <h1 class="card-title">
+                {% if object %}Editar Ubicación{% else %}Nueva Ubicación{% endif %}
+            </h1>
+        </div>
+
+        <form method="post" novalidate>
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+                <div class="alert alert-danger" style="margin-bottom: 1rem;">
+                    {% for error in form.non_field_errors %}
+                        <p>{{ error }}</p>
+                    {% endfor %}
+                </div>
+            {% endif %}
+
+            <div class="form-group">
+                <label for="{{ form.nombre.id_for_label }}">Nombre de la ubicación *</label>
+                {{ form.nombre }}
+                {% if form.nombre.errors %}
+                    <div class="form-error">
+                        {% for error in form.nombre.errors %}{{ error }}{% endfor %}
+                    </div>
+                {% endif %}
+                <div class="form-help">Formato libre: Estante A, B-03, Cajón rojo, Zona cables, etc.</div>
+            </div>
+
+            {% if form.almacen.is_hidden %}
+                {{ form.almacen }}
+                <div class="form-group">
+                    <label>Almacén asignado</label>
+                    <input type="text" class="form-control" value="{{ user.get_almacenes_asignados.first.nombre }}" disabled>
+                    <div class="form-help">Como usuario operativo, tus registros se asocian a tu almacén asignado.</div>
+                </div>
+            {% else %}
+                <div class="form-group">
+                    <label for="{{ form.almacen.id_for_label }}">Almacén al que pertenece *</label>
+                    {{ form.almacen }}
+                    {% if form.almacen.errors %}
+                        <div class="form-error">
+                            {% for error in form.almacen.errors %}{{ error }}{% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+            {% endif %}
+
+            <div class="form-group">
+                <label for="{{ form.descripcion.id_for_label }}">Descripción</label>
+                {{ form.descripcion }}
+                {% if form.descripcion.errors %}
+                    <div class="form-error">
+                        {% for error in form.descripcion.errors %}{{ error }}{% endfor %}
+                    </div>
+                {% endif %}
+                <div class="form-help">Detalles adicionales para facilitar la localización física (opcional).</div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                <a href="{% url 'inventario:ubicacion-lista' %}" class="btn btn-secondary">
+                    Cancelar
+                </a>
+                <button type="submit" class="btn btn-primary">
+                    {% if object %}Guardar Cambios{% else %}Crear Ubicación{% endif %}
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

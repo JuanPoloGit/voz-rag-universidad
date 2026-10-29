@@ -1,0 +1,678 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Dashboard Operativo{% endblock %}
+{% block page_title %}Panel de Control{% endblock %}
+{% block sidebar_dashboard %}active{% endblock %}
+
+{% block extra_css %}
+<style>
+    .kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+        width: 100%;
+    }
+
+    @media (max-width: 1200px) {
+        .kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+
+    .kpi-card {
+        background: linear-gradient(160deg, var(--bg-panel), var(--bg-panel-2));
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 20px 20px 18px;
+        position: relative;
+        overflow: hidden;
+        min-width: 0;
+    }
+
+    .kpi-card::after {
+        content: '';
+        position: absolute;
+        top: -20px;
+        right: -20px;
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        opacity: 0.08;
+    }
+
+    .kpi-card.kpi-blue::after { background: var(--accent); }
+    .kpi-card.kpi-green::after { background: var(--ok); }
+    .kpi-card.kpi-red::after { background: var(--crit); }
+    .kpi-card.kpi-amber::after { background: var(--warn); }
+    .kpi-card.kpi-purple::after { background: #8b5cf6; }
+
+    .kpi-card a {
+        text-decoration: none;
+        color: inherit;
+        display: block;
+    }
+    .kpi-card:has(a) {
+        cursor: pointer;
+        transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .kpi-card:has(a):hover {
+        transform: translateY(-2px);
+        border-color: var(--accent-bright);
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+    }
+
+    .kpi-label {
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--text-faint);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 6px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .kpi-value {
+        font-family: var(--font-heading);
+        font-size: 32px;
+        font-weight: 700;
+        line-height: 1.1;
+        margin-bottom: 4px;
+    }
+
+    .kpi-footnote {
+        font-size: 11.5px;
+        color: var(--text-faint);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .charts-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+        gap: 20px;
+        margin-bottom: 28px;
+        width: 100%;
+    }
+
+    .charts-grid > *,
+    .tables-grid > * {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .chart-container {
+        height: 260px;
+        position: relative;
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+        overflow: hidden;
+    }
+
+    .chart-container canvas {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+
+    .tables-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 20px;
+        width: 100%;
+    }
+
+    .panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 14px;
+    }
+
+    .panel-title {
+        font-family: var(--font-heading);
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--text);
+    }
+
+    .panel-link {
+        font-size: 12.5px;
+        color: var(--accent-bright);
+        text-decoration: none;
+        font-weight: 500;
+    }
+
+    .panel-link:hover { text-decoration: underline; }
+
+    .empty-state {
+        text-align: center;
+        padding: 2rem 1rem;
+        color: var(--text-faint);
+        font-size: 13px;
+    }
+
+    .dashboard-filter-bar {
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        flex-wrap: wrap;
+        background: linear-gradient(160deg, var(--bg-panel), var(--bg-panel-2));
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 12px 18px;
+    }
+
+    @media (max-width: 980px) {
+        .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .charts-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; margin-bottom: 20px; }
+        .tables-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+    }
+
+    @media (max-width: 640px) {
+        .dashboard-filter-bar {
+            padding: 8px 12px;
+            margin-bottom: 12px;
+            gap: 8px;
+        }
+        .dashboard-filter-bar select {
+            width: 100% !important;
+            min-width: 0 !important;
+            height: 34px !important;
+            font-size: 12.5px !important;
+        }
+
+        .kpi-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+            margin-bottom: 14px;
+        }
+        .kpi-card {
+            padding: 10px 12px;
+            border-radius: 10px;
+        }
+        .kpi-card::after {
+            display: none;
+        }
+        .kpi-label {
+            font-size: 10px;
+            letter-spacing: 0.3px;
+            margin-bottom: 2px;
+        }
+        .kpi-value {
+            font-size: 20px;
+            margin-bottom: 2px;
+        }
+        .kpi-footnote {
+            font-size: 9.5px;
+            line-height: 1.2;
+        }
+
+        /* 5ta tarjeta (En Préstamo): formato horizontal compacto que abarca el ancho completo */
+        .kpi-card.kpi-purple {
+            grid-column: span 2;
+            display: grid;
+            grid-template-columns: 1fr auto;
+            grid-template-rows: auto auto;
+            align-items: center;
+            padding: 8px 12px;
+        }
+        .kpi-card.kpi-purple .kpi-label {
+            grid-column: 1;
+            grid-row: 1;
+            margin-bottom: 0;
+        }
+        .kpi-card.kpi-purple .kpi-footnote {
+            grid-column: 1;
+            grid-row: 2;
+            margin-top: 1px;
+        }
+        .kpi-card.kpi-purple .kpi-value {
+            grid-column: 2;
+            grid-row: 1 / span 2;
+            margin: 0;
+            font-size: 20px;
+            text-align: right;
+        }
+
+        .charts-grid {
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+        .chart-container {
+            height: 205px;
+        }
+        .tables-grid {
+            gap: 12px;
+        }
+        .card {
+            padding: 12px 14px;
+            border-radius: 10px;
+            margin-bottom: 12px;
+        }
+        .panel-header {
+            margin-bottom: 8px;
+        }
+        .panel-title {
+            font-size: 13.5px;
+        }
+        .panel-link {
+            font-size: 11.5px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Filtro de Resumen por Almacén -->
+{% if not request.user.es_usuario_normal or almacenes.count > 1 %}
+<form method="get" action="{% url 'web:dashboard' %}" data-auto-filter="true" class="dashboard-filter-bar">
+    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap; flex: 1 1 auto; min-width: 0;">
+        <span style="font-size: 13px; font-weight: 600; color: var(--text-dim); display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent-bright);"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            Filtrar Resumen por Almacén:
+        </span>
+        <select name="almacen_id" class="form-control" style="width: auto; min-width: 240px; max-width: 100%; height: 38px; padding: 6px 12px; font-size: 13px;" aria-label="Filtrar por almacén">
+            <option value="" {% if not almacen_seleccionado %}selected{% endif %}>Todos los almacenes (Consolidado General)</option>
+            {% for alm in almacenes %}
+                <option value="{{ alm.id }}" {% if almacen_seleccionado == alm.id|stringformat:'s' %}selected{% endif %}>
+                    {{ alm.nombre }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+    {% if almacen_seleccionado %}
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <span style="font-size: 12px; color: var(--accent-bright); font-weight: 500;">
+                Mostrando datos de: <strong>{{ almacen_obj.nombre }}</strong>
+            </span>
+            <a href="{% url 'web:dashboard' %}" class="btn btn-sm btn-secondary" style="font-size: 11.5px; padding: 5px 12px;">
+                Ver Consolidado General
+            </a>
+        </div>
+    {% else %}
+        <span style="font-size: 12px; color: var(--text-faint);">
+            Consolidado general de todo el inventario
+        </span>
+    {% endif %}
+
+    {% if user.es_administrador %}
+    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto;">
+        <a href="{% url 'web:exportar-dashboard-excel' %}{% if almacen_seleccionado %}?almacen_id={{ almacen_seleccionado }}{% endif %}" class="btn btn-sm btn-primary" title="Descargar libro Excel profesional del Dashboard" style="font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="8" y1="13" x2="16" y2="13"/>
+                <line x1="8" y1="17" x2="16" y2="17"/>
+            </svg>
+            Exportar Excel
+        </a>
+        <a href="{% url 'web:exportar-datos-csv' 'dashboard' %}{% if almacen_seleccionado %}?almacen_id={{ almacen_seleccionado }}{% endif %}" class="btn btn-sm btn-secondary" title="Descargar resumen en CSV con UTF-8 BOM" style="font-size: 12px; padding: 5px 9px;">
+            CSV
+        </a>
+        <a href="{% url 'web:centro-exportaciones' %}" class="btn btn-sm btn-secondary" title="Abrir centro completo de exportaciones" style="font-size: 12px; padding: 5px 9px;">
+            Más reportes &rarr;
+        </a>
+    </div>
+    {% endif %}
+</form>
+{% endif %}
+
+<!-- KPI Cards -->
+<div class="kpi-grid">
+    <div class="kpi-card kpi-green">
+        <div class="kpi-label">Stock Disponible</div>
+        <div class="kpi-value" style="color: var(--ok);">{{ metricas.total_stock_disponible|default:"0" }}</div>
+        <div class="kpi-footnote">Unidades en almacén</div>
+    </div>
+
+    <div class="kpi-card kpi-blue">
+        <a href="{% url 'inventario:producto-lista' %}{% if almacen_seleccionado %}?almacen_id={{ almacen_seleccionado }}{% endif %}" title="Ver catálogo de productos">
+            <div class="kpi-label">Catálogo</div>
+            <div class="kpi-value" style="color: var(--accent-bright);">{{ metricas.total_productos|default:"0" }}</div>
+            <div class="kpi-footnote">Productos activos</div>
+        </a>
+    </div>
+
+    <div class="kpi-card kpi-red" {% if metricas.total_criticos > 0 %}style="border-color: rgba(255,107,122,0.3);"{% endif %}>
+        <a href="{% url 'inventario:alertas-lista' %}?nivel=CRITICA{% if almacen_seleccionado %}&almacen_id={{ almacen_seleccionado }}{% endif %}" style="text-decoration: none; color: inherit; display: block;" title="Ver productos sin stock">
+            <div class="kpi-label">Sin Stock</div>
+            <div class="kpi-value" style="color: var(--crit);">{{ metricas.total_criticos|default:"0" }}</div>
+            <div class="kpi-footnote">Productos agotados</div>
+        </a>
+    </div>
+
+    <div class="kpi-card kpi-amber" {% if metricas.total_bajo_stock > 0 %}style="border-color: rgba(255,189,92,0.3);"{% endif %}>
+        <a href="{% url 'inventario:alertas-lista' %}?nivel=BAJA{% if almacen_seleccionado %}&almacen_id={{ almacen_seleccionado }}{% endif %}" style="text-decoration: none; color: inherit; display: block;" title="Ver productos con stock bajo">
+            <div class="kpi-label">Stock Bajo</div>
+            <div class="kpi-value" style="color: var(--warn);">{{ metricas.total_bajo_stock|default:"0" }}</div>
+            <div class="kpi-footnote">Bajo umbral mínimo</div>
+        </a>
+    </div>
+
+    <div class="kpi-card kpi-purple">
+        <a href="{% url 'inventario:movimiento-lista' %}?vista=PRESTAMOS{% if almacen_seleccionado %}&almacen_id={{ almacen_seleccionado }}{% endif %}" title="Ver tabla de préstamos">
+            <div class="kpi-label">En Préstamo</div>
+            <div class="kpi-value" style="color: #c48bff;">{{ metricas.total_stock_prestamo|default:"0" }}</div>
+            <div class="kpi-footnote">{{ metricas.total_prestamos_activos|default:"0" }} préstamos activos</div>
+        </a>
+    </div>
+</div>
+
+<!-- Charts -->
+<div class="charts-grid">
+    <div class="card" style="margin-bottom: 0;">
+        <div class="panel-header">
+            <h3 class="panel-title">Balance de Movimientos (7 días)</h3>
+        </div>
+        <div class="chart-container">
+            <canvas id="canvasBalance"></canvas>
+        </div>
+    </div>
+
+    <div class="card" style="margin-bottom: 0;">
+        <div class="panel-header">
+            <h3 class="panel-title">Distribución por Categoría</h3>
+        </div>
+        <div class="chart-container">
+            <canvas id="canvasCategorias"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Activity Tables -->
+<div class="tables-grid">
+    <!-- Últimos Movimientos -->
+    <div class="card" style="margin-bottom: 0;">
+        <div class="panel-header">
+            <h3 class="panel-title">Últimos Movimientos</h3>
+            <a href="{% url 'inventario:movimiento-lista' %}" class="panel-link">Ver todos →</a>
+        </div>
+        {% if ultimos_movimientos %}
+            <div class="table-responsive">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Hora</th>
+                            <th>Tipo</th>
+                            <th>Producto</th>
+                            <th>Cant.</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for m in ultimos_movimientos %}
+                            <tr>
+                                <td style="font-size: 11.5px; white-space: nowrap;">{{ m.fecha_hora|date:"d/m H:i" }}</td>
+                                <td>
+                                    <span class="badge {% if m.tipo == 'ENTRADA' %}badge-ok{% elif m.tipo == 'SALIDA' %}badge-crit{% elif m.tipo == 'PRESTAMO' %}badge-purple{% else %}badge-accent{% endif %}">
+                                        {{ m.get_tipo_display }}
+                                    </span>
+                                </td>
+                                <td><code>{{ m.producto.codigo_interno }}</code> <small class="text-dim">{{ m.producto.nombre|truncatechars:20 }}</small></td>
+                                <td><strong>{{ m.cantidad }}</strong></td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="empty-state">No hay movimientos recientes.</div>
+        {% endif %}
+    </div>
+
+    <!-- Préstamos Pendientes -->
+    <div class="card" style="margin-bottom: 0;">
+        <div class="panel-header">
+            <h3 class="panel-title">Préstamos Pendientes</h3>
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=PRESTAMOS{% if almacen_seleccionado %}&almacen_id={{ almacen_seleccionado }}{% endif %}" class="panel-link">Ver todos →</a>
+        </div>
+        {% if prestamos_recientes %}
+            <div class="table-responsive">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Responsable</th>
+                            <th>Producto</th>
+                            <th>Pend.</th>
+                            <th style="text-align: right;">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in prestamos_recientes %}
+                            <tr>
+                                <td><strong>{{ p.destinatario }}</strong></td>
+                                <td><code>{{ p.producto.codigo_interno }}</code> <small class="text-dim">{{ p.producto.nombre|truncatechars:20 }}</small></td>
+                                <td><strong style="color: var(--warn);">{{ p.cantidad_pendiente_devolucion }}</strong></td>
+                                <td style="text-align: right; white-space: nowrap;">
+                                    {% if request.user.es_administrador or 'movimientos.devolucion' in request.user.get_permisos_codigos %}
+                                    <button type="button"
+                                            class="btn btn-sm btn-primary btn-abrir-devolucion"
+                                            data-url="{% url 'inventario:prestamo-devolver' p.pk %}"
+                                            data-producto="{{ p.producto.codigo_interno }} — {{ p.producto.nombre }}"
+                                            data-destinatario="{{ p.destinatario }}"
+                                            data-pendiente="{{ p.cantidad_pendiente_devolucion }}">
+                                        Devolver
+                                    </button>
+                                    {% else %}
+                                    <span style="font-size: 11.5px; color: var(--text-faint);">Solo lectura</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="empty-state">No hay préstamos activos pendientes.</div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- ═══ MODAL DEVOLUCIÓN DE PRÉSTAMO RÁPIDA DESDE DASHBOARD ═══ -->
+<dialog id="modalDevolucionPrestamo" class="app-modal">
+    <form method="post" id="formDevolucionModal" style="display: flex; flex-direction: column;">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <input type="hidden" name="clave_idempotencia" id="idemDevolucion">
+        <div class="app-modal-header">
+            <h2 class="app-modal-title">Registrar Devolución de Préstamo</h2>
+            <button type="button" class="app-modal-close" onclick="closeAppModal('modalDevolucionPrestamo')">&times;</button>
+        </div>
+        <div class="app-modal-body">
+            <p id="infoPrestamoDevolver" style="font-size: 13px; color: var(--text-dim); margin-bottom: 14px;"></p>
+            <div id="warnMaxDevolucion" style="display: none; background: rgba(245, 158, 11, 0.15); border: 1px solid var(--accent-warning); color: #fcd34d; padding: 8px 12px; border-radius: 6px; font-size: 12px; margin-bottom: 12px;"></div>
+            <div class="form-group">
+                <label>Cantidad a Devolver *</label>
+                <input type="number" name="cantidad" id="inputCantDevolver" class="form-control" min="1" required>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Motivo / Estado de Recepción *</label>
+                <input type="text" name="motivo" class="form-control" value="Devolución en buen estado" required>
+            </div>
+        </div>
+        <div class="app-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalDevolucionPrestamo')">Cancelar</button>
+            <button type="submit" class="btn btn-primary">Confirmar Devolución</button>
+        </div>
+    </form>
+</dialog>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/chartjs/chart.umd.min.js' %}"></script>
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        // Dark theme defaults
+        Chart.defaults.color = '#93a2d6';
+        Chart.defaults.borderColor = '#1e2e63';
+
+        var almacenId = "{{ almacen_seleccionado|default:'' }}";
+        var balanceUrl = "{% url 'web:grafico-balance' %}?dias=7" + (almacenId ? "&almacen_id=" + encodeURIComponent(almacenId) : "");
+        var categoriasUrl = "{% url 'web:grafico-categorias' %}" + (almacenId ? "?almacen_id=" + encodeURIComponent(almacenId) : "");
+
+        let balanceChart = null;
+        let categoriasChart = null;
+
+        // Balance chart
+        fetch(balanceUrl)
+            .then(res => res.json())
+            .then(data => {
+                const ctx = document.getElementById("canvasBalance");
+                if (!ctx) return;
+                balanceChart = new Chart(ctx, {
+                    type: "bar",
+                    data: {
+                        labels: data.labels,
+                        datasets: [
+                            {
+                                label: "Entradas",
+                                data: data.entradas,
+                                backgroundColor: "rgba(78,230,171,0.7)",
+                                borderRadius: 6,
+                                borderSkipped: false
+                            },
+                            {
+                                label: "Dotación",
+                                data: data.salidas,
+                                backgroundColor: "rgba(255,107,122,0.7)",
+                                borderRadius: 6,
+                                borderSkipped: false
+                            },
+                            {
+                                label: "Préstamos",
+                                data: data.prestamos || [],
+                                backgroundColor: "rgba(245,158,11,0.75)",
+                                borderRadius: 6,
+                                borderSkipped: false
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        resizeDelay: 0,
+                        plugins: { legend: { labels: { boxWidth: 12, padding: 16 } } },
+                        scales: {
+                            y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: '#182552' } },
+                            x: { grid: { display: false } }
+                        }
+                    }
+                });
+            });
+
+        // Category chart
+        fetch(categoriasUrl)
+            .then(res => res.json())
+            .then(data => {
+                const ctx = document.getElementById("canvasCategorias");
+                if (!ctx) return;
+                const containerWidth = ctx.parentElement ? ctx.parentElement.clientWidth : 500;
+                const initialPosition = containerWidth < 420 ? "bottom" : "right";
+
+                categoriasChart = new Chart(ctx, {
+                    type: "doughnut",
+                    data: {
+                        labels: data.labels,
+                        datasets: [{
+                            data: data.data,
+                            backgroundColor: [
+                                "#5c8bff", "#57e8cf", "#ffbd5c", "#ff8fb1",
+                                "#c48bff", "#4ee6ab", "#ff6b7a", "#3b6ff0"
+                            ],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        resizeDelay: 0,
+                        cutout: '60%',
+                        plugins: {
+                            legend: {
+                                position: initialPosition,
+                                labels: { boxWidth: 10, padding: 12, font: { size: 11 } }
+                            }
+                        }
+                    }
+                });
+            });
+
+        // Observer para redimensionamiento en tiempo real sin recargar página
+        if (window.ResizeObserver) {
+            const chartObserver = new ResizeObserver(function(entries) {
+                for (let entry of entries) {
+                    if (balanceChart) {
+                        balanceChart.resize();
+                    }
+                    if (categoriasChart) {
+                        const width = entry.contentRect.width;
+                        const targetPos = width < 420 ? "bottom" : "right";
+                        if (categoriasChart.options.plugins.legend.position !== targetPos) {
+                            categoriasChart.options.plugins.legend.position = targetPos;
+                            categoriasChart.update('none');
+                        } else {
+                            categoriasChart.resize();
+                        }
+                    }
+                }
+            });
+            document.querySelectorAll(".chart-container").forEach(function(el) {
+                chartObserver.observe(el);
+            });
+        } else {
+            window.addEventListener("resize", function() {
+                if (balanceChart) balanceChart.resize();
+                if (categoriasChart) categoriasChart.resize();
+            });
+        }
+        // Modal Devolución rápida de Préstamos desde el Dashboard
+        function generarClaveIdempotencia() {
+            return "idem-" + Date.now() + "-" + Math.random().toString(36).substring(2, 10);
+        }
+
+        var inpCantDevolver = document.getElementById("inputCantDevolver");
+        var warnMaxDevolucion = document.getElementById("warnMaxDevolucion");
+
+        if (inpCantDevolver) {
+            inpCantDevolver.addEventListener("input", function() {
+                var maxPend = parseInt(inpCantDevolver.max, 10);
+                var val = parseInt(inpCantDevolver.value, 10);
+                if (!isNaN(maxPend) && !isNaN(val) && val > maxPend) {
+                    inpCantDevolver.value = maxPend;
+                    if (warnMaxDevolucion) {
+                        warnMaxDevolucion.textContent = "Se ajustó automáticamente al saldo máximo pendiente (" + maxPend + " unid.).";
+                        warnMaxDevolucion.style.display = "block";
+                    }
+                } else {
+                    if (warnMaxDevolucion) warnMaxDevolucion.style.display = "none";
+                }
+            });
+        }
+
+        document.querySelectorAll(".btn-abrir-devolucion").forEach(function(btn) {
+            btn.addEventListener("click", function() {
+                var form = document.getElementById("formDevolucionModal");
+                if (!form) return;
+                form.action = btn.getAttribute("data-url");
+                var idemInp = document.getElementById("idemDevolucion");
+                if (idemInp) idemInp.value = generarClaveIdempotencia();
+                var pend = btn.getAttribute("data-pendiente");
+                var infoEl = document.getElementById("infoPrestamoDevolver");
+                if (infoEl) {
+                    infoEl.textContent = "Artículo: " + btn.getAttribute("data-producto") + " · Responsable: " + btn.getAttribute("data-destinatario") + " (Pendiente: " + pend + " unid.)";
+                }
+                if (warnMaxDevolucion) warnMaxDevolucion.style.display = "none";
+                if (inpCantDevolver) {
+                    inpCantDevolver.max = pend;
+                    inpCantDevolver.value = pend;
+                }
+                openAppModal("modalDevolucionPrestamo");
+            });
+        });
+    });
+</script>
+{% endblock %}

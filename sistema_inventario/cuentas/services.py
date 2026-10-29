@@ -94,3 +94,29 @@ def limpiar_intentos_fallidos(usuario, ip: str = None):
 
     if ip and ip in _registro_ip_fallos:
         _registro_ip_fallos.pop(ip, None)
+
+
+def purgar_sesiones_activas(usuario) -> int:
+    """Elimina de forma forzada todas las sesiones activas del usuario en la base de datos.
+    
+    Se utiliza ante eventos de máxima criticidad de seguridad (desactivación de cuenta,
+    eliminación lógica o degradación de rol) para forzar el cierre de sesión inmediato.
+    """
+    if not usuario or not usuario.pk:
+        return 0
+    from django.contrib.sessions.models import Session
+    from django.utils import timezone
+
+    uid_str = str(usuario.pk)
+    sesiones_a_borrar = []
+    for s in Session.objects.filter(expire_date__gte=timezone.now()):
+        try:
+            data = s.get_decoded()
+            if data.get("_auth_user_id") == uid_str:
+                sesiones_a_borrar.append(s.session_key)
+        except Exception:
+            continue
+
+    if sesiones_a_borrar:
+        return Session.objects.filter(session_key__in=sesiones_a_borrar).delete()[0]
+    return 0

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block page_title %}Fusionar Productos{% endblock %}
+{% block sidebar_productos %}active{% endblock %}
+
+{% block title %}Fusionar Duplicado con: {{ producto_principal.codigo_interno }} — Inventario AudacIA{% endblock %}
+
+{% block content %}
+<div style="max-width: 680px; margin: 0 auto;">
+    <div class="card">
+        <div class="card-header">
+            <div>
+                <h1 class="card-title" style="color: var(--crit);">
+                    Fusionar con Producto Duplicado
+                </h1>
+                <p style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.25rem;">
+                    Producto Principal Receptor: <strong style="color: var(--primary);">{{ producto_principal.codigo_interno }} — {{ producto_principal.nombre }}</strong>
+                </p>
+            </div>
+        </div>
+
+        <div style="background: var(--bg-panel-2); border: 1px solid rgba(255,189,92,0.3); border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem;">
+            <h3 style="font-size: 1rem; color: var(--warn); margin-bottom: 0.5rem;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> Fusión de Duplicados (§8.3)
+            </h3>
+            <p style="font-size: 0.875rem; color: var(--warn); margin-bottom: 0.75rem;">
+                Esta acción unifica dos registros de catálogo que corresponden físicamente al mismo ítem:
+            </p>
+            <ul style="font-size: 0.85rem; color: var(--warn); padding-left: 1.25rem; line-height: 1.5;">
+                <li>Las existencias del producto duplicado se <strong>sumarán</strong> al producto principal en cada almacén.</li>
+                <li>Todo el historial de movimientos, préstamos y conteos se <strong>reasignará</strong> al producto principal.</li>
+                <li>Las ubicaciones físicas se <strong>unificarán</strong> sin duplicados.</li>
+                <li>El producto duplicado quedará <strong>archivado</strong> e inactivo con stock en 0.</li>
+            </ul>
+        </div>
+
+        <form method="post" novalidate>
+            {% csrf_token %}
+
+            <div class="form-group">
+                <label for="producto_duplicado"><strong>Selecciona el Producto Duplicado a Absorber *</strong></label>
+                <select name="producto_duplicado" id="producto_duplicado" class="form-control" required>
+                    <option value="">-- Selecciona el producto duplicado --</option>
+                    {% for c in candidatos %}
+                        <option value="{{ c.id }}">
+                            {{ c.codigo_interno }} — {{ c.nombre }} ({{ c.categoria.nombre }})
+                        </option>
+                    {% endfor %}
+                </select>
+                <div class="form-help">Solo se muestran productos activos que no están archivados.</div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                <a href="{% url 'inventario:producto-detalle' producto_principal.id %}" class="btn btn-secondary">
+                    Cancelar
+                </a>
+                <button type="submit" class="btn btn-danger" style="background: var(--crit); color: white;">
+                    Confirmar Fusión Definitiva
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

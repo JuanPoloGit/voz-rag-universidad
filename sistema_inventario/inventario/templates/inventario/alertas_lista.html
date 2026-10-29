@@ -1,0 +1,467 @@
+{% extends "base.html" %}
+{% block page_title %}Catálogo y Stock{% endblock %}
+{% block sidebar_alertas %}active{% endblock %}
+
+{% block title %}Alertas de Stock — Inventario AudacIA{% endblock %}
+
+{% block extra_css %}
+<style>
+    .notif-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+    .notif-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 16px;
+        border-radius: var(--radius-sm);
+        background: var(--bg-panel-2);
+        border: 1px solid var(--border);
+        border-left: 4px solid var(--accent);
+        transition: all 0.15s ease;
+    }
+    .notif-item.alert-crit {
+        border-left-color: var(--crit);
+        background: linear-gradient(90deg, rgba(255,107,122,0.12), var(--bg-panel-2) 45%);
+    }
+    .notif-item.alert-warn {
+        border-left-color: var(--warn);
+        background: linear-gradient(90deg, rgba(255,189,92,0.12), var(--bg-panel-2) 45%);
+    }
+    .notif-item:hover {
+        border-color: var(--accent-bright);
+        transform: translateY(-1px);
+    }
+    .notif-main-link {
+        flex: 1;
+        min-width: 0;
+        text-decoration: none;
+        color: inherit;
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        cursor: pointer;
+    }
+    .notif-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        margin-top: 6px;
+        flex-shrink: 0;
+    }
+    .notif-dot.crit { background: var(--crit); box-shadow: 0 0 8px var(--crit); }
+    .notif-dot.warn { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
+
+    .kpi-filter-card {
+        cursor: pointer;
+    }
+    .kpi-filter-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    }
+    .kpi-filter-card.active-kpi {
+        box-shadow: 0 0 0 2px var(--accent-bright);
+    }
+    .kpi-filter-card.active-kpi-crit {
+        box-shadow: 0 0 0 2px var(--crit);
+    }
+    .kpi-filter-card.active-kpi-warn {
+        box-shadow: 0 0 0 2px var(--warn);
+    }
+
+    @media (max-width: 640px) {
+        .notif-item {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        .notif-actions {
+            width: 100%;
+            justify-content: flex-end;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h1 class="card-title" style="display: flex; align-items: center; gap: 8px;">
+                <svg viewBox="0 0 24 24" style="width: 18px; height: 18px; stroke: var(--warn); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                Alertas de Stock Crítico y Bajo Mínimo
+            </h1>
+            <p style="color: var(--text-muted); font-size: 13px; margin-top: 3px;">
+                {% if alertas.total_alertas > 0 %}
+                    Monitoreo en tiempo real de artículos agotados o por debajo del umbral mínimo ({{ alertas.total_alertas }} alerta(s) activa(s)){% if almacen_obj %} en <strong>{{ almacen_obj.nombre }}</strong>{% endif %}.
+                {% else %}
+                    {% if almacen_obj %}
+                        El almacén <strong>{{ almacen_obj.nombre }}</strong> se encuentra en niveles óptimos de abastecimiento.
+                    {% else %}
+                        Todo el inventario se encuentra en niveles óptimos de abastecimiento.
+                    {% endif %}
+                {% endif %}
+            </p>
+        </div>
+    </div>
+
+    <!-- Tarjetas de resumen interactivas -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px;">
+        <a href="{% url 'inventario:alertas-lista' %}{% if almacen_id %}?almacen_id={{ almacen_id }}{% endif %}"
+           class="kpi-filter-card {% if nivel == 'TODAS' or not nivel %}active-kpi{% endif %}"
+           style="text-decoration: none; display: block; background: var(--bg-panel-2); border: 1px solid {% if nivel == 'TODAS' or not nivel %}var(--accent-bright){% else %}var(--border){% endif %}; padding: 12px 14px; border-radius: var(--radius-sm); transition: all 0.15s ease;"
+           title="Ver todas las alertas activas">
+            <div style="font-size: 11px; font-weight: 700; color: var(--text-faint); text-transform: uppercase;">Total Alertas Activas</div>
+            <div style="font-size: 22px; font-weight: 800; color: var(--accent-bright); margin-top: 2px;">{{ alertas.total_alertas }}</div>
+        </a>
+        <a href="{% url 'inventario:alertas-lista' %}?nivel=CRITICA{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
+           class="kpi-filter-card {% if nivel == 'CRITICA' %}active-kpi-crit{% endif %}"
+           style="text-decoration: none; display: block; background: var(--danger-bg); border: 1px solid {% if nivel == 'CRITICA' %}var(--danger){% else %}rgba(255,107,122,0.3){% endif %}; padding: 12px 14px; border-radius: var(--radius-sm); transition: all 0.15s ease;"
+           title="Filtrar por productos agotados (Stock 0)">
+            <div style="font-size: 11px; font-weight: 700; color: var(--crit); text-transform: uppercase;">Agotados (Stock 0)</div>
+            <div style="font-size: 22px; font-weight: 800; color: var(--danger); margin-top: 2px;">{{ alertas.total_criticas }}</div>
+        </a>
+        <a href="{% url 'inventario:alertas-lista' %}?nivel=BAJA{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
+           class="kpi-filter-card {% if nivel == 'BAJA' %}active-kpi-warn{% endif %}"
+           style="text-decoration: none; display: block; background: var(--warning-bg); border: 1px solid {% if nivel == 'BAJA' %}var(--warning){% else %}rgba(255,189,92,0.3){% endif %}; padding: 12px 14px; border-radius: var(--radius-sm); transition: all 0.15s ease;"
+           title="Filtrar por productos con stock bajo (&lt; Mínimo)">
+            <div style="font-size: 11px; font-weight: 700; color: var(--warn); text-transform: uppercase;">Stock Bajo (&lt; Mínimo)</div>
+            <div style="font-size: 22px; font-weight: 800; color: var(--warning); margin-top: 2px;">{{ alertas.total_bajas }}</div>
+        </a>
+    </div>
+
+    <!-- Barra de Filtros Completa y Responsiva -->
+    <div style="margin-bottom: 16px;">
+        <form method="get" action="{% url 'inventario:alertas-lista' %}" data-auto-filter="true"
+              style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; background: var(--bg-panel-2); border: 1px solid var(--border); padding: 10px 14px; border-radius: var(--radius-sm);">
+            
+            <div style="flex: 2; min-width: 220px;">
+                <input type="text" name="q" value="{{ q }}" class="form-control"
+                       placeholder="Buscar por código, producto o almacén..." autocomplete="off">
+            </div>
+
+            {% if almacenes and almacenes.count > 1 or not request.user.es_usuario_normal %}
+            <div style="flex: 1; min-width: 170px;">
+                <select name="almacen_id" class="form-control" title="Filtrar por Almacén">
+                    <option value="">Todos los almacenes</option>
+                    {% for alm in almacenes %}
+                        <option value="{{ alm.id }}" {% if almacen_id == alm.id|stringformat:'s' %}selected{% endif %}>{{ alm.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+
+            <div style="flex: 1; min-width: 160px;">
+                <select name="nivel" class="form-control" title="Filtrar por Nivel de Alerta">
+                    <option value="" {% if not nivel or nivel == 'TODAS' %}selected{% endif %}>Todas las alertas</option>
+                    <option value="CRITICA" {% if nivel == 'CRITICA' %}selected{% endif %}>Agotados (Stock 0)</option>
+                    <option value="BAJA" {% if nivel == 'BAJA' %}selected{% endif %}>Stock Bajo (&lt; Mínimo)</option>
+                </select>
+            </div>
+
+            <div style="flex: 1; min-width: 150px;">
+                <select name="estado" class="form-control" title="Filtrar por Estado de Lectura">
+                    <option value="" {% if not filtro_estado or filtro_estado == 'todas' %}selected{% endif %}>Todos los estados</option>
+                    <option value="pendientes" {% if filtro_estado == 'pendientes' %}selected{% endif %}>Solo no leídas</option>
+                    <option value="leidas" {% if filtro_estado == 'leidas' %}selected{% endif %}>Solo leídas</option>
+                </select>
+            </div>
+
+            {% if q or almacen_id or nivel != 'TODAS' or filtro_estado != 'todas' %}
+            <div>
+                <a href="{% url 'inventario:alertas-lista' %}" class="btn btn-sm btn-secondary" style="white-space: nowrap;">Limpiar</a>
+            </div>
+            {% endif %}
+        </form>
+    </div>
+
+    <!-- Lista de Alertas -->
+    {% if notificaciones %}
+        <div class="notif-list">
+            {% for ex in notificaciones %}
+                <div class="notif-item {% if ex.tipo_alerta == 'CRITICA' %}alert-crit{% else %}alert-warn{% endif %}">
+                    <a href="{% url 'inventario:producto-detalle' ex.producto.pk %}" class="notif-main-link" title="Ver ficha del producto">
+                        <span class="notif-dot {% if ex.tipo_alerta == 'CRITICA' %}crit{% else %}warn{% endif %}"></span>
+                        <div style="flex: 1; min-width: 0;">
+                            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                <code>{{ ex.producto.codigo_interno }}</code>
+                                <strong style="color: var(--text); font-size: 14px;">{{ ex.producto.nombre }}</strong>
+                                {% if ex.tipo_alerta == 'CRITICA' %}
+                                    <span class="status-inline status-crit"><span class="status-dot"></span>Agotado</span>
+                                {% else %}
+                                    <span class="status-inline status-warn"><span class="status-dot"></span>Stock bajo</span>
+                                {% endif %}
+                            </div>
+                            <div style="font-size: 12.5px; color: var(--text-dim); margin-top: 4px;">
+                                En almacén <strong>{{ ex.almacen.nombre }}</strong>:
+                                disponible <strong style="color: {% if ex.tipo_alerta == 'CRITICA' %}var(--crit){% else %}var(--warn){% endif %};">{{ ex.stock_disponible }} unid.</strong>
+                                (umbral mínimo requerido: {{ ex.producto.stock_minimo }} unid.)
+                            </div>
+                        </div>
+                    </a>
+
+                    <div class="action-group notif-actions">
+                        <button type="button"
+                                class="btn btn-sm btn-primary btn-abastecer-item"
+                                data-producto-id="{{ ex.producto_id }}"
+                                data-almacen-id="{{ ex.almacen_id }}"
+                                data-producto-nombre="{{ ex.producto.codigo_interno }} — {{ ex.producto.nombre }}"
+                                data-almacen-nombre="{{ ex.almacen.nombre }}"
+                                data-nombre-empaque="{{ ex.producto.nombre_empaque|default:'' }}"
+                                data-unidades-empaque="{{ ex.producto.unidades_por_empaque|default:1 }}"
+                                data-ubicacion-id="{% with ub=ex.producto.ubicaciones.first %}{{ ub.id|default:'' }}{% endwith %}"
+                                data-ubicacion-nombre="{% with ub=ex.producto.ubicaciones.first %}{{ ub.nombre|default:'' }}{% endwith %}">
+                            + Entrada
+                        </button>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div style="text-align: center; padding: 2.5rem 1rem; color: var(--text-muted); background: var(--bg-panel-2); border: 1px dashed var(--border); border-radius: var(--radius-sm);">
+            No se encontraron alertas de stock que coincidan con los filtros aplicados.
+            {% if q or almacen_id or nivel != 'TODAS' or filtro_estado != 'todas' %}
+                <div style="margin-top: 10px;">
+                    <a href="{% url 'inventario:alertas-lista' %}" class="btn btn-sm btn-secondary">Limpiar filtros</a>
+                </div>
+            {% endif %}
+        </div>
+    {% endif %}
+</div>
+
+<!-- ═══ MODAL REGISTRAR ENTRADA DE STOCK (PRODUCTO Y ALMACÉN FIJOS) ═══ -->
+<dialog id="modalEntradaAlerta" class="app-modal">
+    <form method="post" action="{% url 'inventario:movimiento-entrada' %}" id="formModalEntradaAlerta" style="display: flex; flex-direction: column; max-height: 90dvh; overflow: hidden;">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <input type="hidden" name="clave_idempotencia" id="idemEntradaAlerta">
+        <input type="hidden" name="producto" id="inputModalProductoId">
+        <input type="hidden" name="almacen" id="inputModalAlmacenId">
+
+        <div class="app-modal-header">
+            <h2 class="app-modal-title" id="tituloModalEntradaAlerta">Registrar Entrada de Stock</h2>
+            <button type="button" class="app-modal-close" onclick="closeAppModal('modalEntradaAlerta')">&times;</button>
+        </div>
+
+        <div class="app-modal-body">
+            <!-- Resumen fijo del producto y almacén seleccionados (no editable) -->
+            <div style="background: var(--bg-deep-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 16px;">
+                <div style="font-size: 11px; text-transform: uppercase; color: var(--text-faint); font-weight: 600;">Artículo a abastecer</div>
+                <div id="dispProdNombre" style="font-weight: 700; font-size: 14.5px; color: var(--text); margin-top: 3px;"></div>
+                <div id="dispAlmNombre" style="font-size: 12.5px; color: var(--accent-2); margin-top: 2px;"></div>
+            </div>
+
+            <div class="form-grid-2">
+                <div class="form-group" id="grupoCantidadAlerta">
+                    <label id="lblCantidadAlerta" style="transition: color 0.2s ease;">Cantidad (Unidades Base) *</label>
+                    {{ entrada_form.cantidad }}
+                </div>
+                <div class="form-group">
+                    <label>Ubicación Física Asignada</label>
+                    <div id="dispModalUbicacion" class="form-control" style="background: rgba(255,255,255,0.03); opacity: 0.95; display: flex; align-items: center; gap: 7px; min-height: 40px;">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent-2); flex-shrink: 0;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                        <span id="txtModalUbicacion" style="color: var(--text-muted); font-size: 13px;">Sin ubicación física asignada</span>
+                    </div>
+                    <input type="hidden" name="ubicacion" id="inputModalUbicacionId" value="">
+                </div>
+            </div>
+
+            <div class="form-group" id="containerEmpaqueAlerta">
+                <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer;">
+                    {{ entrada_form.es_empaque }}
+                    <span id="lblEmpaqueAlertaTexto">¿Ingresar por paquetes / empaques?</span>
+                </label>
+                <div id="ayudaEmpaqueAlertaTexto" class="form-help" style="margin-top: 4px; font-size: 12px; color: var(--text-dim); display: none;"></div>
+            </div>
+
+            <div class="form-group" id="grupoEmpaquesAlerta" style="display: none; background: rgba(59, 111, 240, 0.08); border: 1px solid rgba(59, 111, 240, 0.25); border-radius: 8px; padding: 12px 14px; margin-bottom: 1rem;">
+                <label style="font-weight: 700; color: var(--text); display: block; margin-bottom: 4px;">Cantidad de Empaques *</label>
+                {{ entrada_form.cantidad_empaques }}
+                <div id="dispTotalEmpaqueAlertaCalculado" class="form-help" style="margin-top: 6px; font-weight: 600; color: var(--ok); display: none;"></div>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Motivo de la Entrada</label>
+                {{ entrada_form.motivo }}
+            </div>
+        </div>
+
+        <div class="app-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalEntradaAlerta')">Cancelar</button>
+            <button type="submit" class="btn btn-primary">Confirmar Entrada</button>
+        </div>
+    </form>
+</dialog>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    var form = document.getElementById("formModalEntradaAlerta");
+    var inputProdId = document.getElementById("inputModalProductoId");
+    var inputAlmId = document.getElementById("inputModalAlmacenId");
+    var dispProd = document.getElementById("dispProdNombre");
+    var dispAlm = document.getElementById("dispAlmNombre");
+    var inputMotivo = form.querySelector('[name="motivo"]');
+    var chkEmpaque = form.querySelector('[name="es_empaque"]');
+    var grupoEmpaque = document.getElementById("grupoEmpaquesAlerta");
+    var idemInput = document.getElementById("idemEntradaAlerta");
+
+    function genIdem() {
+        return "ENT-ALERTA-" + Date.now() + "-" + Math.random().toString(36).substring(2, 8);
+    }
+
+    var inputCantAlerta = form.querySelector('[name="cantidad"]');
+    var inpCantEmpaquesAlerta = form.querySelector('[name="cantidad_empaques"]');
+    var lblEmpaqueAlertaTexto = document.getElementById("lblEmpaqueAlertaTexto");
+    var ayudaEmpaqueAlertaTexto = document.getElementById("ayudaEmpaqueAlertaTexto");
+    var dispTotalEmpaqueAlerta = document.getElementById("dispTotalEmpaqueAlertaCalculado");
+    var containerEmpaqueAlerta = document.getElementById("containerEmpaqueAlerta");
+    var lblCantidadAlerta = document.getElementById("lblCantidadAlerta");
+
+    var currentFactorEmpaque = 1;
+    var currentNombreEmpaque = "Empaque";
+
+    function calcularTotalEmpaqueAlerta() {
+        if (!inpCantEmpaquesAlerta || !dispTotalEmpaqueAlerta) return;
+        var cant = parseInt(inpCantEmpaquesAlerta.value, 10) || 0;
+        if (cant > 0 && currentFactorEmpaque > 1) {
+            var total = cant * currentFactorEmpaque;
+            dispTotalEmpaqueAlerta.innerHTML = "✓ <strong>" + cant + "</strong> " + currentNombreEmpaque + " × <strong>" + currentFactorEmpaque + "</strong> unid. = <strong style='color: var(--accent-2);'>" + total + " unidades base</strong> que ingresarán al stock.";
+            dispTotalEmpaqueAlerta.style.display = "block";
+            if (inputCantAlerta && chkEmpaque && chkEmpaque.checked) {
+                inputCantAlerta.value = total;
+            }
+        } else {
+            dispTotalEmpaqueAlerta.style.display = "none";
+            if (inputCantAlerta && chkEmpaque && chkEmpaque.checked) {
+                inputCantAlerta.value = "";
+            }
+        }
+    }
+
+    function toggleModoEmpaqueAlerta() {
+        if (!chkEmpaque) return;
+        var esEmp = chkEmpaque.checked && !chkEmpaque.disabled;
+        if (esEmp) {
+            if (grupoEmpaque) grupoEmpaque.style.display = "block";
+            if (inpCantEmpaquesAlerta) {
+                inpCantEmpaquesAlerta.disabled = false;
+                inpCantEmpaquesAlerta.required = true;
+            }
+            if (inputCantAlerta) {
+                inputCantAlerta.disabled = true;
+                inputCantAlerta.required = false;
+                inputCantAlerta.style.opacity = "0.5";
+                inputCantAlerta.style.cursor = "not-allowed";
+                inputCantAlerta.style.backgroundColor = "rgba(255, 255, 255, 0.04)";
+            }
+            if (lblCantidadAlerta) {
+                lblCantidadAlerta.innerHTML = 'Cantidad (Unidades Base) <small style="color: var(--accent-2); font-weight: 500;">(calculada automáticamente por empaques)</small>';
+            }
+            calcularTotalEmpaqueAlerta();
+        } else {
+            if (grupoEmpaque) grupoEmpaque.style.display = "none";
+            if (inpCantEmpaquesAlerta) {
+                inpCantEmpaquesAlerta.disabled = true;
+                inpCantEmpaquesAlerta.required = false;
+                inpCantEmpaquesAlerta.value = "";
+            }
+            if (inputCantAlerta) {
+                inputCantAlerta.disabled = false;
+                inputCantAlerta.required = true;
+                inputCantAlerta.style.opacity = "1";
+                inputCantAlerta.style.cursor = "";
+                inputCantAlerta.style.backgroundColor = "";
+            }
+            if (lblCantidadAlerta) {
+                lblCantidadAlerta.innerHTML = 'Cantidad (Unidades Base) *';
+            }
+            if (dispTotalEmpaqueAlerta) dispTotalEmpaqueAlerta.style.display = "none";
+        }
+    }
+
+    if (chkEmpaque) {
+        chkEmpaque.addEventListener("change", toggleModoEmpaqueAlerta);
+    }
+    if (inpCantEmpaquesAlerta) {
+        inpCantEmpaquesAlerta.addEventListener("input", calcularTotalEmpaqueAlerta);
+    }
+
+    form.addEventListener("submit", function() {
+        if (chkEmpaque && chkEmpaque.checked && inputCantAlerta) {
+            inputCantAlerta.disabled = false;
+        }
+    });
+
+    document.querySelectorAll(".btn-abastecer-item").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            form.reset();
+            idemInput.value = genIdem();
+            var pid = btn.getAttribute("data-producto-id");
+            var aid = btn.getAttribute("data-almacen-id");
+            var pnom = btn.getAttribute("data-producto-nombre");
+            var anom = btn.getAttribute("data-almacen-nombre");
+            var nomEmp = btn.getAttribute("data-nombre-empaque") || "Empaque";
+            var unidEmp = parseInt(btn.getAttribute("data-unidades-empaque"), 10) || 1;
+
+            currentFactorEmpaque = unidEmp;
+            currentNombreEmpaque = nomEmp;
+
+            inputProdId.value = pid || "";
+            inputAlmId.value = aid || "";
+            dispProd.textContent = pnom || "";
+            dispAlm.textContent = "Bodega destino: " + (anom || "");
+
+            var ubId = btn.getAttribute("data-ubicacion-id") || "";
+            var ubNom = btn.getAttribute("data-ubicacion-nombre") || "";
+            var inputUbicModal = document.getElementById("inputModalUbicacionId");
+            var txtModalUbic = document.getElementById("txtModalUbicacion");
+            if (inputUbicModal) inputUbicModal.value = ubId;
+            if (txtModalUbic) {
+                if (ubId) {
+                    txtModalUbic.innerHTML = '<strong style="color: var(--ok);">' + ubNom + '</strong> <span style="font-size: 11px; color: var(--text-muted); margin-left: 4px;">(Ubicación fija asignada)</span>';
+                } else {
+                    txtModalUbic.innerHTML = '<span style="color: var(--text-muted); font-style: italic;">Sin ubicación física asignada en catálogo</span>';
+                }
+            }
+
+            // Habilitación o inhabilitación de empaques según catálogo
+            if (chkEmpaque) {
+                if (unidEmp > 1) {
+                    chkEmpaque.disabled = false;
+                    if (containerEmpaqueAlerta) {
+                        containerEmpaqueAlerta.style.opacity = "1";
+                        containerEmpaqueAlerta.style.pointerEvents = "auto";
+                    }
+                    if (lblEmpaqueAlertaTexto) {
+                        lblEmpaqueAlertaTexto.innerHTML = '<strong>¿Ingresar por paquetes / empaques?</strong> <span class="badge badge-accent" style="font-size: 11px; margin-left: 6px;">' + nomEmp + ' x ' + unidEmp + ' unid.</span>';
+                    }
+                    if (ayudaEmpaqueAlertaTexto) ayudaEmpaqueAlertaTexto.style.display = "none";
+                } else {
+                    chkEmpaque.checked = false;
+                    chkEmpaque.disabled = true;
+                    if (containerEmpaqueAlerta) {
+                        containerEmpaqueAlerta.style.opacity = "0.65";
+                        containerEmpaqueAlerta.style.pointerEvents = "none";
+                    }
+                    if (lblEmpaqueAlertaTexto) {
+                        lblEmpaqueAlertaTexto.textContent = "¿Ingresar por paquetes / empaques?";
+                    }
+                    if (ayudaEmpaqueAlertaTexto) {
+                        ayudaEmpaqueAlertaTexto.textContent = "Este artículo no tiene empaques configurados en el catálogo (se gestiona por 1 unid. base).";
+                        ayudaEmpaqueAlertaTexto.style.display = "block";
+                    }
+                }
+                toggleModoEmpaqueAlerta();
+            }
+
+            if (inputMotivo) inputMotivo.value = "Reposición por alerta de stock";
+            openAppModal("modalEntradaAlerta");
+        });
+    });
+});
+</script>
+{% endblock %}

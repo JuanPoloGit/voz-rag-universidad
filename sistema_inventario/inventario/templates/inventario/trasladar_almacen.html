@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block page_title %}Desactivar Almacén{% endblock %}
+{% block sidebar_almacenes %}active{% endblock %}
+
+{% block title %}Desactivar Almacén: {{ almacen.nombre }} — Inventario AudacIA{% endblock %}
+
+{% block content %}
+<div style="max-width: 680px; margin: 0 auto;">
+    <div class="card">
+        <div class="card-header">
+            <div>
+                <h1 class="card-title" style="color: var(--crit);">
+                    Desactivar Almacén: {{ almacen.nombre }}
+                </h1>
+                <p style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.25rem;">
+                    Confirmación de retiro operativo de bodega o depósito.
+                </p>
+            </div>
+        </div>
+
+        {% if tiene_stock %}
+            <div style="background: var(--bg-panel-2); border: 1px solid rgba(255,189,92,0.3); border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem;">
+                <h3 style="font-size: 1rem; color: var(--warn); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> Traslado Estructural Requerido (§7.1)
+                </h3>
+                <p style="font-size: 0.875rem; color: var(--warn); margin-bottom: 0.75rem;">
+                    Este almacén contiene existencias activas. Ningún producto puede quedar sin almacén asignado.
+                    Debe seleccionar el almacén receptor al que se trasladarán todas las unidades antes de desactivar.
+                </p>
+
+                <div class="table-responsive" style="max-height: 200px; overflow-y: auto;">
+                    <table class="data-table" style="font-size: 0.85rem;">
+                        <thead>
+                            <tr>
+                                <th>Código</th>
+                                <th>Producto</th>
+                                <th style="text-align: right;">Stock Disponible</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for ex in existencias %}
+                                <tr>
+                                    <td><code>{{ ex.producto.codigo_interno }}</code></td>
+                                    <td>{{ ex.producto.nombre }}</td>
+                                    <td style="text-align: right; font-weight: 700;">{{ ex.stock_disponible }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        {% else %}
+            <div style="background: var(--bg-panel-2); border: 1px solid rgba(78,230,171,0.3); border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem; color: var(--ok); font-size: 0.875rem;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><polyline points="20 6 9 17 4 12"/></svg> Este almacén no contiene existencias activas. Puede ser desactivado directamente.
+            </div>
+        {% endif %}
+
+        <form method="post" novalidate>
+            {% csrf_token %}
+
+            {% if tiene_stock %}
+                <div class="form-group">
+                    <label for="almacen_destino"><strong>Almacén Destino del Traslado *</strong></label>
+                    <select name="almacen_destino" id="almacen_destino" class="form-control" required>
+                        <option value="">-- Selecciona el almacén receptor --</option>
+                        {% for alm in almacenes_destino %}
+                            <option value="{{ alm.id }}">{{ alm.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="form-help">Todas las existencias y categorías asociadas se reasignarán a este almacén.</div>
+                </div>
+            {% endif %}
+
+            <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                <a href="{% url 'inventario:almacen-lista' %}" class="btn btn-secondary">
+                    Cancelar
+                </a>
+                <button type="submit" class="btn btn-danger" style="background: var(--crit); color: white;">
+                    Confirmar Desactivación
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

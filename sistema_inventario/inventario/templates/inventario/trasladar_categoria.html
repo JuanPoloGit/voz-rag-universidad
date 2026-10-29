@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block page_title %}Trasladar Categoría y Productos{% endblock %}
+{% block sidebar_categorias %}active{% endblock %}
+
+{% block title %}Trasladar Categoría: {{ categoria.nombre }} — Inventario AudacIA{% endblock %}
+
+{% block content %}
+<div style="max-width: 900px; margin: 0 auto;">
+    <div class="card">
+        <div class="card-header">
+            <div>
+                <h1 class="card-title" style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.3rem;">🔀</span> Trasladar Categoría: {{ categoria.nombre }}
+                </h1>
+                <p style="font-size: 0.875rem; color: var(--text-muted); margin-top: 0.25rem;">
+                    Reasigna esta categoría y sus productos asociados a un nuevo almacén, definiendo la ubicación física destino para cada producto.
+                </p>
+            </div>
+            <a href="{% url 'inventario:categoria-lista' %}" class="btn btn-secondary btn-sm">
+                Volver a Categorías
+            </a>
+        </div>
+
+        <!-- Resumen de Origen -->
+        <div style="background: var(--bg-panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1.5rem; display: flex; flex-wrap: wrap; gap: 1.5rem;">
+            <div>
+                <span style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; display: block; margin-bottom: 2px;">Categoría</span>
+                <strong style="font-size: 1.05rem; color: var(--text);">{{ categoria.nombre }}</strong>
+            </div>
+            <div>
+                <span style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; display: block; margin-bottom: 2px;">Almacén Principal Actual</span>
+                <span class="badge badge-accent" style="font-size: 0.85rem;">{{ categoria.almacen_principal.nombre }}</span>
+            </div>
+            <div>
+                <span style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; display: block; margin-bottom: 2px;">Productos Asociados</span>
+                <strong style="font-size: 1.05rem; color: var(--accent-2);">{{ productos.count }} artículo(s)</strong>
+            </div>
+        </div>
+
+        {% if not almacenes_destino %}
+            <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 8px; padding: 1rem; color: var(--crit); margin-bottom: 1.5rem;">
+                ⚠️ No existen otros almacenes activos disponibles para realizar el traslado.
+            </div>
+        {% else %}
+            <form method="post" id="formTrasladarCategoria" novalidate>
+                {% csrf_token %}
+
+                <!-- Selección de Almacén Destino -->
+                <div class="form-group" style="background: rgba(30, 41, 59, 0.5); padding: 1.25rem; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 1.5rem;">
+                    <label for="selectAlmacenDestino" style="font-size: 0.95rem; font-weight: 700; color: var(--text); display: block; margin-bottom: 6px;">
+                        🏛️ Nuevo Almacén Principal *
+                    </label>
+                    <p style="font-size: 0.825rem; color: var(--text-muted); margin-bottom: 10px;">
+                        Seleccione el almacén hacia donde se moverá la categoría y todas sus existencias asociadas.
+                    </p>
+                    <select name="almacen_destino" id="selectAlmacenDestino" class="form-control" style="max-width: 420px; font-weight: 600;" required>
+                        {% for alm in almacenes_destino %}
+                            <option value="{{ alm.id }}" {% if almacen_destino_seleccionado and almacen_destino_seleccionado.id == alm.id %}selected{% endif %}>
+                                {{ alm.nombre }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Tabla de Productos y Asignación de Ubicaciones Físicas -->
+                <div style="margin-bottom: 1.5rem;">
+                    <h3 style="font-size: 1rem; font-weight: 700; color: var(--text); margin-bottom: 4px;">
+                        📍 Asignación de Ubicación Física en Destino
+                    </h3>
+                    <p style="font-size: 0.825rem; color: var(--text-muted); margin-bottom: 12px;">
+                        Seleccione en qué estantería o sección física quedará almacenado cada producto en el nuevo almacén.
+                    </p>
+
+                    {% if productos %}
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Código</th>
+                                        <th>Producto</th>
+                                        <th style="text-align: center;">Stock</th>
+                                        <th>Ubicación Actual</th>
+                                        <th style="min-width: 250px;">Nueva Ubicación en Destino</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for p in productos %}
+                                        <tr>
+                                            <td><code>{{ p.codigo_interno }}</code></td>
+                                            <td><strong>{{ p.nombre }}</strong></td>
+                                            <td style="text-align: center;">
+                                                <span class="badge badge-accent">{{ p.stock_actual }} u.</span>
+                                            </td>
+                                            <td>
+                                                <span style="color: var(--text-muted); font-size: 0.85rem;">
+                                                    {% with u=p.ubicaciones.first %}
+                                                        {{ u.nombre|default:"Sin ubicación" }}
+                                                    {% endwith %}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <select name="ubicacion_producto_{{ p.id }}" class="form-control select-ubicacion-destino" data-prod-id="{{ p.id }}">
+                                                    <option value="">-- Sin ubicación física asignada --</option>
+                                                    {% for ub in ubicaciones_destino_actuales %}
+                                                        <option value="{{ ub.id }}">{{ ub.nombre }}</option>
+                                                    {% endfor %}
+                                                </select>
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <div style="padding: 1.5rem; text-align: center; color: var(--text-muted); background: var(--bg-panel-2); border-radius: 8px;">
+                            Esta categoría no tiene productos asociados actualmente. El almacén principal se actualizará directamente.
+                        </div>
+                    {% endif %}
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem; padding-top: 1.25rem; border-top: 1px solid var(--border);">
+                    <a href="{% url 'inventario:categoria-lista' %}" class="btn btn-secondary">
+                        Cancelar
+                    </a>
+                    <button type="submit" class="btn btn-primary" id="btnConfirmarTrasladoCat">
+                        Confirmar Traslado de Categoría y Productos
+                    </button>
+                </div>
+            </form>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    var ubicacionesPorAlmacen = {{ ubicaciones_por_almacen_json|safe }};
+    var selectAlmDest = document.getElementById("selectAlmacenDestino");
+
+    function actualizarOpcionesUbicaciones() {
+        if (!selectAlmDest) return;
+        var almId = selectAlmDest.value;
+        var ubics = ubicacionesPorAlmacen[almId] || [];
+
+        document.querySelectorAll(".select-ubicacion-destino").forEach(function(sel) {
+            sel.innerHTML = "";
+            var optDefault = document.createElement("option");
+            optDefault.value = "";
+            optDefault.textContent = "-- Sin ubicación física asignada --";
+            sel.appendChild(optDefault);
+
+            ubics.forEach(function(u) {
+                var opt = document.createElement("option");
+                opt.value = u.id;
+                opt.textContent = u.nombre;
+                sel.appendChild(opt);
+            });
+        });
+    }
+
+    if (selectAlmDest) {
+        selectAlmDest.addEventListener("change", actualizarOpcionesUbicaciones);
+        actualizarOpcionesUbicaciones();
+    }
+});
+</script>
+{% endblock %}

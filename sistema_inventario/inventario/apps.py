@@ -8,4 +8,6 @@ class InventarioConfig(AppConfig):
 
     def ready(self):
         import inventario.signals_auditoria  # noqa: F401
+        import inventario.signals_alertas  # noqa: F401
+
 

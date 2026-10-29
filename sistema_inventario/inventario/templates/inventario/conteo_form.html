@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block page_title %}Registrar Conteo Físico{% endblock %}
+{% block sidebar_conteos %}active{% endblock %}
+
+{% block title %}Registrar Conteo Físico{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 600px; margin: 0 auto;">
+    <h2 style="margin-bottom: 0.5rem;">Registrar Conteo Físico</h2>
+    <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">
+        Introduzca la cantidad real contada. El sistema registrará la diferencia para revisión y posterior confirmación (§9.7).
+    </p>
+
+    <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.GET.next|default:'' }}">
+
+        {% if form.non_field_errors %}
+            <div class="alert alert-error" style="margin-bottom: 1.25rem;">
+                {{ form.non_field_errors }}
+            </div>
+        {% endif %}
+
+        <div class="form-group" style="margin-bottom: 1.25rem;">
+            <label><strong>{{ form.producto.label }}</strong> *</label>
+            {{ form.producto }}
+            {{ form.producto.errors }}
+        </div>
+
+        {% if not user.es_usuario_normal %}
+            <div class="form-group" style="margin-bottom: 1.25rem;">
+                <label><strong>{{ form.almacen.label }}</strong> *</label>
+                {{ form.almacen }}
+                {{ form.almacen.errors }}
+            </div>
+        {% else %}
+            {{ form.almacen }}
+        {% endif %}
+
+        <div class="form-group" style="margin-bottom: 1.25rem;">
+            <label><strong>{{ form.cantidad_contada.label }}</strong> *</label>
+            {{ form.cantidad_contada }}
+            <small style="color: var(--text-muted);">Unidades físicas verificadas en la estantería o almacén.</small>
+            {{ form.cantidad_contada.errors }}
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1.5rem;">
+            <label><strong>{{ form.motivo.label }}</strong></label>
+            {{ form.motivo }}
+            {{ form.motivo.errors }}
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+            <a href="{% if request.GET.next %}{{ request.GET.next }}{% else %}{% url 'inventario:movimiento-lista' %}?vista=CONTEOS{% endif %}" class="btn btn-secondary">Cancelar</a>
+            <button type="submit" class="btn btn-primary">Registrar Conteo Físico</button>
+        </div>
+    </form>
+</div>
+
+{% if producto_almacenes_json %}
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        var prodAlmMap = {{ producto_almacenes_json|safe }};
+        var selectProd = document.getElementById("id_producto");
+        var selectAlm = document.getElementById("id_almacen");
+
+        function sincronizarAlmacen() {
+            if (!selectProd || !selectAlm) return;
+            var prodId = selectProd.value;
+            if (prodId && prodAlmMap[prodId]) {
+                var almInfo = prodAlmMap[prodId];
+                if (almInfo.almacen_id) {
+                    selectAlm.value = almInfo.almacen_id;
+                }
+            }
+        }
+
+        if (selectProd) {
+            selectProd.addEventListener("change", sincronizarAlmacen);
+            if (selectProd.value) {
+                sincronizarAlmacen();
+            }
+        }
+    });
+</script>
+{% endif %}
+{% endblock %}

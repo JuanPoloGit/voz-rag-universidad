@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block page_title %}Préstamos{% endblock %}
+{% block sidebar_prestamos %}active{% endblock %}
+
+{% block title %}Préstamos de Inventario{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+        <div>
+            <h2>Gestión y Seguimiento de Préstamos</h2>
+            <p style="color: var(--text-muted); font-size: 0.9rem;">
+                Control de artículos entregados temporalmente con seguimiento de devoluciones parciales y bajas (§9.4).
+            </p>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=PRESTAMOS" class="btn btn-secondary">
+                &larr; Centro de Movimientos y Préstamos
+            </a>
+            {% if request.user.es_administrador or 'movimientos.prestamo' in request.user.get_permisos_codigos %}
+            <a href="{% url 'inventario:prestamo-crear' %}" class="btn btn-primary">+ Entregar Préstamo</a>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Filtros -->
+    <form method="get" style="display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
+        <input type="text" name="q" value="{{ q }}" placeholder="Buscar por destinatario o producto..." class="form-control" style="flex: 2; min-width: 250px;">
+        <select name="estado" class="form-control" style="flex: 1; min-width: 180px;">
+            <option value="">-- Todos los estados --</option>
+            {% for val, label in estados %}
+                <option value="{{ val }}" {% if estado_seleccionado == val %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-primary">Filtrar</button>
+        {% if q or estado_seleccionado %}
+            <a href="{% url 'inventario:prestamo-lista' %}" class="btn btn-secondary">Limpiar</a>
+        {% endif %}
+    </form>
+
+    {% if prestamos %}
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Fecha</th>
+                    <th>Destinatario / Responsable</th>
+                    <th>Producto</th>
+                    <th>Almacén</th>
+                    <th>Original</th>
+                    <th>Pendiente</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in prestamos %}
+                    <tr>
+                        <td style="font-size: 0.85rem; white-space: nowrap;">{{ p.fecha_creacion|date:"Y-m-d H:i" }}</td>
+                        <td><strong>{{ p.destinatario }}</strong></td>
+                        <td>
+                            <code>{{ p.producto.codigo_interno }}</code><br>
+                            <small>{{ p.producto.nombre|truncatechars:25 }}</small>
+                        </td>
+                        <td><span class="badge badge-accent">{{ p.almacen.nombre }}</span></td>
+                        <td>{{ p.cantidad_original }} unid.</td>
+                        <td><strong style="color: var(--danger);">{{ p.cantidad_pendiente_devolucion }} unid.</strong></td>
+                        <td>
+                            <span class="badge {% if p.estado == 'ABIERTO' %}badge-warn{% elif p.estado == 'DEVUELTO_PARCIAL' %}badge-accent{% else %}badge-ok{% endif %}">
+                                {{ p.get_estado_display }}
+                            </span>
+                        </td>
+                        <td>
+                            {% if p.estado != 'CERRADO' and p.cantidad_pendiente_devolucion > 0 %}
+                                <div style="display: flex; gap: 0.25rem;">
+                                    {% if request.user.es_administrador or 'movimientos.devolucion' in request.user.get_permisos_codigos %}
+                                    <a href="{% url 'inventario:prestamo-devolver' p.pk %}" class="btn btn-sm btn-primary">Devolver</a>
+                                    {% endif %}
+                                    {% if request.user.es_administrador or 'movimientos.baja' in request.user.get_permisos_codigos %}
+                                    <a href="{% url 'inventario:prestamo-baja' p.pk %}" class="btn btn-sm btn-secondary" style="color: var(--danger);">Baja daño</a>
+                                    {% endif %}
+                                </div>
+                            {% else %}
+                                <span style="font-size: 0.8rem; color: var(--text-muted);">Cerrado el {{ p.fecha_cierre|date:"Y-m-d" }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        {% if page_obj and page_obj.paginator.count > 0 %}
+            <div class="pagination" style="display: flex; justify-content: center; align-items: center; gap: 0.75rem; margin-top: 1.5rem;">
+                {% if page_obj.has_previous %}
+                    <a href="?page={{ page_obj.previous_page_number }}{% if q %}&q={{ q }}{% endif %}{% if estado_seleccionado %}&estado={{ estado_seleccionado }}{% endif %}" class="btn btn-sm btn-secondary">&laquo; Anterior</a>
+                {% else %}
+                    <span class="btn btn-sm btn-secondary" style="opacity: 0.45; pointer-events: none; cursor: default;">&laquo; Anterior</span>
+                {% endif %}
+
+                <span class="page-info" style="font-size: 12.5px; color: var(--text-dim);">
+                    Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }} &bull; {{ page_obj.paginator.count }} préstamo{{ page_obj.paginator.count|pluralize }}
+                </span>
+
+                {% if page_obj.has_next %}
+                    <a href="?page={{ page_obj.next_page_number }}{% if q %}&q={{ q }}{% endif %}{% if estado_seleccionado %}&estado={{ estado_seleccionado }}{% endif %}" class="btn btn-sm btn-secondary">Siguiente &raquo;</a>
+                {% else %}
+                    <span class="btn btn-sm btn-secondary" style="opacity: 0.45; pointer-events: none; cursor: default;">Siguiente &raquo;</span>
+                {% endif %}
+            </div>
+        {% endif %}
+    {% else %}
+        <p style="text-align: center; color: var(--text-muted); margin: 3rem 0;">
+            No hay registros de préstamos que coincidan con la búsqueda.
+        </p>
+    {% endif %}
+</div>
+{% endblock %}

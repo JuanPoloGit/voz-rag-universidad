@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}403 — Acceso Prohibido{% endblock %}
+
+{% block content %}
+<div style="min-height: 65vh; display: flex; align-items: center; justify-content: center; padding: 24px;">
+    <div style="max-width: 520px; width: 100%; background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 40px 32px; text-align: center; box-shadow: var(--shadow-lg);">
+        <div style="width: 72px; height: 72px; margin: 0 auto 20px; background: rgba(255, 107, 122, 0.12); border: 1px solid var(--crit); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--crit);">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+        </div>
+        <span style="display: inline-block; padding: 4px 12px; background: rgba(255, 107, 122, 0.15); border: 1px solid rgba(255, 107, 122, 0.3); border-radius: 999px; color: var(--crit); font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 12px;">
+            Error 403 — Restringido
+        </span>
+        <h1 style="font-family: var(--font-heading); font-size: 24px; font-weight: 700; color: var(--text); margin-bottom: 10px;">
+            Acceso no Autorizado
+        </h1>
+        <p style="color: var(--text-dim); font-size: 14.5px; line-height: 1.6; margin-bottom: 28px;">
+            Tu rol de usuario actual no dispone de los permisos requeridos para consultar o modificar este recurso. Si consideras que se trata de un error, solicita la asignación correspondiente a un Administrador o Superusuario.
+        </p>
+        <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+            <a href="{% url 'web:dashboard' %}" class="btn btn-primary" style="padding: 10px 20px;">
+                Ir al Dashboard
+            </a>
+            <a href="{% url 'inventario:producto-lista' %}" class="btn btn-secondary" style="padding: 10px 20px;">
+                Ver Catálogo
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

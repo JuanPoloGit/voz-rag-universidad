@@ -1,0 +1,2275 @@
+{% extends "base.html" %}
+{% block page_title %}Movimientos{% endblock %}
+{% block sidebar_movimientos %}active{% endblock %}
+
+{% block title %}Movimientos de Inventario — Inventario AudacIA{% endblock %}
+
+{% block extra_css %}
+<style>
+    .mov-type-selector {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+        gap: 8px;
+        margin-bottom: 18px;
+        padding: 6px;
+        background: var(--bg-deep-2);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+    }
+    @media (min-width: 769px) {
+        .mov-type-selector.cols-5 {
+            grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+        }
+        .mov-type-selector.cols-4 {
+            grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+        }
+    }
+    .mov-type-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        height: 42px;
+        padding: 0 8px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: var(--bg-panel);
+        color: var(--text-dim);
+        font-size: 12.5px;
+        font-weight: 600;
+        cursor: pointer;
+        text-align: center;
+        white-space: nowrap;
+        transition: all 0.15s ease;
+    }
+    .mov-type-btn svg {
+        width: 14px;
+        height: 14px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        flex-shrink: 0;
+    }
+    .mov-type-btn:hover {
+        color: var(--text);
+        border-color: var(--accent);
+    }
+    .mov-type-btn.active {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent-bright);
+        box-shadow: 0 4px 12px rgba(59, 111, 240, 0.4);
+    }
+    .traslado-tipo-options {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+    }
+    .traslado-tipo-card {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 12px 14px;
+        background: var(--bg-deep-2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        text-align: left;
+    }
+    .traslado-tipo-card:hover:not(.disabled) {
+        border-color: var(--accent);
+        background: rgba(59, 111, 240, 0.05);
+    }
+    .traslado-tipo-card.active {
+        border-color: var(--accent) !important;
+        background: rgba(59, 111, 240, 0.12) !important;
+        box-shadow: 0 0 0 1px var(--accent);
+    }
+    .traslado-tipo-card.disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+    }
+    @media (max-width: 640px) {
+        .traslado-tipo-options {
+            grid-template-columns: 1fr !important;
+        }
+    }
+    .filter-dates-group {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex: 2;
+        min-width: 290px;
+        flex-wrap: wrap;
+    }
+    .filter-date-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex: 1 1 135px;
+        min-width: 135px;
+    }
+    @media (max-width: 768px) {
+        .filter-dates-group {
+            width: 100% !important;
+            flex: 1 1 100% !important;
+        }
+    }
+    @media (max-width: 768px) and (min-width: 481px) {
+        .mov-type-selector,
+        .mov-type-selector.cols-4,
+        .mov-type-selector.cols-5 {
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)) !important;
+        }
+    }
+    @media (max-width: 480px) and (min-width: 361px) {
+        .mov-type-selector,
+        .mov-type-selector.cols-4,
+        .mov-type-selector.cols-5 {
+            grid-template-columns: repeat(2, 1fr) !important;
+        }
+    }
+    @media (max-width: 360px) {
+        .mov-type-selector,
+        .mov-type-selector.cols-4,
+        .mov-type-selector.cols-5 {
+            grid-template-columns: 1fr !important;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h1 class="card-title">Centro de Movimientos, Préstamos y Conteos</h1>
+            <p style="color: var(--text-muted); font-size: 12.5px; margin-top: 2px;">
+                Control unificado de entradas, dotación, préstamos con fechas de entrega/devolución, traslados y conteos físicos.
+            </p>
+        </div>
+        <div class="action-group">
+            {% if request.user.es_administrador or 'movimientos.entrada' in request.user.get_permisos_codigos or 'movimientos.dotacion' in request.user.get_permisos_codigos or 'movimientos.prestamo' in request.user.get_permisos_codigos or 'movimientos.traslado_interno' in request.user.get_permisos_codigos or 'movimientos.traslado_almacen' in request.user.get_permisos_codigos or 'movimientos.ver' in request.user.get_permisos_codigos %}
+            <button type="button" class="btn btn-primary" id="btnAbrirNuevoMovimiento">
+                + Nuevo Movimiento
+            </button>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if puede_ver_historial %}
+    <!-- Botones de Filtro por Tipo de Visualización -->
+    <div style="display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px;">
+        <div class="filter-pills" role="tablist" aria-label="Filtrar vista de movimientos" style="flex-wrap: wrap;">
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=PRESTAMOS{% if q %}&q={{ q }}{% endif %}{% if fecha_desde %}&fecha_desde={{ fecha_desde }}{% endif %}{% if fecha_hasta %}&fecha_hasta={{ fecha_hasta }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
+               class="filter-pill {% if vista_actual == 'PRESTAMOS' %}active{% endif %}">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                Préstamos
+            </a>
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=DOTACION{% if q %}&q={{ q }}{% endif %}{% if fecha_desde %}&fecha_desde={{ fecha_desde }}{% endif %}{% if fecha_hasta %}&fecha_hasta={{ fecha_hasta }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
+               class="filter-pill {% if vista_actual == 'DOTACION' %}active{% endif %}">
+                <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                Dotación
+            </a>
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=SALIDA{% if q %}&q={{ q }}{% endif %}{% if fecha_desde %}&fecha_desde={{ fecha_desde }}{% endif %}{% if fecha_hasta %}&fecha_hasta={{ fecha_hasta }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
+               class="filter-pill {% if vista_actual == 'SALIDA' %}active{% endif %}">
+                <svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Salidas
+            </a>
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=ENTRADA{% if q %}&q={{ q }}{% endif %}{% if fecha_desde %}&fecha_desde={{ fecha_desde }}{% endif %}{% if fecha_hasta %}&fecha_hasta={{ fecha_hasta }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
+               class="filter-pill {% if vista_actual == 'ENTRADA' %}active{% endif %}">
+                <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Entradas
+            </a>
+            {% if request.user.es_administrador or 'movimientos.traslado_interno' in request.user.get_permisos_codigos or 'movimientos.traslado_almacen' in request.user.get_permisos_codigos %}
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=TRASLADO{% if q %}&q={{ q }}{% endif %}{% if fecha_desde %}&fecha_desde={{ fecha_desde }}{% endif %}{% if fecha_hasta %}&fecha_hasta={{ fecha_hasta }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
+               class="filter-pill {% if vista_actual == 'TRASLADO' %}active{% endif %}">
+                <svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                Traslados
+            </a>
+            {% endif %}
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=CONTEOS{% if q %}&q={{ q }}{% endif %}{% if fecha_desde %}&fecha_desde={{ fecha_desde }}{% endif %}{% if fecha_hasta %}&fecha_hasta={{ fecha_hasta }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
+               class="filter-pill {% if vista_actual == 'CONTEOS' %}active{% endif %}">
+                <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                Conteos Físicos
+            </a>
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=SIN_ROTACION{% if q %}&q={{ q }}{% endif %}{% if fecha_desde %}&fecha_desde={{ fecha_desde }}{% endif %}{% if fecha_hasta %}&fecha_hasta={{ fecha_hasta }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
+               class="filter-pill {% if vista_actual == 'SIN_ROTACION' %}active{% endif %}">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                Sin Rotación
+            </a>
+        </div>
+
+        <!-- Barra de Filtros Completa y Responsiva -->
+        <form method="get" action="{% url 'inventario:movimiento-lista' %}" data-auto-filter="true"
+              style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; background: var(--bg-panel); border: 1px solid var(--border); padding: 10px 14px; border-radius: 8px;">
+            <input type="hidden" name="vista" value="{{ vista_actual }}">
+
+            <div style="flex: 2; min-width: 200px;">
+                <input type="text" name="q" value="{{ q }}" class="form-control"
+                       placeholder="Buscar por código, producto, motivo, destinatario..." autocomplete="off">
+            </div>
+
+            {% if almacenes_filtro and almacenes_filtro.count > 1 or not es_usuario_normal %}
+            <div style="flex: 1; min-width: 160px;">
+                <select name="almacen_id" class="form-control" title="Filtrar por Almacén">
+                    <option value="">Todos los almacenes</option>
+                    {% for alm in almacenes_filtro %}
+                        <option value="{{ alm.id }}" {% if almacen_id == alm.id %}selected{% endif %}>{{ alm.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+
+            {% if vista_actual != 'SIN_ROTACION' %}
+            <div class="filter-dates-group">
+                <div class="filter-date-item">
+                    <span style="font-size: 11.5px; color: var(--text-faint); white-space: nowrap; font-weight: 500;">Desde:</span>
+                    <input type="date" name="fecha_desde" value="{{ fecha_desde }}" class="form-control" style="font-size: 12px; padding: 4px 8px; width: 100%; min-width: 0; box-sizing: border-box;">
+                </div>
+                <div class="filter-date-item">
+                    <span style="font-size: 11.5px; color: var(--text-faint); white-space: nowrap; font-weight: 500;">Hasta:</span>
+                    <input type="date" name="fecha_hasta" value="{{ fecha_hasta }}" class="form-control" style="font-size: 12px; padding: 4px 8px; width: 100%; min-width: 0; box-sizing: border-box;">
+                </div>
+            </div>
+            {% endif %}
+
+            {% if vista_actual == 'PRESTAMOS' %}
+            <div style="flex: 1; min-width: 140px;">
+                <select name="estado_prestamo" class="form-control">
+                    <option value="">Todos los estados</option>
+                    {% for val, etiq in estados_prestamo %}
+                        <option value="{{ val }}" {% if estado_prestamo == val %}selected{% endif %}>{{ etiq }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% elif vista_actual == 'CONTEOS' %}
+            <div style="flex: 1; min-width: 140px;">
+                <select name="estado_conteo" class="form-control">
+                    <option value="">Todos los estados</option>
+                    {% for val, etiq in estados_conteo %}
+                        <option value="{{ val }}" {% if estado_conteo == val %}selected{% endif %}>{{ etiq }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% elif vista_actual == 'SIN_ROTACION' %}
+            <div style="flex: 1; min-width: 140px;">
+                <select name="dias" class="form-control" title="Inactividad mínima">
+                    <option value="15" {% if dias_estancados == 15 %}selected{% endif %}>Sin mov. &ge; 15 días</option>
+                    <option value="30" {% if dias_estancados == 30 %}selected{% endif %}>Sin mov. &ge; 30 días</option>
+                    <option value="60" {% if dias_estancados == 60 %}selected{% endif %}>Sin mov. &ge; 60 días</option>
+                    <option value="90" {% if dias_estancados == 90 %}selected{% endif %}>Sin mov. &ge; 90 días</option>
+                </select>
+            </div>
+            {% endif %}
+
+            <div style="display: flex; gap: 6px; align-items: center;">
+                <button type="submit" class="btn btn-sm btn-primary" style="white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; font-weight: 600;">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                    Filtrar
+                </button>
+                {% if q or fecha_desde or fecha_hasta or almacen_id or estado_prestamo or estado_conteo or tipo_seleccionado or dias_estancados != 30 %}
+                <a href="{% url 'inventario:movimiento-lista' %}?vista={{ vista_actual }}" class="btn btn-sm btn-secondary" style="white-space: nowrap; padding: 6px 10px;">Limpiar</a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         VISTA A: SUBSECCIÓN DE PRÉSTAMOS Y ANTIGÜEDAD (Salidas -> Préstamos)
+         ═══════════════════════════════════════════════════════════════ -->
+    {% if vista_actual == 'PRESTAMOS' %}
+        <div class="table-responsive">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Producto</th>
+                        <th>Destinatario / Responsable</th>
+                        <th>Bodega</th>
+                        <th style="text-align: center;">Entregado</th>
+                        <th style="text-align: center;">Pendiente</th>
+                        <th>Fecha Entrega</th>
+                        <th>Fecha Devolución</th>
+                        <th>Antigüedad</th>
+                        <th>Estado</th>
+                        <th style="text-align: right;">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in prestamos_lista %}
+                        <tr>
+                            <td>
+                                <a href="{% url 'inventario:producto-detalle' p.producto.id %}">
+                                    <code>{{ p.producto.codigo_interno }}</code>
+                                </a>
+                                <div><strong>{{ p.producto.nombre|truncatechars:28 }}</strong></div>
+                            </td>
+                            <td>
+                                <strong>{{ p.destinatario }}</strong>
+                                {% if p.motivo_prestamo %}
+                                    <div style="font-size: 11.5px; color: var(--text-faint);">{{ p.motivo_prestamo|truncatechars:35 }}</div>
+                                {% endif %}
+                            </td>
+                            <td>{{ p.almacen.nombre }}</td>
+                            <td style="text-align: center; font-weight: 600;">{{ p.cantidad_original }}</td>
+                            <td style="text-align: center; font-weight: 700; color: {% if p.cantidad_pendiente_devolucion > 0 %}var(--warn){% else %}var(--ok){% endif %};">
+                                {{ p.cantidad_pendiente_devolucion }}
+                            </td>
+                            <td style="white-space: nowrap; font-size: 12px;">
+                                {{ p.fecha_creacion|date:"d/m/Y H:i" }}
+                            </td>
+                            <td style="white-space: nowrap; font-size: 12px;">
+                                {% if p.ultima_devolucion_fecha %}
+                                    <span style="color: var(--ok);">{{ p.ultima_devolucion_fecha|date:"d/m/Y H:i" }}</span>
+                                {% else %}
+                                    <span style="color: var(--text-faint); font-style: italic;">Pendiente</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if p.estado == 'CERRADO' %}
+                                    <span class="badge badge-ok">{{ p.dias_transcurridos }}d</span>
+                                {% elif p.dias_transcurridos > 15 %}
+                                    <span class="badge badge-crit">{{ p.dias_transcurridos }} días</span>
+                                {% elif p.dias_transcurridos > 7 %}
+                                    <span class="badge badge-warn">{{ p.dias_transcurridos }} días</span>
+                                {% else %}
+                                    <span class="badge badge-accent">{{ p.dias_transcurridos }} día(s)</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if p.estado == 'ABIERTO' %}
+                                    <span class="badge badge-purple">Préstamo</span>
+                                {% elif p.estado == 'DEVUELTO_PARCIAL' %}
+                                    <span class="badge badge-warn">Parcial</span>
+                                {% elif p.estado == 'CERRADO' %}
+                                    <span class="badge badge-ok">Cerrado</span>
+                                {% else %}
+                                    <span class="badge">{{ p.get_estado_display }}</span>
+                                {% endif %}
+                            </td>
+                            <td style="text-align: right; white-space: nowrap;">
+                                {% if p.estado != 'CERRADO' and p.cantidad_pendiente_devolucion > 0 %}
+                                    <div class="action-group">
+                                        {% if request.user.es_administrador or 'movimientos.devolucion' in request.user.get_permisos_codigos %}
+                                        <button type="button"
+                                                class="btn btn-sm btn-primary btn-abrir-devolucion"
+                                                data-url="{% url 'inventario:prestamo-devolver' p.pk %}"
+                                                data-producto="{{ p.producto.codigo_interno }} — {{ p.producto.nombre }}"
+                                                data-destinatario="{{ p.destinatario }}"
+                                                data-pendiente="{{ p.cantidad_pendiente_devolucion }}">
+                                            Devolver
+                                        </button>
+                                        {% endif %}
+                                        {% if request.user.es_administrador or 'movimientos.baja' in request.user.get_permisos_codigos %}
+                                        <button type="button"
+                                                class="btn btn-sm btn-secondary btn-abrir-baja"
+                                                style="color: var(--crit);"
+                                                data-url="{% url 'inventario:prestamo-baja' p.pk %}"
+                                                data-producto="{{ p.producto.codigo_interno }} — {{ p.producto.nombre }}"
+                                                data-destinatario="{{ p.destinatario }}"
+                                                data-pendiente="{{ p.cantidad_pendiente_devolucion }}">
+                                            Baja daño
+                                        </button>
+                                        {% endif %}
+                                    </div>
+                                {% else %}
+                                    <span style="font-size: 11.5px; color: var(--text-faint);">Completado</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="10" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">
+                                No hay préstamos registrados para el filtro actual.
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         VISTA B: SUBSECCIÓN DE CONTEOS FÍSICOS Y AJUSTES
+         ═══════════════════════════════════════════════════════════════ -->
+    {% elif vista_actual == 'CONTEOS' %}
+        <!-- Filtros por estado del conteo físico -->
+        <div style="display: flex; gap: 8px; margin-bottom: 1rem; flex-wrap: wrap;">
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=CONTEOS{% if q %}&q={{ q }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
+               class="btn btn-sm {% if not estado_conteo %}btn-primary{% else %}btn-secondary{% endif %}" style="border-radius: 20px; font-size: 12px; padding: 4px 12px;">
+                Todos
+            </a>
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=CONTEOS&estado_conteo=PENDIENTE{% if q %}&q={{ q }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
+               class="btn btn-sm {% if estado_conteo == 'PENDIENTE' %}btn-primary{% else %}btn-secondary{% endif %}" style="border-radius: 20px; font-size: 12px; padding: 4px 12px;">
+                Pendientes
+            </a>
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=CONTEOS&estado_conteo=CONFIRMADO{% if q %}&q={{ q }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
+               class="btn btn-sm {% if estado_conteo == 'CONFIRMADO' %}btn-primary{% else %}btn-secondary{% endif %}" style="border-radius: 20px; font-size: 12px; padding: 4px 12px;">
+                Aprobados
+            </a>
+            <a href="{% url 'inventario:movimiento-lista' %}?vista=CONTEOS&estado_conteo=RECHAZADO{% if q %}&q={{ q }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}"
+               class="btn btn-sm {% if estado_conteo == 'RECHAZADO' %}btn-primary{% else %}btn-secondary{% endif %}" style="border-radius: 20px; font-size: 12px; padding: 4px 12px;">
+                Rechazados
+            </a>
+        </div>
+
+        <div class="table-responsive">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Fecha Conteo</th>
+                        <th>Producto</th>
+                        <th>Almacén</th>
+                        <th style="text-align: center;">Stock Sistema</th>
+                        <th style="text-align: center;">Contado Físico</th>
+                        <th style="text-align: center;">Diferencia</th>
+                        <th>Registrado Por</th>
+                        <th>Estado</th>
+                        <th style="text-align: right;">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in conteos_lista %}
+                        <tr>
+                            <td style="white-space: nowrap; font-size: 12px;">{{ c.fecha_conteo|date:"d/m/Y H:i" }}</td>
+                            <td>
+                                <code>{{ c.producto.codigo_interno }}</code>
+                                <div><strong>{{ c.producto.nombre|truncatechars:28 }}</strong></div>
+                            </td>
+                            <td>{{ c.almacen.nombre }}</td>
+                            <td style="text-align: center;">{{ c.stock_sistema }}</td>
+                            <td style="text-align: center; font-weight: 700;">{{ c.cantidad_contada }}</td>
+                            <td style="text-align: center; font-weight: 700; color: {% if c.diferencia < 0 %}var(--crit){% elif c.diferencia > 0 %}var(--ok){% else %}var(--text-dim){% endif %};">
+                                {% if c.diferencia > 0 %}+{{ c.diferencia }}{% else %}{{ c.diferencia }}{% endif %}
+                            </td>
+                            <td style="font-size: 12px;">
+                                {{ c.usuario_conteo.nombre_completo|default:c.usuario_conteo.username }}
+                                {% if c.motivo %}<div style="font-size: 11px; color: var(--text-faint);">{{ c.motivo|truncatechars:30 }}</div>{% endif %}
+                            </td>
+                            <td>
+                                {% if c.estado == 'CONFIRMADO' %}
+                                    <span class="badge badge-ok">Ajuste Aplicado</span>
+                                {% elif c.estado == 'PENDIENTE' %}
+                                    <span class="badge badge-warn">Pendiente Aprobación</span>
+                                {% elif c.estado == 'RECHAZADO' %}
+                                    <span class="badge badge-crit" {% if c.motivo_rechazo %}title="Motivo: {{ c.motivo_rechazo }}"{% endif %}>Rechazado</span>
+                                {% else %}
+                                    <span class="badge">{{ c.get_estado_display }}</span>
+                                {% endif %}
+                            </td>
+                            <td style="text-align: right; white-space: nowrap;">
+                                {% if c.estado == 'PENDIENTE' and user.es_administrador %}
+                                    <form method="post" action="{% url 'inventario:conteo-confirmar' c.pk %}" style="display: inline; margin: 0;">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="next" value="{% url 'inventario:movimiento-lista' %}?vista=CONTEOS">
+                                        <button type="submit" class="btn btn-sm btn-primary"
+                                                data-confirm="¿Confirmar ajuste de stock a {{ c.cantidad_contada }} unidades para {{ c.producto.codigo_interno }}?"
+                                                data-confirm-title="Confirmar Ajuste de Stock"
+                                                data-confirm-btn="Aprobar Ajuste">
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><polyline points="20 6 9 17 4 12"/></svg>Aprobar
+                                        </button>
+                                    </form>
+                                    <button type="button" class="btn btn-sm btn-secondary" style="color: var(--crit); margin-left: 6px;"
+                                            onclick="abrirModalRechazoConteo('{{ c.pk }}', '{{ c.producto.codigo_interno }}')">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>Rechazar
+                                    </button>
+                                {% elif c.estado == 'PENDIENTE' %}
+                                    <span style="font-size: 11.5px; color: var(--warn); font-weight: 500;">Requiere Administrador</span>
+                                {% elif c.estado == 'RECHAZADO' %}
+                                    <span style="font-size: 11.5px; color: var(--text-faint);" {% if c.motivo_rechazo %}title="Motivo: {{ c.motivo_rechazo }}"{% endif %}>
+                                        Rechazado {% if c.motivo_rechazo %}({{ c.motivo_rechazo|truncatechars:20 }}){% endif %}
+                                    </span>
+                                {% else %}
+                                    <span style="font-size: 11.5px; color: var(--text-faint);" {% if c.fecha_confirmacion %}title="Aprobado el {{ c.fecha_confirmacion|date:'d/m/Y H:i' }}"{% endif %}>
+                                        Aprobado por Administración
+                                    </span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="9" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">
+                                No hay conteos físicos registrados aún.
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         VISTA B2: SUBSECCIÓN DE ARTÍCULOS SIN ROTACIÓN / INACTIVOS
+         ═══════════════════════════════════════════════════════════════ -->
+    {% elif vista_actual == 'SIN_ROTACION' %}
+        <div class="table-responsive">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Código</th>
+                        <th>Producto</th>
+                        <th>Categoría</th>
+                        <th>Última Actividad</th>
+                        <th>Inactividad Estimada</th>
+                        <th style="text-align: right;">Acción</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in estancados_lista %}
+                        <tr>
+                            <td>
+                                <a href="{% url 'inventario:producto-detalle' p.pk %}" style="font-family: var(--font-mono); font-weight: 700; color: var(--accent-bright);">
+                                    {{ p.codigo_interno }}
+                                </a>
+                            </td>
+                            <td><strong>{{ p.nombre }}</strong></td>
+                            <td>{{ p.categoria.nombre }}</td>
+                            <td>
+                                {% if p.ultima_actividad %}
+                                    {{ p.ultima_actividad|date:"d/m/Y" }}
+                                {% else %}
+                                    <span style="color: var(--text-faint); font-style: italic;">Sin movimientos</span>
+                                {% endif %}
+                            </td>
+                            <td style="white-space: nowrap;">
+                                <span class="status-inline status-warn">
+                                    <span class="status-dot"></span>&ge; {{ p.dias_sin_movimiento }} días
+                                </span>
+                            </td>
+                            <td style="text-align: right; white-space: nowrap;">
+                                <a href="{% url 'inventario:producto-detalle' p.pk %}" class="btn btn-sm btn-secondary">Ver Ficha</a>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="6" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">
+                                No hay artículos sin rotación para el umbral de {{ dias_estancados }} días seleccionado.
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         VISTA C: HISTORIAL DE MOVIMIENTOS (TODOS, ENTRADAS, SALIDAS, TRASLADOS)
+         ═══════════════════════════════════════════════════════════════ -->
+    {% else %}
+        <div class="table-responsive">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Fecha Registro</th>
+                        <th>Tipo</th>
+                        <th>Producto</th>
+                        <th style="text-align: center;">Cant.</th>
+                        <th>Almacén / Ruta</th>
+                        {% if vista_actual == 'DOTACION' %}
+                            <th>Destinatario</th>
+                            <th>Motivo de Dotación</th>
+                        {% elif vista_actual == 'SALIDA' %}
+                            <th>Destinatario / Motivo</th>
+                        {% else %}
+                            <th>Motivo / Detalle</th>
+                        {% endif %}
+                        <th>Responsable</th>
+                        <th>Estado</th>
+                        <th style="text-align: right;">Acción</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for mov in movimientos %}
+                        <tr {% if mov.estado == 'REVERTIDO' %}style="opacity: 0.58; background: var(--bg-panel-2);"{% endif %}>
+                            <td style="font-size: 12px; white-space: nowrap;">{{ mov.fecha_hora|date:"d/m/Y H:i" }}</td>
+                            <td>
+                                {% if mov.tipo == 'ENTRADA' %}
+                                    <span class="badge badge-ok">{{ mov.get_tipo_display }}</span>
+                                {% elif mov.tipo == 'SALIDA' %}
+                                    {% if vista_actual == 'DOTACION' %}
+                                        <span class="badge badge-accent">Dotación</span>
+                                    {% else %}
+                                        <span class="badge badge-crit">{{ mov.get_tipo_display }}</span>
+                                    {% endif %}
+                                {% elif mov.tipo == 'PRESTAMO' %}
+                                    <span class="badge badge-purple">{{ mov.get_tipo_display }}</span>
+                                {% elif mov.tipo == 'DEVOLUCION' %}
+                                    <span class="badge badge-accent">{{ mov.get_tipo_display }}</span>
+                                {% elif mov.tipo == 'BAJA_PRESTAMO' %}
+                                    <span class="badge badge-crit">{{ mov.get_tipo_display }}</span>
+                                {% else %}
+                                    <span class="badge badge-warn">{{ mov.get_tipo_display }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <a href="{% url 'inventario:producto-detalle' mov.producto.id %}">
+                                    <code>{{ mov.producto.codigo_interno }}</code>
+                                </a>
+                                <div><strong>{{ mov.producto.nombre|truncatechars:26 }}</strong></div>
+                            </td>
+                            <td style="text-align: center; font-weight: 700; color: var(--text);">
+                                {{ mov.cantidad }}
+                            </td>
+                            <td style="font-size: 12px;">
+                                {% if mov.almacen_origen %}{{ mov.almacen_origen.nombre }}{% endif %}
+                                {% if mov.almacen_origen and mov.almacen_destino %} → {% endif %}
+                                {% if mov.almacen_destino %}{{ mov.almacen_destino.nombre }}{% endif %}
+                                {% if mov.ubicacion_origen or mov.ubicacion_destino %}
+                                    <div style="font-size: 11px; color: var(--text-faint);">
+                                        {{ mov.ubicacion_origen.nombre|default:"" }}
+                                        {% if mov.ubicacion_origen and mov.ubicacion_destino %}→{% endif %}
+                                        {{ mov.ubicacion_destino.nombre|default:"" }}
+                                    </div>
+                                {% endif %}
+                            </td>
+                            {% if vista_actual == 'DOTACION' %}
+                                <td style="font-size: 12px;">
+                                    <strong>{{ mov.destinatario|default:"—" }}</strong>
+                                </td>
+                                <td style="font-size: 12px;">
+                                    <span style="color: var(--text-dim);">{{ mov.motivo|default:"—"|truncatechars:40 }}</span>
+                                </td>
+                            {% elif vista_actual == 'SALIDA' %}
+                                <td style="font-size: 12px;">
+                                    {% if mov.destinatario %}<strong>A: {{ mov.destinatario }}</strong><br>{% endif %}
+                                    <span style="color: var(--text-dim);">{{ mov.motivo|default:"—"|truncatechars:36 }}</span>
+                                </td>
+                            {% else %}
+                                <td style="font-size: 12px;">
+                                    {{ mov.motivo|default:"—"|truncatechars:45 }}
+                                </td>
+                            {% endif %}
+                            <td style="font-size: 12px;">{{ mov.usuario.nombre_completo|default:mov.usuario.username }}</td>
+                            <td>
+                                {% if mov.estado == 'REVERTIDO' %}
+                                    <span class="badge badge-crit">Revertido</span>
+                                {% else %}
+                                    <span class="badge badge-ok">OK</span>
+                                {% endif %}
+                            </td>
+                            <td style="text-align: right; white-space: nowrap;">
+                                {% if mov.estado != 'REVERTIDO' and mov.tipo in 'ENTRADA,SALIDA,TRASLADO_ENTRE,AJUSTE_CONTEO' %}
+                                    {% if request.user.es_administrador or 'movimientos.revertir' in request.user.get_permisos_codigos and mov.tipo in 'ENTRADA,SALIDA' %}
+                                        <a href="{% url 'inventario:movimiento-revertir' mov.pk %}" class="btn btn-sm btn-secondary" style="color: var(--crit);">
+                                            Revertir
+                                        </a>
+                                    {% else %}
+                                        <span style="color: var(--text-faint); font-size: 11px;">—</span>
+                                    {% endif %}
+                                {% elif mov.tipo == 'PRESTAMO' and mov.prestamo_vinculado and mov.prestamo_vinculado.estado != 'CERRADO' %}
+                                    <a href="{% url 'inventario:movimiento-lista' %}?vista=PRESTAMOS&q={{ mov.producto.codigo_interno }}" class="btn btn-sm btn-secondary">
+                                        Gestionar Préstamo
+                                    </a>
+                                {% else %}
+                                    <span style="color: var(--text-faint); font-size: 11px;">—</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="11" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">
+                                No se encontraron movimientos registrados con los filtros seleccionados.
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+
+    {% if page_obj and page_obj.paginator.count > 0 %}
+        <div class="pagination" style="display: flex; justify-content: center; align-items: center; gap: 0.75rem; margin-top: 1.5rem;">
+            {% if page_obj.has_previous %}
+                <a href="?vista={{ vista_actual }}&page={{ page_obj.previous_page_number }}{% if q %}&q={{ q }}{% endif %}{% if fecha_desde %}&fecha_desde={{ fecha_desde }}{% endif %}{% if fecha_hasta %}&fecha_hasta={{ fecha_hasta }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}{% if estado_conteo %}&estado_conteo={{ estado_conteo }}{% endif %}{% if estado_prestamo %}&estado_prestamo={{ estado_prestamo }}{% endif %}{% if dias_estancados %}&dias={{ dias_estancados }}{% endif %}" class="btn btn-sm btn-secondary">&laquo; Anterior</a>
+            {% else %}
+                <span class="btn btn-sm btn-secondary" style="opacity: 0.45; pointer-events: none; cursor: default;">&laquo; Anterior</span>
+            {% endif %}
+
+            <span class="page-info" style="font-size: 12.5px; color: var(--text-dim);">
+                Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }} &bull; {{ page_obj.paginator.count }} registro{{ page_obj.paginator.count|pluralize }}
+            </span>
+
+            {% if page_obj.has_next %}
+                <a href="?vista={{ vista_actual }}&page={{ page_obj.next_page_number }}{% if q %}&q={{ q }}{% endif %}{% if fecha_desde %}&fecha_desde={{ fecha_desde }}{% endif %}{% if fecha_hasta %}&fecha_hasta={{ fecha_hasta }}{% endif %}{% if almacen_id %}&almacen_id={{ almacen_id }}{% endif %}{% if estado_conteo %}&estado_conteo={{ estado_conteo }}{% endif %}{% if estado_prestamo %}&estado_prestamo={{ estado_prestamo }}{% endif %}{% if dias_estancados %}&dias={{ dias_estancados }}{% endif %}" class="btn btn-sm btn-secondary">Siguiente &raquo;</a>
+            {% else %}
+                <span class="btn btn-sm btn-secondary" style="opacity: 0.45; pointer-events: none; cursor: default;">Siguiente &raquo;</span>
+            {% endif %}
+        </div>
+    {% endif %}
+    {% else %}
+        <div style="background: rgba(59, 111, 240, 0.08); border: 1px solid rgba(59, 111, 240, 0.22); border-radius: var(--radius); padding: 3rem 1.5rem; text-align: center; margin-top: 1rem;">
+            <div style="width: 52px; height: 52px; border-radius: 50%; background: rgba(59, 111, 240, 0.14); display: inline-grid; place-items: center; margin-bottom: 1rem;">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent-bright);"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </div>
+            <h2 style="font-family: var(--font-heading); font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 8px;">
+                Historial de Movimientos Restringido
+            </h2>
+            <p style="color: var(--text-dim); font-size: 13px; max-width: 500px; margin: 0 auto 1.5rem; line-height: 1.55;">
+                Tu cuenta no cuenta con el permiso para consultar el historial de operaciones (<code>movimientos.ver</code>).
+                Puedes registrar nuevas operaciones autorizadas utilizando el botón superior <strong>"+ Nuevo Movimiento"</strong>.
+            </p>
+            {% if request.user.es_administrador or 'movimientos.entrada' in request.user.get_permisos_codigos or 'movimientos.dotacion' in request.user.get_permisos_codigos or 'movimientos.prestamo' in request.user.get_permisos_codigos or 'movimientos.traslado_interno' in request.user.get_permisos_codigos or 'movimientos.traslado_almacen' in request.user.get_permisos_codigos %}
+            <div>
+                <button type="button" class="btn btn-primary" onclick="document.getElementById('btnAbrirNuevoMovimiento').click();">
+                    + Registrar Nuevo Movimiento
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    {% endif %}
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     MODAL UNIFICADO: "+ NUEVO MOVIMIENTO" (Selección dinámica de tipo)
+     ═══════════════════════════════════════════════════════════════════════════ -->
+<dialog id="modalNuevoMovimiento" class="app-modal" style="width: min(780px, 95vw);">
+    <div class="app-modal-header">
+        <h2 class="app-modal-title">Registrar Nuevo Movimiento</h2>
+        <button type="button" class="app-modal-close" onclick="closeAppModal('modalNuevoMovimiento')">&times;</button>
+    </div>
+
+    <div class="app-modal-body">
+        <label style="font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-faint); margin-bottom: 6px;">
+            1. Selecciona el tipo de operación
+        </label>
+        <div class="mov-type-selector {% if es_usuario_normal %}cols-4{% else %}cols-5{% endif %}">
+            {% if request.user.es_administrador or 'movimientos.prestamo' in request.user.get_permisos_codigos %}
+            <button type="button" class="mov-type-btn" data-target-form="secFormPrestamo">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                Préstamo
+            </button>
+            {% endif %}
+            {% if request.user.es_administrador or 'movimientos.dotacion' in request.user.get_permisos_codigos %}
+            <button type="button" class="mov-type-btn" data-target-form="secFormSalida">
+                <svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Dotación
+            </button>
+            {% endif %}
+            {% if request.user.es_administrador or 'movimientos.entrada' in request.user.get_permisos_codigos %}
+            <button type="button" class="mov-type-btn" data-target-form="secFormEntrada">
+                <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Entrada
+            </button>
+            {% endif %}
+            {% if request.user.es_administrador or 'movimientos.traslado_interno' in request.user.get_permisos_codigos or 'movimientos.traslado_almacen' in request.user.get_permisos_codigos %}
+            <button type="button" class="mov-type-btn" data-target-form="secFormTraslado">
+                <svg viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                Traslado
+            </button>
+            {% endif %}
+            {% if request.user.es_administrador or 'movimientos.ver' in request.user.get_permisos_codigos %}
+            <button type="button" class="mov-type-btn" data-target-form="secFormConteo">
+                <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                Conteo Físico
+            </button>
+            {% endif %}
+        </div>
+
+        <!-- 1. FORMULARIO ENTRADA -->
+        <form method="post" action="{% url 'inventario:movimiento-entrada' %}" id="secFormEntrada" class="mov-dynamic-form">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{% url 'inventario:movimiento-lista' %}?vista=ENTRADA">
+            <input type="hidden" name="clave_idempotencia" class="idem-token-input">
+
+            <div class="form-group">
+                <label>Producto *</label>
+                {{ entrada_form.producto }}
+            </div>
+            <div class="form-group">
+                <label>Almacén Destino</label>
+                <div id="dispAlmacenEntrada" class="form-control" style="background: rgba(255,255,255,0.03); opacity: 0.95; display: flex; align-items: center; gap: 7px; min-height: 40px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent); flex-shrink: 0;"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                    <span id="txtAlmacenEntrada" style="color: var(--text-muted); font-size: 13px;">{% if es_usuario_normal and usuario_almacenes_count == 1 %}<strong style="color: var(--text);">{{ usuario_almacen_unico_nombre }}</strong>{% else %}Selecciona un producto para cargar su almacén{% endif %}</span>
+                </div>
+                <div style="display: none;">{{ entrada_form.almacen }}</div>
+            </div>
+            <div class="form-grid-2">
+                <div class="form-group" id="grupoCantidadEntrada">
+                    <label id="lblCantidadEntrada" style="transition: color 0.2s ease;">Cantidad (Unidades Base) *</label>
+                    {{ entrada_form.cantidad }}
+                </div>
+                <div class="form-group">
+                    <label>Ubicación Física Asignada</label>
+                    <div id="dispUbicacionEntrada" class="form-control" style="background: rgba(255,255,255,0.03); opacity: 0.95; display: flex; align-items: center; gap: 7px; min-height: 40px;">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent-2); flex-shrink: 0;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                        <span id="txtUbicacionEntrada" style="color: var(--text-muted); font-size: 13px;">Selecciona un producto para cargar su ubicación fija</span>
+                    </div>
+                    <input type="hidden" name="ubicacion" id="inputUbicacionEntrada" value="">
+                </div>
+            </div>
+            <div class="form-group" id="containerEmpaqueEntrada">
+                <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer;">
+                    {{ entrada_form.es_empaque }}
+                    <span id="lblEmpaqueTexto">¿Ingresar por paquetes / empaques?</span>
+                </label>
+                <div id="ayudaEmpaqueTexto" class="form-help" style="display: none; margin-top: 4px; font-size: 12px; color: var(--text-dim);"></div>
+            </div>
+            <div class="form-group" id="boxEmpaquesModal" style="display: none; background: rgba(59, 111, 240, 0.08); border: 1px solid rgba(59, 111, 240, 0.25); border-radius: 8px; padding: 12px 14px; margin-bottom: 1rem;">
+                <label style="font-weight: 700; color: var(--text); display: block; margin-bottom: 4px;">
+                    Cantidad de Empaques *
+                </label>
+                {{ entrada_form.cantidad_empaques }}
+                <div id="dispTotalEmpaqueCalculado" class="form-help" style="margin-top: 6px; font-weight: 600; color: var(--ok); display: none;"></div>
+            </div>
+            <div class="form-grid-2">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label>Motivo de la Entrada *</label>
+                    {{ entrada_form.motivo }}
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label>Observación</label>
+                    {{ entrada_form.observacion }}
+                </div>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-soft);">
+                <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalNuevoMovimiento')">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Confirmar Entrada</button>
+            </div>
+        </form>
+
+        <!-- 2. FORMULARIO SALIDA (DOTACIÓN / CONSUMO) -->
+        <form method="post" action="{% url 'inventario:movimiento-salida' %}" id="secFormSalida" class="mov-dynamic-form" style="display: none;">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{% url 'inventario:movimiento-lista' %}?vista=DOTACION">
+            <input type="hidden" name="clave_idempotencia" class="idem-token-input">
+
+            <div class="form-group">
+                <label>Producto a Entregar en Dotación *</label>
+                {{ salida_form.producto }}
+            </div>
+            <div id="alertSinStockSalida" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid var(--accent-danger); color: #fca5a5; padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 14px; align-items: center; gap: 8px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0; color: var(--crit);"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <span>Este producto no tiene existencias disponibles (Stock: 0). No es posible realizar dotaciones.</span>
+            </div>
+
+            <div id="bodyCamposSalida" style="transition: opacity 0.2s ease;">
+                <div class="form-group">
+                    <label>Almacén Origen</label>
+                    <div id="dispAlmacenSalida" class="form-control" style="background: rgba(255,255,255,0.03); opacity: 0.95; display: flex; align-items: center; gap: 7px; min-height: 40px;">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent); flex-shrink: 0;"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                        <span id="txtAlmacenSalida" style="color: var(--text-muted); font-size: 13px;">{% if es_usuario_normal and usuario_almacenes_count == 1 %}<strong style="color: var(--text);">{{ usuario_almacen_unico_nombre }}</strong>{% else %}Selecciona un producto para cargar su almacén{% endif %}</span>
+                    </div>
+                    <div style="display: none;">{{ salida_form.almacen }}</div>
+                </div>
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label>Cantidad a Entregar *</label>
+                        {{ salida_form.cantidad }}
+                        <div id="dispStockSalida" class="form-help" style="margin-top: 4px; font-weight: 500;">
+                            Stock disponible: <strong id="valStockSalida" style="color: var(--text);">—</strong>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Destinatario / Receptor de la Dotación *</label>
+                        {{ salida_form.destinatario }}
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Motivo de la Dotación *</label>
+                    {{ salida_form.motivo }}
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label>Observación Adicional</label>
+                    {{ salida_form.observacion }}
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-soft);">
+                <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalNuevoMovimiento')">Cancelar</button>
+                <button type="submit" class="btn btn-primary" id="btnSubmitSalida">Confirmar Dotación</button>
+            </div>
+        </form>
+
+        <!-- 3. FORMULARIO SALIDA EN PRÉSTAMO -->
+        <form method="post" action="{% url 'inventario:prestamo-crear' %}" id="secFormPrestamo" class="mov-dynamic-form" style="display: none;">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{% url 'inventario:movimiento-lista' %}?vista=PRESTAMOS">
+            <input type="hidden" name="clave_idempotencia" class="idem-token-input">
+
+            <div class="form-group">
+                <label>Producto a Entregar en Préstamo *</label>
+                {{ prestamo_form.producto }}
+            </div>
+            <div id="alertSinStockPrestamo" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid var(--accent-danger); color: #fca5a5; padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 14px; align-items: center; gap: 8px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0; color: var(--crit);"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <span>Este producto no tiene existencias disponibles (Stock: 0). No es posible entregarlo en préstamo.</span>
+            </div>
+
+            <div id="bodyCamposPrestamo" style="transition: opacity 0.2s ease;">
+                <div class="form-group">
+                    <label>Almacén Origen</label>
+                    <div id="dispAlmacenPrestamo" class="form-control" style="background: rgba(255,255,255,0.03); opacity: 0.95; display: flex; align-items: center; gap: 7px; min-height: 40px;">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent); flex-shrink: 0;"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                        <span id="txtAlmacenPrestamo" style="color: var(--text-muted); font-size: 13px;">{% if es_usuario_normal and usuario_almacenes_count == 1 %}<strong style="color: var(--text);">{{ usuario_almacen_unico_nombre }}</strong>{% else %}Selecciona un producto para cargar su almacén{% endif %}</span>
+                    </div>
+                    <div style="display: none;">{{ prestamo_form.almacen }}</div>
+                </div>
+                <div class="form-grid-2">
+                    <div class="form-group">
+                        <label>Cantidad a Prestar *</label>
+                        {{ prestamo_form.cantidad }}
+                        <div id="dispStockPrestamo" class="form-help" style="margin-top: 4px; font-weight: 500;">
+                            Stock disponible: <strong id="valStockPrestamo" style="color: var(--text);">—</strong>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Destinatario / Responsable *</label>
+                        {{ prestamo_form.destinatario }}
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Motivo del Préstamo *</label>
+                    {{ prestamo_form.motivo }}
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label>Observación</label>
+                    {{ prestamo_form.observacion }}
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-soft);">
+                <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalNuevoMovimiento')">Cancelar</button>
+                <button type="submit" class="btn btn-primary" id="btnSubmitPrestamo">Entregar Préstamo</button>
+            </div>
+        </form>
+
+        {% if request.user.es_administrador or 'movimientos.traslado_interno' in request.user.get_permisos_codigos or 'movimientos.traslado_almacen' in request.user.get_permisos_codigos %}
+        <!-- 4. FORMULARIO TRASLADO (Interno o Entre Almacenes) -->
+        <form method="post" action="{% url 'inventario:movimiento-traslado' %}" id="secFormTraslado" class="mov-dynamic-form" style="display: none;" novalidate>
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{% url 'inventario:movimiento-lista' %}?vista=TRASLADO">
+            <input type="hidden" name="clave_idempotencia" class="idem-token-input">
+
+            <div class="form-group">
+                <label>Producto a Trasladar *</label>
+                {{ traslado_form.producto }}
+            </div>
+            <div id="alertSinStockTraslado" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid var(--accent-danger); color: #fca5a5; padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 14px; align-items: center; gap: 8px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0; color: var(--crit);"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <span>Este producto no tiene existencias disponibles (Stock: 0). No es posible realizar traslados.</span>
+            </div>
+
+            <!-- Selector de 2 Opciones Explícitas de Traslado -->
+            <div id="wrapperTipoTraslado" style="margin-bottom: 16px;">
+                <label style="font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-faint); margin-bottom: 8px; display: block;">
+                    Tipo de Traslado a Realizar *
+                </label>
+                <div class="traslado-tipo-options">
+                    {% if request.user.es_administrador or 'movimientos.traslado_interno' in request.user.get_permisos_codigos %}
+                    <label class="traslado-tipo-card active" id="cardTipoInterno">
+                        <input type="radio" name="modalidad_traslado" id="radioTipoInterno" value="INTERNO" checked style="accent-color: var(--accent); margin-top: 2px;">
+                        <div>
+                            <strong style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text);">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent); flex-shrink: 0;"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                                Traslado Interno
+                            </strong>
+                            <span style="font-size: 11.5px; color: var(--text-dim); line-height: 1.35; display: block; margin-top: 2px;">
+                                Reubicar existencias en otra estantería o nivel dentro del mismo almacén.
+                            </span>
+                        </div>
+                    </label>
+                    {% endif %}
+
+                    {% if request.user.es_administrador or 'movimientos.traslado_almacen' in request.user.get_permisos_codigos %}
+                    <label class="traslado-tipo-card {% if not request.user.es_administrador and 'movimientos.traslado_interno' not in request.user.get_permisos_codigos %}active{% endif %}" id="cardTipoEntre">
+                        <input type="radio" name="modalidad_traslado" id="radioTipoEntre" value="ENTRE" {% if not request.user.es_administrador and 'movimientos.traslado_interno' not in request.user.get_permisos_codigos %}checked{% endif %} style="accent-color: var(--accent); margin-top: 2px;">
+                        <div>
+                            <strong style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text);">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent-bright); flex-shrink: 0;"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                                Traslado Entre Almacenes
+                            </strong>
+                            <span style="font-size: 11.5px; color: var(--text-dim); line-height: 1.35; display: block; margin-top: 2px;">
+                                Mover existencias hacia un almacén de destino diferente.
+                            </span>
+                        </div>
+                    </label>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div id="bodyCamposTraslado" style="transition: opacity 0.2s ease;">
+                <!-- 1. BLOQUE AJUSTES: TRASLADO INTERNO -->
+                <div id="bloqueTrasladoInterno" style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-soft); border-radius: 8px; padding: 14px; margin-bottom: 14px;">
+                    <div style="font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--accent); font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                        Ajustes de Reubicación Interna
+                    </div>
+                    <div class="form-grid-2" style="margin-bottom: 12px;">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label style="font-size: 11.5px; color: var(--text-faint);">Almacén</label>
+                            <div class="form-control" style="background: rgba(255,255,255,0.03); opacity: 0.95; display: flex; align-items: center; gap: 7px; min-height: 38px;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent); flex-shrink: 0;"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                                <span id="txtAlmacenInterno" style="font-size: 13px; color: var(--text-muted);">Selecciona un producto primero</span>
+                            </div>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label style="font-size: 11.5px; color: var(--text-faint);">Ubicación Física Actual</label>
+                            <div class="form-control" style="background: rgba(255,255,255,0.03); opacity: 0.95; display: flex; align-items: center; gap: 7px; min-height: 38px;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent-2); flex-shrink: 0;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                                <span id="txtUbicacionActualInterno" style="font-size: 13px; color: var(--text-muted);">—</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label id="lblUbInternaDestino">Nueva Ubicación Física en Almacén *</label>
+                        {{ traslado_form.ubicacion_origen }}
+                        <div class="form-help" style="font-size: 12px; margin-top: 4px;">Selecciona la nueva estantería, nivel o pasillo de destino dentro de este mismo almacén.</div>
+                    </div>
+                </div>
+
+                <!-- 2. BLOQUE AJUSTES: TRASLADO ENTRE ALMACENES -->
+                <div id="bloqueTrasladoEntre" style="display: none; background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-soft); border-radius: 8px; padding: 14px; margin-bottom: 14px;">
+                    <div style="font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--accent-bright); font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                        Ajustes de Traslado Entre Almacenes
+                    </div>
+                    <div class="form-grid-2" style="margin-bottom: 12px;">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label style="font-size: 11.5px; color: var(--text-faint);">Almacén Origen</label>
+                            <div class="form-control" style="background: rgba(255,255,255,0.03); opacity: 0.95; display: flex; align-items: center; gap: 7px; min-height: 38px;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent); flex-shrink: 0;"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                                <span id="txtAlmacenEntreOrigen" style="font-size: 13px; color: var(--text-muted);">Selecciona un producto primero</span>
+                            </div>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label style="font-size: 11.5px; color: var(--text-faint);">Ubicación Actual en Origen</label>
+                            <div class="form-control" style="background: rgba(255,255,255,0.03); opacity: 0.95; display: flex; align-items: center; gap: 7px; min-height: 38px;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent-2); flex-shrink: 0;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                                <span id="txtUbicacionEntreOrigen" style="font-size: 13px; color: var(--text-muted);">—</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-grid-2">
+                        <div class="form-group" id="grpAlmDestinoTraslado">
+                            <label id="lblAlmDestinoTraslado">Almacén Destino *</label>
+                            {{ traslado_form.almacen_destino }}
+                            <div class="form-help" style="font-size: 12px; margin-top: 4px;">Almacén hacia donde se trasladarán las existencias</div>
+                        </div>
+                        <div class="form-group" id="grpUbDestinoTraslado">
+                            <label id="lblUbDestinoTraslado">Ubicación Destino *</label>
+                            {{ traslado_form.ubicacion_destino }}
+                            <div class="form-help" style="font-size: 12px; margin-top: 4px;">Ubicación física en el almacén de destino</div>
+                        </div>
+                    </div>
+                    <div class="form-group" id="grpCatDestinoTraslado" style="margin-bottom: 0;">
+                        <label id="lblCatDestinoTraslado">Categoría en Almacén Destino *</label>
+                        {{ traslado_form.categoria_destino }}
+                        <div class="form-help" style="font-size: 12px; margin-top: 4px;">Categoría obligatoria a la que pertenecerá el producto en el nuevo almacén.</div>
+                    </div>
+                </div>
+
+                <!-- Hidden inputs -->
+                <div style="display: none;">
+                    {{ traslado_form.almacen_origen }}
+                    <input type="hidden" name="ubicacion_origen" id="hiddenUbOrigenEntre" value="" disabled>
+                </div>
+
+                <!-- 3. MOTIVO Y EXISTENCIAS A TRANSFERIR -->
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label>Motivo del Traslado *</label>
+                    {{ traslado_form.motivo }}
+                    <div id="dispStockTraslado" class="form-help" style="margin-top: 4px; font-weight: 500;">
+                        Stock a transferir: <strong id="valStockTraslado" style="color: var(--text);">—</strong> (se traslada el total disponible)
+                    </div>
+                </div>
+            </div>
+
+            <div id="feedbackTraslado" style="display: none; background: rgba(255, 107, 122, 0.12); border: 1px solid var(--crit); color: #ffb4bc; padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-top: 14px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0; color: var(--crit);"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    <span id="feedbackTrasladoTxt"></span>
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-soft);">
+                <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalNuevoMovimiento')">Cancelar</button>
+                <button type="submit" class="btn btn-primary" id="btnSubmitTraslado">Confirmar Traslado</button>
+            </div>
+        </form>
+        {% endif %}
+
+        <!-- 5. FORMULARIO CONTEO FÍSICO -->
+        <form method="post" action="{% url 'inventario:conteo-crear' %}" id="secFormConteo" class="mov-dynamic-form" style="display: none;">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{% url 'inventario:movimiento-lista' %}?vista=CONTEOS">
+
+            <div class="form-group">
+                <label>Producto Contado *</label>
+                {{ conteo_form.producto }}
+            </div>
+            <div class="form-group">
+                <label>Almacén</label>
+                <div id="dispAlmacenConteo" class="form-control" style="background: rgba(255,255,255,0.03); opacity: 0.95; display: flex; align-items: center; gap: 7px; min-height: 40px;">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent); flex-shrink: 0;"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                    <span id="txtAlmacenConteo" style="color: var(--text-muted); font-size: 13px;">{% if es_usuario_normal and usuario_almacenes_count == 1 %}<strong style="color: var(--text);">{{ usuario_almacen_unico_nombre }}</strong>{% else %}Selecciona un producto para cargar su almacén{% endif %}</span>
+                </div>
+                <div style="display: none;">{{ conteo_form.almacen }}</div>
+            </div>
+            <div class="form-grid-2">
+                <div class="form-group">
+                    <label>Cantidad Física Contada *</label>
+                    {{ conteo_form.cantidad_contada }}
+                </div>
+                <div class="form-group">
+                    <label>Motivo del Conteo *</label>
+                    {{ conteo_form.motivo }}
+                </div>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Observaciones (opcional)</label>
+                {{ conteo_form.observacion }}
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-soft);">
+                <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalNuevoMovimiento')">Cancelar</button>
+                <button type="submit" class="btn btn-primary" id="btnSubmitConteo">Registrar Conteo</button>
+            </div>
+        </form>
+    </div>
+</dialog>
+
+<!-- ═══ MODAL DEVOLUCIÓN DE PRÉSTAMO ═══ -->
+<dialog id="modalDevolucionPrestamo" class="app-modal">
+    <form method="post" id="formDevolucionModal" style="display: flex; flex-direction: column;">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{% url 'inventario:movimiento-lista' %}?vista=PRESTAMOS">
+        <input type="hidden" name="clave_idempotencia" id="idemDevolucion">
+        <div class="app-modal-header">
+            <h2 class="app-modal-title">Registrar Devolución de Préstamo</h2>
+            <button type="button" class="app-modal-close" onclick="closeAppModal('modalDevolucionPrestamo')">&times;</button>
+        </div>
+        <div class="app-modal-body">
+            <p id="infoPrestamoDevolver" style="font-size: 13px; color: var(--text-dim); margin-bottom: 14px;"></p>
+            <div id="warnMaxDevolucion" style="display: none; background: rgba(245, 158, 11, 0.15); border: 1px solid var(--accent-warning); color: #fcd34d; padding: 8px 12px; border-radius: 6px; font-size: 12px; margin-bottom: 12px;"></div>
+            <div class="form-group">
+                <label>Cantidad a Devolver *</label>
+                <input type="number" name="cantidad" id="inputCantDevolver" class="form-control" min="1" required>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Motivo / Estado de Recepción *</label>
+                <input type="text" name="motivo" class="form-control" value="Devolución en buen estado" required>
+            </div>
+        </div>
+        <div class="app-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalDevolucionPrestamo')">Cancelar</button>
+            <button type="submit" class="btn btn-primary">Confirmar Devolución</button>
+        </div>
+    </form>
+</dialog>
+
+<!-- ═══ MODAL BAJA POR DAÑO EN PRÉSTAMO ═══ -->
+<dialog id="modalBajaPrestamo" class="app-modal">
+    <form method="post" id="formBajaModal" style="display: flex; flex-direction: column;">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{% url 'inventario:movimiento-lista' %}?vista=PRESTAMOS">
+        <input type="hidden" name="clave_idempotencia" id="idemBaja">
+        <div class="app-modal-header">
+            <h2 class="app-modal-title">Registrar Baja por Daño o Pérdida</h2>
+            <button type="button" class="app-modal-close" onclick="closeAppModal('modalBajaPrestamo')">&times;</button>
+        </div>
+        <div class="app-modal-body">
+            <p id="infoPrestamoBaja" style="font-size: 13px; color: var(--crit); margin-bottom: 14px;"></p>
+            <div id="warnMaxBaja" style="display: none; background: rgba(245, 158, 11, 0.15); border: 1px solid var(--accent-warning); color: #fcd34d; padding: 8px 12px; border-radius: 6px; font-size: 12px; margin-bottom: 12px;"></div>
+            <div class="form-group">
+                <label>Cantidad Dañada / Perdida *</label>
+                <input type="number" name="cantidad" id="inputCantBaja" class="form-control" min="1" required>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Motivo Obligatorio de la Baja *</label>
+                <input type="text" name="motivo" class="form-control" placeholder="Ej. Daño irreparable durante práctica..." required>
+            </div>
+        </div>
+        <div class="app-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalBajaPrestamo')">Cancelar</button>
+            <button type="submit" class="btn btn-danger">Confirmar Baja</button>
+        </div>
+    </form>
+</dialog>
+
+<!-- ═══ MODAL RECHAZO DE CONTEO FÍSICO (Fase 3 Remediacíón) ═══ -->
+<dialog id="modalRechazarConteo" class="app-modal">
+    <form method="post" id="formRechazarConteoModal" style="display: flex; flex-direction: column;">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{% url 'inventario:movimiento-lista' %}?vista=CONTEOS">
+        <div class="app-modal-header">
+            <h2 class="app-modal-title">Rechazar Conteo Físico</h2>
+            <button type="button" class="app-modal-close" onclick="closeAppModal('modalRechazarConteo')">&times;</button>
+        </div>
+        <div class="app-modal-body">
+            <p id="infoConteoRechazar" style="font-size: 13px; color: var(--crit); margin-bottom: 14px;"></p>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="motivoRechazoConteo">Motivo del Rechazo *</label>
+                <textarea name="motivo_rechazo" id="motivoRechazoConteo" class="form-control" rows="3" placeholder="Explique brevemente por qué se rechaza o descarta este conteo..." required></textarea>
+            </div>
+        </div>
+        <div class="app-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalRechazarConteo')">Cancelar</button>
+            <button type="submit" class="btn btn-danger">Confirmar Rechazo</button>
+        </div>
+    </form>
+</dialog>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    var vistaActual = "{{ vista_actual }}";
+    var typeBtns = document.querySelectorAll(".mov-type-btn");
+    var dynamicForms = document.querySelectorAll(".mov-dynamic-form");
+
+    function generarClaveIdempotencia() {
+        return "MOV-" + Date.now() + "-" + Math.random().toString(36).substring(2, 10);
+    }
+
+    function activarFormularioTipo(targetId) {
+        var targetBtn = document.querySelector('.mov-type-btn[data-target-form="' + targetId + '"]');
+        if (!targetBtn) {
+            var firstAvailableBtn = document.querySelector('.mov-type-btn');
+            if (firstAvailableBtn) {
+                targetId = firstAvailableBtn.getAttribute("data-target-form");
+            }
+        }
+
+        typeBtns.forEach(function(b) {
+            b.classList.toggle("active", b.getAttribute("data-target-form") === targetId);
+        });
+        dynamicForms.forEach(function(f) {
+            f.style.display = (f.id === targetId) ? "block" : "none";
+        });
+        document.querySelectorAll(".idem-token-input").forEach(function(inp) {
+            inp.value = generarClaveIdempotencia();
+        });
+        if (targetId === "secFormSalida") {
+            actualizarProductoSalida(selectProductoSalida ? selectProductoSalida.value : null);
+        } else if (targetId === "secFormPrestamo") {
+            actualizarProductoPrestamo(selectProductoPrestamo ? selectProductoPrestamo.value : null);
+        } else if (targetId === "secFormTraslado") {
+            if (typeof setModoTraslado === "function") {
+                setModoTraslado();
+            }
+            if (typeof actualizarProductoTraslado === "function" && selectProductoTraslado) {
+                actualizarProductoTraslado(selectProductoTraslado.value);
+            }
+        }
+    }
+
+    typeBtns.forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            activarFormularioTipo(btn.getAttribute("data-target-form"));
+        });
+    });
+
+    // Abrir modal "+ Nuevo Movimiento" preseleccionando el tipo según la pestaña activa
+    var btnAbrir = document.getElementById("btnAbrirNuevoMovimiento");
+    if (btnAbrir) {
+        btnAbrir.addEventListener("click", function() {
+            if (vistaActual === "SALIDA" || vistaActual === "DOTACION") {
+                activarFormularioTipo("secFormSalida");
+            } else if (vistaActual === "PRESTAMOS") {
+                activarFormularioTipo("secFormPrestamo");
+            } else if (vistaActual === "TRASLADO") {
+                activarFormularioTipo("secFormTraslado");
+            } else if (vistaActual === "CONTEOS") {
+                activarFormularioTipo("secFormConteo");
+            } else {
+                activarFormularioTipo("secFormEntrada");
+            }
+            openAppModal("modalNuevoMovimiento");
+        });
+    }
+
+    // Sincronización completa de empaques gestionada en '1. Sincronización Entrada'
+
+    // Protección ante doble envío por red inestable
+    document.querySelectorAll(".mov-dynamic-form, #formDevolucionModal, #formBajaModal").forEach(function(form) {
+        form.addEventListener("submit", function() {
+            var btn = form.querySelector('button[type="submit"]');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = "Procesando...";
+            }
+        });
+    });
+
+    // Modal Devolución de Préstamo (Punto 17)
+    var inpCantDevolver = document.getElementById("inputCantDevolver");
+    var warnMaxDevolucion = document.getElementById("warnMaxDevolucion");
+
+    if (inpCantDevolver) {
+        inpCantDevolver.addEventListener("input", function() {
+            var maxPend = parseInt(inpCantDevolver.max, 10);
+            var val = parseInt(inpCantDevolver.value, 10);
+            if (!isNaN(maxPend) && !isNaN(val) && val > maxPend) {
+                inpCantDevolver.value = maxPend;
+                if (warnMaxDevolucion) {
+                    warnMaxDevolucion.textContent = "Se ajustó automáticamente al saldo máximo pendiente (" + maxPend + " unid.).";
+                    warnMaxDevolucion.style.display = "block";
+                }
+            } else {
+                if (warnMaxDevolucion) warnMaxDevolucion.style.display = "none";
+            }
+        });
+    }
+
+    document.querySelectorAll(".btn-abrir-devolucion").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            var form = document.getElementById("formDevolucionModal");
+            form.action = btn.getAttribute("data-url");
+            document.getElementById("idemDevolucion").value = generarClaveIdempotencia();
+            var pend = btn.getAttribute("data-pendiente");
+            document.getElementById("infoPrestamoDevolver").textContent =
+                "Artículo: " + btn.getAttribute("data-producto") + " · Responsable: " + btn.getAttribute("data-destinatario") + " (Pendiente: " + pend + " unid.)";
+            if (warnMaxDevolucion) warnMaxDevolucion.style.display = "none";
+            if (inpCantDevolver) {
+                inpCantDevolver.max = pend;
+                inpCantDevolver.value = pend;
+            }
+            openAppModal("modalDevolucionPrestamo");
+        });
+    });
+
+    // Ubicación fija no editable y almacén sincronizado en entradas, salidas, préstamos y traslados
+    var mapaUbicacionesStock = {{ mapa_ubicaciones_json|default:'{}'|safe }};
+    var almacenUbicacionesMap = {{ almacen_ubicaciones_json|default:'{}'|safe }};
+    var almacenCategoriasMap = {{ almacen_categorias_json|default:'{}'|safe }};
+    var esUsuarioNormal = {{ es_usuario_normal|yesno:"true,false" }};
+    var usuarioAlmacenesCount = {{ usuario_almacenes_count|default:999 }};
+    var usuarioAlmacenUnicoId = "{{ usuario_almacen_unico_id|default:'' }}";
+    var usuarioAlmacenUnicoNombre = "{{ usuario_almacen_unico_nombre|default:'' }}";
+
+    // 1. Sincronización Entrada y Conversión Mutuamente Excluyente de Empaques
+    var selectProductoEntrada = document.querySelector('#secFormEntrada select[name="producto"]');
+    var txtUbicEntrada = document.getElementById("txtUbicacionEntrada");
+    var inputUbicEntrada = document.getElementById("inputUbicacionEntrada");
+    var inputAlmEntrada = document.querySelector('#secFormEntrada [name="almacen"]');
+    var txtAlmacenEntrada = document.getElementById("txtAlmacenEntrada");
+    var chkEmp = document.querySelector('#secFormEntrada [name="es_empaque"]');
+    var boxEmp = document.getElementById("boxEmpaquesModal");
+    var lblEmpaqueTexto = document.getElementById("lblEmpaqueTexto");
+    var ayudaEmpaqueTexto = document.getElementById("ayudaEmpaqueTexto");
+    var inpCantEmpaques = document.querySelector('#secFormEntrada [name="cantidad_empaques"]');
+    var inputCantBase = document.querySelector('#secFormEntrada input[name="cantidad"]');
+    var lblCantidadEntrada = document.getElementById("lblCantidadEntrada");
+    var dispTotalEmpaque = document.getElementById("dispTotalEmpaqueCalculado");
+    var containerEmp = document.getElementById("containerEmpaqueEntrada");
+
+    function calcularTotalEmpaques() {
+        if (!inpCantEmpaques || !dispTotalEmpaque || !selectProductoEntrada) return;
+        var info = mapaUbicacionesStock[String(selectProductoEntrada.value)];
+        if (info && info.unidades_por_empaque && info.unidades_por_empaque > 1) {
+            var factor = parseInt(info.unidades_por_empaque, 10);
+            var cant = parseInt(inpCantEmpaques.value, 10) || 0;
+            if (cant > 0) {
+                var total = cant * factor;
+                dispTotalEmpaque.innerHTML = "<span style='color: var(--ok);'>&#10003;</span> <strong>" + cant + "</strong> " + (info.nombre_empaque || "empaque(s)") + " × <strong>" + factor + "</strong> unid. = <strong style='color: var(--accent-2);'>" + total + " unidades base</strong> que ingresarán al stock.";
+                dispTotalEmpaque.style.display = "block";
+                if (inputCantBase && chkEmp && chkEmp.checked) {
+                    inputCantBase.value = total;
+                }
+            } else {
+                dispTotalEmpaque.style.display = "none";
+                if (inputCantBase && chkEmp && chkEmp.checked) {
+                    inputCantBase.value = "";
+                }
+            }
+        } else {
+            dispTotalEmpaque.style.display = "none";
+        }
+    }
+
+    function toggleModoEmpaque() {
+        if (!chkEmp) return;
+        var esEmp = chkEmp.checked && !chkEmp.disabled;
+        if (esEmp) {
+            if (boxEmp) boxEmp.style.display = "block";
+            if (inpCantEmpaques) {
+                inpCantEmpaques.disabled = false;
+                inpCantEmpaques.required = true;
+            }
+            if (inputCantBase) {
+                inputCantBase.disabled = true;
+                inputCantBase.required = false;
+                inputCantBase.style.opacity = "0.5";
+                inputCantBase.style.cursor = "not-allowed";
+                inputCantBase.style.backgroundColor = "rgba(255, 255, 255, 0.04)";
+            }
+            if (lblCantidadEntrada) {
+                lblCantidadEntrada.innerHTML = 'Cantidad (Unidades Base) <small style="color: var(--accent-2); font-weight: 500;">(calculada automáticamente por empaques)</small>';
+            }
+            calcularTotalEmpaques();
+        } else {
+            if (boxEmp) boxEmp.style.display = "none";
+            if (inpCantEmpaques) {
+                inpCantEmpaques.disabled = true;
+                inpCantEmpaques.required = false;
+                inpCantEmpaques.value = "";
+            }
+            if (inputCantBase) {
+                inputCantBase.disabled = false;
+                inputCantBase.required = true;
+                inputCantBase.style.opacity = "1";
+                inputCantBase.style.cursor = "";
+                inputCantBase.style.backgroundColor = "";
+            }
+            if (lblCantidadEntrada) {
+                lblCantidadEntrada.innerHTML = 'Cantidad (Unidades Base) *';
+            }
+            if (dispTotalEmpaque) dispTotalEmpaque.style.display = "none";
+        }
+    }
+
+    if (chkEmp) {
+        chkEmp.addEventListener("change", toggleModoEmpaque);
+    }
+    if (inpCantEmpaques) {
+        inpCantEmpaques.addEventListener("input", calcularTotalEmpaques);
+    }
+
+    // Al enviar el formulario de entrada, habilitar temporalmente inputCantBase para que el valor calculado se envíe correctamente
+    var formEntrada = document.getElementById("secFormEntrada");
+    if (formEntrada) {
+        formEntrada.addEventListener("submit", function() {
+            if (chkEmp && chkEmp.checked && inputCantBase) {
+                inputCantBase.disabled = false;
+            }
+        });
+    }
+
+    function actualizarProductoEntrada(prodId) {
+        if (!txtUbicEntrada || !inputUbicEntrada) return;
+        var info = mapaUbicacionesStock[String(prodId)];
+        if (info && info.id) {
+            inputUbicEntrada.value = info.id;
+            txtUbicEntrada.innerHTML = '<strong style="color: var(--ok);">' + info.nombre + '</strong>';
+        } else {
+            inputUbicEntrada.value = "";
+            txtUbicEntrada.innerHTML = '<span style="color: var(--text-muted); font-style: italic;">Sin ubicación física asignada</span>';
+        }
+
+        if (info && info.almacen_id) {
+            if (inputAlmEntrada) inputAlmEntrada.value = info.almacen_id;
+            if (txtAlmacenEntrada) {
+                txtAlmacenEntrada.innerHTML = '<strong style="color: var(--text);">' + info.almacen_nombre + '</strong>';
+            }
+        } else if (usuarioAlmacenUnicoNombre) {
+            if (inputAlmEntrada && usuarioAlmacenUnicoId) inputAlmEntrada.value = usuarioAlmacenUnicoId;
+            if (txtAlmacenEntrada) {
+                txtAlmacenEntrada.innerHTML = '<strong style="color: var(--text);">' + usuarioAlmacenUnicoNombre + '</strong>';
+            }
+        } else {
+            if (txtAlmacenEntrada) txtAlmacenEntrada.textContent = "Selecciona un producto para cargar su almacén";
+        }
+
+        // Validación y habilitación de empaque
+        if (chkEmp) {
+            if (info && info.unidades_por_empaque && info.unidades_por_empaque > 1) {
+                chkEmp.disabled = false;
+                if (containerEmp) {
+                    containerEmp.style.opacity = "1";
+                    containerEmp.style.pointerEvents = "auto";
+                }
+                if (lblEmpaqueTexto) {
+                    lblEmpaqueTexto.innerHTML = '<strong>¿Ingresar por paquetes / empaques?</strong> <span class="badge badge-accent" style="font-size: 11px; margin-left: 6px;">' + (info.nombre_empaque || "Empaque") + ' x ' + info.unidades_por_empaque + ' unid.</span>';
+                }
+                if (ayudaEmpaqueTexto) ayudaEmpaqueTexto.style.display = "none";
+            } else {
+                chkEmp.checked = false;
+                chkEmp.disabled = true;
+                if (containerEmp) {
+                    containerEmp.style.opacity = "0.65";
+                    containerEmp.style.pointerEvents = "none";
+                }
+                if (lblEmpaqueTexto) {
+                    lblEmpaqueTexto.textContent = "¿Ingresar por paquetes / empaques?";
+                }
+                if (ayudaEmpaqueTexto) {
+                    if (info && info.unidades_por_empaque) {
+                        ayudaEmpaqueTexto.textContent = "Este artículo se gestiona por unidades individuales (1 unid. base).";
+                    } else if (prodId) {
+                        ayudaEmpaqueTexto.textContent = "Este artículo no tiene empaques configurados en el catálogo.";
+                    } else {
+                        ayudaEmpaqueTexto.textContent = "Selecciona un producto para habilitar el ingreso por empaques si corresponde.";
+                    }
+                    ayudaEmpaqueTexto.style.display = "block";
+                }
+            }
+            toggleModoEmpaque();
+        }
+    }
+
+    if (selectProductoEntrada) {
+        selectProductoEntrada.addEventListener("change", function() {
+            actualizarProductoEntrada(selectProductoEntrada.value);
+        });
+        if (selectProductoEntrada.value) {
+            actualizarProductoEntrada(selectProductoEntrada.value);
+        }
+    }
+
+    // 2. Sincronización Salida (Dotación) con validación de Stock 0 (Puntos 5 y 8)
+    var selectProductoSalida = document.querySelector('#secFormSalida select[name="producto"]');
+    var inputCantSalida = document.querySelector('#secFormSalida input[name="cantidad"]');
+    var valStockSalida = document.getElementById("valStockSalida");
+    var inputAlmSalida = document.querySelector('#secFormSalida [name="almacen"]');
+    var txtAlmacenSalida = document.getElementById("txtAlmacenSalida");
+    var alertSinStockSalida = document.getElementById("alertSinStockSalida");
+    var btnSubmitSalida = document.getElementById("btnSubmitSalida");
+    var bodyCamposSalida = document.getElementById("bodyCamposSalida");
+
+    function actualizarProductoSalida(prodId) {
+        if (!prodId || prodId === "") {
+            if (alertSinStockSalida) alertSinStockSalida.style.display = "none";
+            if (btnSubmitSalida) btnSubmitSalida.disabled = false;
+            if (bodyCamposSalida) {
+                bodyCamposSalida.style.opacity = "1";
+                bodyCamposSalida.style.pointerEvents = "auto";
+                bodyCamposSalida.style.filter = "none";
+            }
+            if (inputCantSalida) {
+                inputCantSalida.disabled = false;
+                inputCantSalida.removeAttribute("max");
+            }
+            if (txtAlmacenSalida) {
+                if (usuarioAlmacenesCount === 1 && usuarioAlmacenUnicoNombre) {
+                    txtAlmacenSalida.innerHTML = '<strong style="color: var(--text);">' + usuarioAlmacenUnicoNombre + '</strong>';
+                    if (inputAlmSalida && usuarioAlmacenUnicoId) inputAlmSalida.value = usuarioAlmacenUnicoId;
+                } else {
+                    txtAlmacenSalida.textContent = "Selecciona un producto para cargar su almacén";
+                }
+            }
+            if (valStockSalida) {
+                valStockSalida.textContent = "—";
+                valStockSalida.style.color = "var(--text)";
+            }
+            return;
+        }
+        var info = mapaUbicacionesStock[String(prodId)];
+        if (info) {
+            var sinStock = info.stock_disponible <= 0;
+            if (alertSinStockSalida) alertSinStockSalida.style.display = sinStock ? "flex" : "none";
+            if (btnSubmitSalida) btnSubmitSalida.disabled = sinStock;
+            if (bodyCamposSalida) {
+                bodyCamposSalida.style.opacity = sinStock ? "0.35" : "1";
+                bodyCamposSalida.style.pointerEvents = sinStock ? "none" : "auto";
+                bodyCamposSalida.style.filter = sinStock ? "grayscale(0.8)" : "none";
+            }
+            if (inputCantSalida) {
+                inputCantSalida.disabled = sinStock;
+                inputCantSalida.max = info.stock_disponible;
+                if (sinStock) inputCantSalida.value = 0;
+            }
+
+            if (info.almacen_id) {
+                if (inputAlmSalida) inputAlmSalida.value = info.almacen_id;
+                if (txtAlmacenSalida) {
+                    txtAlmacenSalida.innerHTML = '<strong style="color: var(--text);">' + info.almacen_nombre + '</strong>';
+                }
+            }
+            if (valStockSalida) {
+                valStockSalida.textContent = info.stock_disponible + " unid.";
+                valStockSalida.style.color = info.stock_disponible > 0 ? "var(--ok)" : "var(--crit)";
+            }
+        } else {
+            if (alertSinStockSalida) alertSinStockSalida.style.display = "none";
+            if (btnSubmitSalida) btnSubmitSalida.disabled = false;
+            if (bodyCamposSalida) {
+                bodyCamposSalida.style.opacity = "1";
+                bodyCamposSalida.style.pointerEvents = "auto";
+                bodyCamposSalida.style.filter = "none";
+            }
+            if (inputCantSalida) inputCantSalida.disabled = false;
+            if (txtAlmacenSalida) {
+                if (usuarioAlmacenesCount === 1 && usuarioAlmacenUnicoNombre) {
+                    txtAlmacenSalida.innerHTML = '<strong style="color: var(--text);">' + usuarioAlmacenUnicoNombre + '</strong>';
+                    if (inputAlmSalida && usuarioAlmacenUnicoId) inputAlmSalida.value = usuarioAlmacenUnicoId;
+                } else {
+                    txtAlmacenSalida.textContent = "Selecciona un producto para cargar su almacén";
+                }
+            }
+            if (valStockSalida) {
+                valStockSalida.textContent = "—";
+                valStockSalida.style.color = "var(--text)";
+            }
+        }
+    }
+
+    if (selectProductoSalida) {
+        selectProductoSalida.addEventListener("change", function() {
+            actualizarProductoSalida(selectProductoSalida.value);
+        });
+        actualizarProductoSalida(selectProductoSalida.value);
+    }
+
+    // 3. Sincronización Préstamo con validación de Stock 0 (Puntos 5 y 8)
+    var selectProductoPrestamo = document.querySelector('#secFormPrestamo select[name="producto"]');
+    var inputCantPrestamo = document.querySelector('#secFormPrestamo input[name="cantidad"]');
+    var valStockPrestamo = document.getElementById("valStockPrestamo");
+    var inputAlmPrestamo = document.querySelector('#secFormPrestamo [name="almacen"]');
+    var txtAlmacenPrestamo = document.getElementById("txtAlmacenPrestamo");
+    var alertSinStockPrestamo = document.getElementById("alertSinStockPrestamo");
+    var btnSubmitPrestamo = document.getElementById("btnSubmitPrestamo");
+    var bodyCamposPrestamo = document.getElementById("bodyCamposPrestamo");
+
+    function actualizarProductoPrestamo(prodId) {
+        if (!prodId || prodId === "") {
+            if (alertSinStockPrestamo) alertSinStockPrestamo.style.display = "none";
+            if (btnSubmitPrestamo) btnSubmitPrestamo.disabled = false;
+            if (bodyCamposPrestamo) {
+                bodyCamposPrestamo.style.opacity = "1";
+                bodyCamposPrestamo.style.pointerEvents = "auto";
+                bodyCamposPrestamo.style.filter = "none";
+            }
+            if (inputCantPrestamo) {
+                inputCantPrestamo.disabled = false;
+                inputCantPrestamo.removeAttribute("max");
+            }
+            if (txtAlmacenPrestamo) {
+                if (usuarioAlmacenesCount === 1 && usuarioAlmacenUnicoNombre) {
+                    txtAlmacenPrestamo.innerHTML = '<strong style="color: var(--text);">' + usuarioAlmacenUnicoNombre + '</strong>';
+                    if (inputAlmPrestamo && usuarioAlmacenUnicoId) inputAlmPrestamo.value = usuarioAlmacenUnicoId;
+                } else {
+                    txtAlmacenPrestamo.textContent = "Selecciona un producto para cargar su almacén";
+                }
+            }
+            if (valStockPrestamo) {
+                valStockPrestamo.textContent = "—";
+                valStockPrestamo.style.color = "var(--text)";
+            }
+            return;
+        }
+        var info = mapaUbicacionesStock[String(prodId)];
+        if (info) {
+            var sinStock = info.stock_disponible <= 0;
+            if (alertSinStockPrestamo) alertSinStockPrestamo.style.display = sinStock ? "flex" : "none";
+            if (btnSubmitPrestamo) btnSubmitPrestamo.disabled = sinStock;
+            if (bodyCamposPrestamo) {
+                bodyCamposPrestamo.style.opacity = sinStock ? "0.35" : "1";
+                bodyCamposPrestamo.style.pointerEvents = sinStock ? "none" : "auto";
+                bodyCamposPrestamo.style.filter = sinStock ? "grayscale(0.8)" : "none";
+            }
+            if (inputCantPrestamo) {
+                inputCantPrestamo.disabled = sinStock;
+                inputCantPrestamo.max = info.stock_disponible;
+                if (sinStock) inputCantPrestamo.value = 0;
+            }
+
+            if (info.almacen_id) {
+                if (inputAlmPrestamo) inputAlmPrestamo.value = info.almacen_id;
+                if (txtAlmacenPrestamo) {
+                    txtAlmacenPrestamo.innerHTML = '<strong style="color: var(--text);">' + info.almacen_nombre + '</strong>';
+                }
+            }
+            if (valStockPrestamo) {
+                valStockPrestamo.textContent = info.stock_disponible + " unid.";
+                valStockPrestamo.style.color = info.stock_disponible > 0 ? "var(--ok)" : "var(--crit)";
+            }
+        } else {
+            if (alertSinStockPrestamo) alertSinStockPrestamo.style.display = "none";
+            if (btnSubmitPrestamo) btnSubmitPrestamo.disabled = false;
+            if (bodyCamposPrestamo) {
+                bodyCamposPrestamo.style.opacity = "1";
+                bodyCamposPrestamo.style.pointerEvents = "auto";
+                bodyCamposPrestamo.style.filter = "none";
+            }
+            if (inputCantPrestamo) inputCantPrestamo.disabled = false;
+            if (txtAlmacenPrestamo) {
+                if (usuarioAlmacenesCount === 1 && usuarioAlmacenUnicoNombre) {
+                    txtAlmacenPrestamo.innerHTML = '<strong style="color: var(--text);">' + usuarioAlmacenUnicoNombre + '</strong>';
+                    if (inputAlmPrestamo && usuarioAlmacenUnicoId) inputAlmPrestamo.value = usuarioAlmacenUnicoId;
+                } else {
+                    txtAlmacenPrestamo.textContent = "Selecciona un producto para cargar su almacén";
+                }
+            }
+            if (valStockPrestamo) {
+                valStockPrestamo.textContent = "—";
+                valStockPrestamo.style.color = "var(--text)";
+            }
+        }
+    }
+
+    if (selectProductoPrestamo) {
+        selectProductoPrestamo.addEventListener("change", function() {
+            actualizarProductoPrestamo(selectProductoPrestamo.value);
+        });
+        actualizarProductoPrestamo(selectProductoPrestamo.value);
+    }
+
+    // 4. Sincronización Traslado: 2 Opciones Claras (Interno vs Entre Almacenes)
+    var selectProductoTraslado = document.querySelector('#secFormTraslado select[name="producto"]');
+    var inputAlmOrigenTraslado = document.querySelector('#secFormTraslado [name="almacen_origen"]');
+    var txtAlmacenInterno = document.getElementById("txtAlmacenInterno");
+    var txtUbicacionActualInterno = document.getElementById("txtUbicacionActualInterno");
+    var txtAlmacenEntreOrigen = document.getElementById("txtAlmacenEntreOrigen");
+    var txtUbicacionEntreOrigen = document.getElementById("txtUbicacionEntreOrigen");
+
+    var cardTipoInterno = document.getElementById("cardTipoInterno");
+    var cardTipoEntre = document.getElementById("cardTipoEntre");
+    var radioTipoInterno = document.getElementById("radioTipoInterno");
+    var radioTipoEntre = document.getElementById("radioTipoEntre");
+    var bloqueTrasladoInterno = document.getElementById("bloqueTrasladoInterno");
+    var bloqueTrasladoEntre = document.getElementById("bloqueTrasladoEntre");
+
+    var selectUbOrigenTraslado = document.querySelector('#secFormTraslado select[name="ubicacion_origen"]');
+    var hiddenUbOrigenEntre = document.getElementById("hiddenUbOrigenEntre");
+    var selectAlmDestinoTraslado = document.querySelector('#secFormTraslado select[name="almacen_destino"]');
+    var selectUbDestinoTraslado = document.querySelector('#secFormTraslado select[name="ubicacion_destino"]');
+    var selectCatDestinoTraslado = document.querySelector('#secFormTraslado select[name="categoria_destino"]');
+    var inputMotivoTraslado = document.querySelector('#secFormTraslado input[name="motivo"]');
+    var valStockTraslado = document.getElementById("valStockTraslado");
+    var alertSinStockTraslado = document.getElementById("alertSinStockTraslado");
+    var btnSubmitTraslado = document.getElementById("btnSubmitTraslado");
+    var bodyCamposTraslado = document.getElementById("bodyCamposTraslado");
+
+    var currentProductoUbicacionId = null;
+    var motivoModificadoPorUsuario = false;
+
+    function obtenerModoTraslado() {
+        var radio = document.querySelector('#secFormTraslado input[name="modalidad_traslado"]:checked');
+        if (radio) return radio.value;
+        if (radioTipoEntre && !radioTipoInterno) return "ENTRE";
+        return "INTERNO";
+    }
+
+    function poblarOpcionesUbicacion(selectElem, almacenId, ubicacionSeleccionada, disableUbicacionId) {
+        if (!selectElem) return;
+        var prevVal = ubicacionSeleccionada || selectElem.value;
+        var ubs = almacenUbicacionesMap[String(almacenId)] || [];
+        selectElem.innerHTML = '<option value="">Selecciona ubicación...</option>';
+        ubs.forEach(function(u) {
+            var opt = document.createElement("option");
+            opt.value = u.id;
+            if (disableUbicacionId && String(u.id) === String(disableUbicacionId)) {
+                opt.textContent = u.nombre + " (Ubicación actual)";
+                opt.disabled = true;
+            } else {
+                opt.textContent = u.nombre;
+            }
+            if (prevVal && String(u.id) === String(prevVal) && !opt.disabled) {
+                opt.selected = true;
+            }
+            selectElem.appendChild(opt);
+        });
+    }
+
+    function poblarOpcionesCategoria(selectElem, almacenId, categoriaSeleccionada) {
+        if (!selectElem) return;
+        var prevVal = categoriaSeleccionada || selectElem.value;
+        var cats = almacenCategoriasMap[String(almacenId)] || [];
+        selectElem.innerHTML = '<option value="">Selecciona categoría destino...</option>';
+        cats.forEach(function(c) {
+            var opt = document.createElement("option");
+            opt.value = c.id;
+            opt.textContent = c.nombre;
+            if (prevVal && String(c.id) === String(prevVal)) {
+                opt.selected = true;
+            }
+            selectElem.appendChild(opt);
+        });
+        if (cats.length === 1 && !selectElem.value) {
+            selectElem.value = cats[0].id;
+        }
+    }
+
+    function mostrarFeedbackTraslado(mensaje, campoTarget) {
+        var fb = document.getElementById("feedbackTraslado");
+        var fbTxt = document.getElementById("feedbackTrasladoTxt");
+        if (fb && fbTxt) {
+            fbTxt.textContent = mensaje;
+            fb.style.display = "block";
+        }
+        if (campoTarget) {
+            campoTarget.style.borderColor = "var(--crit)";
+            try { campoTarget.focus(); } catch (e) {}
+        }
+    }
+
+    function ocultarFeedbackTraslado() {
+        var fb = document.getElementById("feedbackTraslado");
+        if (fb) fb.style.display = "none";
+        [selectProductoTraslado, selectUbOrigenTraslado, selectAlmDestinoTraslado, selectUbDestinoTraslado, selectCatDestinoTraslado, inputMotivoTraslado].forEach(function(el) {
+            if (el) el.style.borderColor = "";
+        });
+    }
+
+    function reestablecerBotonSubmitTraslado() {
+        if (btnSubmitTraslado) {
+            btnSubmitTraslado.disabled = false;
+            btnSubmitTraslado.textContent = "Confirmar Traslado";
+        }
+    }
+
+    function sugerirMotivoInterno() {
+        if (motivoModificadoPorUsuario && inputMotivoTraslado && inputMotivoTraslado.value.trim()) return;
+        var prodId = selectProductoTraslado ? selectProductoTraslado.value : "";
+        var info = mapaUbicacionesStock[String(prodId)];
+        if (!info) return;
+        var nuevaUbText = (selectUbOrigenTraslado && selectUbOrigenTraslado.selectedIndex > 0)
+            ? selectUbOrigenTraslado.options[selectUbOrigenTraslado.selectedIndex].text.replace(" (Ubicación actual)", "")
+            : "";
+        if (inputMotivoTraslado) {
+            if (nuevaUbText) {
+                inputMotivoTraslado.value = "Traslado interno en " + (info.almacen_nombre || "almacén") + ": reubicación física a " + nuevaUbText;
+            } else {
+                inputMotivoTraslado.value = "Traslado interno en " + (info.almacen_nombre || "almacén") + ": reubicación de estante";
+            }
+        }
+    }
+
+    function sugerirMotivoEntre() {
+        if (motivoModificadoPorUsuario && inputMotivoTraslado && inputMotivoTraslado.value.trim()) return;
+        var prodId = selectProductoTraslado ? selectProductoTraslado.value : "";
+        var info = mapaUbicacionesStock[String(prodId)];
+        if (!info) return;
+        var almDestText = (selectAlmDestinoTraslado && selectAlmDestinoTraslado.selectedIndex > 0)
+            ? selectAlmDestinoTraslado.options[selectAlmDestinoTraslado.selectedIndex].text
+            : "";
+        if (inputMotivoTraslado) {
+            if (almDestText) {
+                inputMotivoTraslado.value = "Traslado de " + (info.almacen_nombre || "origen") + " a " + almDestText;
+            } else {
+                inputMotivoTraslado.value = "Traslado desde " + (info.almacen_nombre || "origen") + " hacia otro almacén";
+            }
+        }
+    }
+
+    function setModoTraslado(modo) {
+        ocultarFeedbackTraslado();
+
+        var tieneInterno = !!radioTipoInterno;
+        var tieneEntre = !!radioTipoEntre;
+
+        if (tieneInterno && !tieneEntre) {
+            modo = "INTERNO";
+        } else if (!tieneInterno && tieneEntre) {
+            modo = "ENTRE";
+        } else if (!modo) {
+            modo = (radioTipoEntre && radioTipoEntre.checked) ? "ENTRE" : "INTERNO";
+        }
+
+        if (modo === "INTERNO") {
+            if (radioTipoInterno) radioTipoInterno.checked = true;
+            if (cardTipoInterno) {
+                cardTipoInterno.classList.add("active");
+                cardTipoInterno.style.borderColor = "var(--accent)";
+                cardTipoInterno.style.background = "rgba(59, 111, 240, 0.12)";
+            }
+            if (cardTipoEntre) {
+                cardTipoEntre.classList.remove("active");
+                cardTipoEntre.style.borderColor = "var(--border)";
+                cardTipoEntre.style.background = "var(--bg-deep-2)";
+            }
+            if (bloqueTrasladoInterno) bloqueTrasladoInterno.style.display = "block";
+            if (bloqueTrasladoEntre) bloqueTrasladoEntre.style.display = "none";
+
+            // Activar selector interno, desactivar origen oculto y destino
+            if (selectUbOrigenTraslado) selectUbOrigenTraslado.disabled = false;
+            if (hiddenUbOrigenEntre) {
+                hiddenUbOrigenEntre.disabled = true;
+                hiddenUbOrigenEntre.value = "";
+            }
+            if (selectAlmDestinoTraslado) {
+                selectAlmDestinoTraslado.disabled = true;
+                selectAlmDestinoTraslado.value = "";
+            }
+            if (selectUbDestinoTraslado) {
+                selectUbDestinoTraslado.disabled = true;
+                selectUbDestinoTraslado.value = "";
+            }
+            if (selectCatDestinoTraslado) {
+                selectCatDestinoTraslado.disabled = true;
+                selectCatDestinoTraslado.value = "";
+            }
+
+            sugerirMotivoInterno();
+        } else {
+            if (radioTipoEntre) radioTipoEntre.checked = true;
+            if (cardTipoEntre) {
+                cardTipoEntre.classList.add("active");
+                cardTipoEntre.style.borderColor = "var(--accent)";
+                cardTipoEntre.style.background = "rgba(59, 111, 240, 0.12)";
+            }
+            if (cardTipoInterno) {
+                cardTipoInterno.classList.remove("active");
+                cardTipoInterno.style.borderColor = "var(--border)";
+                cardTipoInterno.style.background = "var(--bg-deep-2)";
+            }
+            if (bloqueTrasladoInterno) bloqueTrasladoInterno.style.display = "none";
+            if (bloqueTrasladoEntre) bloqueTrasladoEntre.style.display = "block";
+
+            // Desactivar selector interno, activar origen con la actual y campos destino
+            if (selectUbOrigenTraslado) selectUbOrigenTraslado.disabled = true;
+            if (hiddenUbOrigenEntre) {
+                hiddenUbOrigenEntre.disabled = false;
+                hiddenUbOrigenEntre.value = currentProductoUbicacionId || "";
+            }
+            if (selectAlmDestinoTraslado) selectAlmDestinoTraslado.disabled = false;
+            if (selectUbDestinoTraslado) selectUbDestinoTraslado.disabled = false;
+            if (selectCatDestinoTraslado) selectCatDestinoTraslado.disabled = false;
+
+            sugerirMotivoEntre();
+        }
+    }
+
+    function validarFormularioTraslado() {
+        ocultarFeedbackTraslado();
+        var prodId = selectProductoTraslado ? selectProductoTraslado.value : "";
+        if (!prodId) {
+            mostrarFeedbackTraslado("Por favor selecciona primero el producto que deseas trasladar.", selectProductoTraslado);
+            reestablecerBotonSubmitTraslado();
+            return false;
+        }
+
+        var info = mapaUbicacionesStock[String(prodId)];
+        if (!info || info.stock_disponible <= 0) {
+            mostrarFeedbackTraslado("Este producto no tiene existencias disponibles para trasladar (Stock: 0).", selectProductoTraslado);
+            reestablecerBotonSubmitTraslado();
+            return false;
+        }
+
+        var modo = obtenerModoTraslado();
+
+        if (modo === "INTERNO") {
+            var nuevaUb = selectUbOrigenTraslado ? String(selectUbOrigenTraslado.value || "") : "";
+            if (!nuevaUb) {
+                mostrarFeedbackTraslado("Debes seleccionar la nueva ubicación física de destino dentro de tu almacén.", selectUbOrigenTraslado);
+                reestablecerBotonSubmitTraslado();
+                return false;
+            }
+            if (currentProductoUbicacionId && nuevaUb === String(currentProductoUbicacionId)) {
+                var nombreActual = info.nombre || "la actual";
+                mostrarFeedbackTraslado("La nueva ubicación debe ser distinta a la ubicación física actual del producto ('" + nombreActual + "').", selectUbOrigenTraslado);
+                reestablecerBotonSubmitTraslado();
+                return false;
+            }
+        } else {
+            var almDestId = selectAlmDestinoTraslado ? selectAlmDestinoTraslado.value : "";
+            if (!almDestId) {
+                mostrarFeedbackTraslado("Debes seleccionar el almacén de destino hacia donde se trasladará el producto.", selectAlmDestinoTraslado);
+                reestablecerBotonSubmitTraslado();
+                return false;
+            }
+            if (info.almacen_id && String(almDestId) === String(info.almacen_id)) {
+                mostrarFeedbackTraslado("El almacén de destino debe ser diferente al almacén de origen.", selectAlmDestinoTraslado);
+                reestablecerBotonSubmitTraslado();
+                return false;
+            }
+            var ubDestId = selectUbDestinoTraslado ? selectUbDestinoTraslado.value : "";
+            if (!ubDestId) {
+                mostrarFeedbackTraslado("Debes seleccionar la ubicación física en el almacén de destino.", selectUbDestinoTraslado);
+                reestablecerBotonSubmitTraslado();
+                return false;
+            }
+            var catDestId = selectCatDestinoTraslado ? selectCatDestinoTraslado.value : "";
+            if (!catDestId) {
+                mostrarFeedbackTraslado("Debes seleccionar la categoría del producto en el almacén de destino.", selectCatDestinoTraslado);
+                reestablecerBotonSubmitTraslado();
+                return false;
+            }
+        }
+
+        var motivo = inputMotivoTraslado ? inputMotivoTraslado.value.trim() : "";
+        if (!motivo) {
+            mostrarFeedbackTraslado("El motivo del traslado es obligatorio. Por favor ingresa una breve descripción.", inputMotivoTraslado);
+            reestablecerBotonSubmitTraslado();
+            return false;
+        }
+
+        return true;
+    }
+
+    function actualizarProductoTraslado(prodId) {
+        ocultarFeedbackTraslado();
+        if (!prodId || prodId === "") {
+            if (alertSinStockTraslado) alertSinStockTraslado.style.display = "none";
+            if (bodyCamposTraslado) {
+                bodyCamposTraslado.style.opacity = "0.35";
+                bodyCamposTraslado.style.pointerEvents = "none";
+            }
+            if (valStockTraslado) {
+                valStockTraslado.textContent = "—";
+                valStockTraslado.style.color = "var(--text)";
+            }
+            var msgDefault = "Selecciona un producto primero";
+            if (txtAlmacenInterno) txtAlmacenInterno.textContent = msgDefault;
+            if (txtAlmacenEntreOrigen) txtAlmacenEntreOrigen.textContent = msgDefault;
+            if (txtUbicacionActualInterno) txtUbicacionActualInterno.textContent = "—";
+            return;
+        }
+        var info = mapaUbicacionesStock[String(prodId)];
+        if (info) {
+            var sinStock = info.stock_disponible <= 0;
+            if (alertSinStockTraslado) alertSinStockTraslado.style.display = sinStock ? "flex" : "none";
+
+            if (sinStock) {
+                if (bodyCamposTraslado) {
+                    bodyCamposTraslado.style.opacity = "0.35";
+                    bodyCamposTraslado.style.pointerEvents = "none";
+                    bodyCamposTraslado.style.filter = "grayscale(0.8)";
+                }
+                if (valStockTraslado) {
+                    valStockTraslado.textContent = "0 unid. (Sin existencias disponibles)";
+                    valStockTraslado.style.color = "var(--crit)";
+                }
+                return;
+            }
+
+            if (bodyCamposTraslado) {
+                bodyCamposTraslado.style.opacity = "1";
+                bodyCamposTraslado.style.pointerEvents = "auto";
+                bodyCamposTraslado.style.filter = "none";
+            }
+            if (valStockTraslado) {
+                valStockTraslado.textContent = info.stock_disponible + " unid.";
+                valStockTraslado.style.color = "var(--ok)";
+            }
+
+            if (info.almacen_id) {
+                if (inputAlmOrigenTraslado) inputAlmOrigenTraslado.value = info.almacen_id;
+                var htmlAlm = '<strong style="color: var(--text);">' + (info.almacen_nombre || "Almacén Asignado") + '</strong>';
+                if (txtAlmacenInterno) txtAlmacenInterno.innerHTML = htmlAlm;
+                if (txtAlmacenEntreOrigen) txtAlmacenEntreOrigen.innerHTML = htmlAlm;
+            }
+
+            currentProductoUbicacionId = info.id || "";
+            var nomUbActual = info.nombre ? info.nombre : "Sin ubicación asignada";
+            if (txtUbicacionActualInterno) txtUbicacionActualInterno.textContent = nomUbActual;
+            if (txtUbicacionEntreOrigen) txtUbicacionEntreOrigen.textContent = nomUbActual;
+
+            // Poblar selector de nueva ubicación interna (deshabilitando la actual si tiene)
+            poblarOpcionesUbicacion(selectUbOrigenTraslado, info.almacen_id, "", currentProductoUbicacionId);
+
+            // Filtrar almacén destino para no permitir seleccionar el mismo de origen
+            if (selectAlmDestinoTraslado) {
+                for (var i = 0; i < selectAlmDestinoTraslado.options.length; i++) {
+                    var opt = selectAlmDestinoTraslado.options[i];
+                    if (!opt.value) continue;
+                    if (String(opt.value) === String(info.almacen_id)) {
+                        opt.disabled = true;
+                        opt.style.display = "none";
+                    } else {
+                        opt.disabled = false;
+                        opt.style.display = "";
+                    }
+                }
+                if (String(selectAlmDestinoTraslado.value) === String(info.almacen_id)) {
+                    selectAlmDestinoTraslado.value = "";
+                }
+            }
+
+            // Inicializar sub-selectores destino
+            if (selectAlmDestinoTraslado && selectAlmDestinoTraslado.value) {
+                poblarOpcionesUbicacion(selectUbDestinoTraslado, selectAlmDestinoTraslado.value, "");
+                poblarOpcionesCategoria(selectCatDestinoTraslado, selectAlmDestinoTraslado.value, "");
+            } else {
+                if (selectUbDestinoTraslado) selectUbDestinoTraslado.innerHTML = '<option value="">Selecciona primero un almacén destino</option>';
+                if (selectCatDestinoTraslado) selectCatDestinoTraslado.innerHTML = '<option value="">Selecciona primero un almacén destino</option>';
+            }
+
+            setModoTraslado(obtenerModoTraslado());
+        } else {
+            if (alertSinStockTraslado) alertSinStockTraslado.style.display = "none";
+            if (bodyCamposTraslado) {
+                bodyCamposTraslado.style.opacity = "0.35";
+                bodyCamposTraslado.style.pointerEvents = "none";
+            }
+            if (valStockTraslado) {
+                valStockTraslado.textContent = "—";
+                valStockTraslado.style.color = "var(--text)";
+            }
+            var msgDefault = "Selecciona un producto primero";
+            if (txtAlmacenInterno) txtAlmacenInterno.textContent = msgDefault;
+            if (txtAlmacenEntreOrigen) txtAlmacenEntreOrigen.textContent = msgDefault;
+            if (txtUbicacionActualInterno) txtUbicacionActualInterno.textContent = "—";
+            if (txtUbicacionEntreOrigen) txtUbicacionEntreOrigen.textContent = "—";
+        }
+    }
+
+    // Eventos de selección de modo (Card o Radio)
+    document.querySelectorAll('#secFormTraslado input[name="modalidad_traslado"]').forEach(function(radio) {
+        radio.addEventListener("change", function() {
+            setModoTraslado(this.value);
+        });
+    });
+
+    if (cardTipoInterno) {
+        cardTipoInterno.addEventListener("click", function(e) {
+            setModoTraslado("INTERNO");
+        });
+    }
+
+    if (cardTipoEntre) {
+        cardTipoEntre.addEventListener("click", function(e) {
+            if (cardTipoEntre.classList.contains("disabled")) return;
+            setModoTraslado("ENTRE");
+        });
+    }
+
+    if (selectProductoTraslado) {
+        selectProductoTraslado.addEventListener("change", function() {
+            motivoModificadoPorUsuario = false;
+            actualizarProductoTraslado(selectProductoTraslado.value);
+        });
+        if (selectProductoTraslado.value) {
+            actualizarProductoTraslado(selectProductoTraslado.value);
+        } else {
+            actualizarProductoTraslado("");
+        }
+    }
+
+    if (selectUbOrigenTraslado) {
+        selectUbOrigenTraslado.addEventListener("change", function() {
+            ocultarFeedbackTraslado();
+            sugerirMotivoInterno();
+        });
+    }
+
+    if (selectAlmDestinoTraslado) {
+        selectAlmDestinoTraslado.addEventListener("change", function() {
+            ocultarFeedbackTraslado();
+            var destId = selectAlmDestinoTraslado.value;
+            if (destId) {
+                poblarOpcionesUbicacion(selectUbDestinoTraslado, destId, "");
+                poblarOpcionesCategoria(selectCatDestinoTraslado, destId, "");
+            } else {
+                if (selectUbDestinoTraslado) selectUbDestinoTraslado.innerHTML = '<option value="">Selecciona primero un almacén destino</option>';
+                if (selectCatDestinoTraslado) selectCatDestinoTraslado.innerHTML = '<option value="">Selecciona primero un almacén destino</option>';
+            }
+            sugerirMotivoEntre();
+        });
+    }
+
+    if (selectCatDestinoTraslado) {
+        selectCatDestinoTraslado.addEventListener("change", function() {
+            ocultarFeedbackTraslado();
+        });
+    }
+
+    if (selectUbDestinoTraslado) {
+        selectUbDestinoTraslado.addEventListener("change", function() {
+            ocultarFeedbackTraslado();
+        });
+    }
+
+    if (inputMotivoTraslado) {
+        inputMotivoTraslado.addEventListener("input", function() {
+            motivoModificadoPorUsuario = true;
+            if (inputMotivoTraslado.value.trim()) {
+                ocultarFeedbackTraslado();
+            }
+        });
+    }
+
+    // Interceptor de envío con retroalimentación explícita en Traslado
+    var secFormTraslado = document.getElementById("secFormTraslado");
+    if (secFormTraslado) {
+        secFormTraslado.addEventListener("submit", function(e) {
+            if (!validarFormularioTraslado()) {
+                e.preventDefault();
+                e.stopPropagation();
+                reestablecerBotonSubmitTraslado();
+                return false;
+            }
+        });
+    }
+
+    // 5. SINCRONIZACIÓN CONTEO FÍSICO (Puntos 4 y 8)
+    var selectProductoConteo = document.querySelector('#secFormConteo select[name="producto"]');
+    var inputAlmConteo = document.querySelector('#secFormConteo [name="almacen"]');
+    var txtAlmacenConteo = document.getElementById("txtAlmacenConteo");
+
+    function actualizarProductoConteo(prodId) {
+        var info = mapaUbicacionesStock[String(prodId)];
+        if (info && info.almacen_id) {
+            if (inputAlmConteo) inputAlmConteo.value = info.almacen_id;
+            if (txtAlmacenConteo) {
+                txtAlmacenConteo.innerHTML = '<strong style="color: var(--text);">' + info.almacen_nombre + '</strong>';
+            }
+        } else if (usuarioAlmacenUnicoNombre) {
+            if (inputAlmConteo && usuarioAlmacenUnicoId) inputAlmConteo.value = usuarioAlmacenUnicoId;
+            if (txtAlmacenConteo) {
+                txtAlmacenConteo.innerHTML = '<strong style="color: var(--text);">' + usuarioAlmacenUnicoNombre + '</strong>';
+            }
+        } else {
+            if (txtAlmacenConteo) txtAlmacenConteo.textContent = "Selecciona un producto para cargar su almacén";
+        }
+    }
+
+    if (selectProductoConteo) {
+        selectProductoConteo.addEventListener("change", function() {
+            actualizarProductoConteo(selectProductoConteo.value);
+        });
+        if (selectProductoConteo.value) {
+            actualizarProductoConteo(selectProductoConteo.value);
+        }
+    }
+
+    // Pre-cargar valores de almacén único si aplica
+    if (esUsuarioNormal && usuarioAlmacenesCount === 1 && usuarioAlmacenUnicoNombre) {
+        if (txtAlmacenEntrada) txtAlmacenEntrada.innerHTML = '<strong style="color: var(--text);">' + usuarioAlmacenUnicoNombre + '</strong>';
+        if (txtAlmacenSalida) txtAlmacenSalida.innerHTML = '<strong style="color: var(--text);">' + usuarioAlmacenUnicoNombre + '</strong>';
+        if (txtAlmacenPrestamo) txtAlmacenPrestamo.innerHTML = '<strong style="color: var(--text);">' + usuarioAlmacenUnicoNombre + '</strong>';
+        if (txtAlmacenConteo) txtAlmacenConteo.innerHTML = '<strong style="color: var(--text);">' + usuarioAlmacenUnicoNombre + '</strong>';
+        if (txtAlmacenTraslado) txtAlmacenTraslado.innerHTML = '<strong style="color: var(--text);">' + usuarioAlmacenUnicoNombre + '</strong>';
+        if (inputAlmEntrada && usuarioAlmacenUnicoId) inputAlmEntrada.value = usuarioAlmacenUnicoId;
+        if (inputAlmSalida && usuarioAlmacenUnicoId) inputAlmSalida.value = usuarioAlmacenUnicoId;
+        if (inputAlmPrestamo && usuarioAlmacenUnicoId) inputAlmPrestamo.value = usuarioAlmacenUnicoId;
+        if (inputAlmConteo && usuarioAlmacenUnicoId) inputAlmConteo.value = usuarioAlmacenUnicoId;
+        if (inputAlmOrigenTraslado && usuarioAlmacenUnicoId) inputAlmOrigenTraslado.value = usuarioAlmacenUnicoId;
+    }
+
+    // Modal Baja de Préstamo (Punto 17)
+    var inpCantBaja = document.getElementById("inputCantBaja");
+    var warnMaxBaja = document.getElementById("warnMaxBaja");
+
+    if (inpCantBaja) {
+        inpCantBaja.addEventListener("input", function() {
+            var maxPend = parseInt(inpCantBaja.max, 10);
+            var val = parseInt(inpCantBaja.value, 10);
+            if (!isNaN(maxPend) && !isNaN(val) && val > maxPend) {
+                inpCantBaja.value = maxPend;
+                if (warnMaxBaja) {
+                    warnMaxBaja.textContent = "Se ajustó automáticamente al saldo máximo pendiente (" + maxPend + " unid.).";
+                    warnMaxBaja.style.display = "block";
+                }
+            } else {
+                if (warnMaxBaja) warnMaxBaja.style.display = "none";
+            }
+        });
+    }
+
+    document.querySelectorAll(".btn-abrir-baja").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            var form = document.getElementById("formBajaModal");
+            form.action = btn.getAttribute("data-url");
+            document.getElementById("idemBaja").value = generarClaveIdempotencia();
+            var pend = btn.getAttribute("data-pendiente");
+            document.getElementById("infoPrestamoBaja").textContent =
+                "Nota: Esta acción descontará del stock en préstamo sin devolverlo al disponible. Artículo: " +
+                btn.getAttribute("data-producto") + " (Pendiente: " + pend + " unid.)";
+            if (warnMaxBaja) warnMaxBaja.style.display = "none";
+            if (inpCantBaja) {
+                inpCantBaja.max = pend;
+                inpCantBaja.value = "1";
+            }
+            openAppModal("modalBajaPrestamo");
+        });
+    });
+
+    // Modal Rechazo de Conteo Físico (Fase 3 Remediacíón)
+    window.abrirModalRechazoConteo = function(conteoId, productoCodigo) {
+        var form = document.getElementById("formRechazarConteoModal");
+        if (form) {
+            form.action = "{% url 'inventario:conteo-rechazar' '00000000-0000-0000-0000-000000000000' %}".replace("00000000-0000-0000-0000-000000000000", conteoId);
+        }
+        var info = document.getElementById("infoConteoRechazar");
+        if (info) {
+            info.textContent = "El conteo pendiente para el producto [" + productoCodigo + "] será descartado sin alterar el stock del sistema.";
+        }
+        var txt = document.getElementById("motivoRechazoConteo");
+        if (txt) {
+            txt.value = "";
+        }
+        openAppModal("modalRechazarConteo");
+    };
+});
+</script>
+{% endblock %}

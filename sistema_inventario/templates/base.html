@@ -1,0 +1,2894 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <title>{% block title %}Inventario AudacIA{% endblock %} — Sistema de Inventario</title>
+    <style>
+        /* ═══════════════════════════════════════════════════════════════
+           DESIGN TOKENS — Paleta Dark Navy (ref: inventarioaudacia.netlify.app)
+           ═══════════════════════════════════════════════════════════════ */
+        @font-face { font-family: 'Inter'; font-style: normal; font-weight: 400; font-display: swap; src: url("{% static 'fonts/inter-400.woff2' %}") format('woff2'); }
+        @font-face { font-family: 'Inter'; font-style: normal; font-weight: 500; font-display: swap; src: url("{% static 'fonts/inter-500.woff2' %}") format('woff2'); }
+        @font-face { font-family: 'Inter'; font-style: normal; font-weight: 600; font-display: swap; src: url("{% static 'fonts/inter-600.woff2' %}") format('woff2'); }
+        @font-face { font-family: 'Inter'; font-style: normal; font-weight: 700; font-display: swap; src: url("{% static 'fonts/inter-700.woff2' %}") format('woff2'); }
+        @font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 600; font-display: swap; src: url("{% static 'fonts/space-grotesk-600.woff2' %}") format('woff2'); }
+        @font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 700; font-display: swap; src: url("{% static 'fonts/space-grotesk-700.woff2' %}") format('woff2'); }
+
+        :root {
+            color-scheme: dark;
+            --bg-deep: #050b24;
+            --bg-deep-2: #081234;
+            --bg-panel: #0d1940;
+            --bg-panel-2: #111f4d;
+            --bg-elevated: #152a5c;
+            --border: #1e2e63;
+            --border-soft: #182552;
+            --accent: #3b6ff0;
+            --accent-bright: #5c8bff;
+            --accent-2: #57e8cf;
+            --accent-2-dim: #2f6f66;
+            --text: #eef2ff;
+            --text-dim: #93a2d6;
+            --text-faint: #5f6ea3;
+            --crit: #ff6b7a;
+            --crit-bg: rgba(255,107,122,0.12);
+            --warn: #ffbd5c;
+            --warn-bg: rgba(255,189,92,0.12);
+            --ok: #4ee6ab;
+            --ok-bg: rgba(78,230,171,0.10);
+            --radius: 14px;
+            --radius-sm: 9px;
+            --shadow-lg: 0 20px 50px -20px rgba(0,0,0,0.6);
+            --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+            --font-heading: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+            --font-mono: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+
+            /* Alias de compatibilidad con plantillas previas (paleta clara) */
+            --primary: var(--accent-bright);
+            --primary-hover: var(--accent);
+            --primary-light: rgba(59,111,240,0.12);
+            --bg-body: var(--bg-deep);
+            --bg-card: var(--bg-panel);
+            --text-main: var(--text);
+            --text-muted: var(--text-dim);
+            --success: var(--ok);
+            --success-bg: var(--ok-bg);
+            --warning: var(--warn);
+            --warning-bg: var(--warn-bg);
+            --danger: var(--crit);
+            --danger-bg: var(--crit-bg);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: var(--font-body);
+            background:
+                radial-gradient(ellipse 900px 500px at 85% -10%, rgba(59,111,240,0.18), transparent 60%),
+                radial-gradient(ellipse 700px 500px at -5% 100%, rgba(87,232,207,0.08), transparent 60%),
+                var(--bg-deep);
+            color: var(--text);
+            line-height: 1.5;
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+            overflow-x: clip;
+        }
+
+        ::selection { background: var(--accent); color: #fff; }
+        ::-webkit-scrollbar { width: 9px; height: 9px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+        /* ═══════════════════════════════════════════════════════════════
+           APP LAYOUT — Sidebar + Main
+           ═══════════════════════════════════════════════════════════════ */
+        .app-layout {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* ─── SIDEBAR ─────────────────────────────────────────────── */
+        .sidebar {
+            width: 236px;
+            min-width: 236px;
+            background: var(--bg-deep-2);
+            border-right: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            height: 100dvh;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            z-index: 200;
+        }
+
+        .sidebar-brand {
+            padding: 20px 20px 16px;
+            border-bottom: 1px solid var(--border-soft);
+        }
+
+        .sidebar-brand a {
+            text-decoration: none;
+            display: block;
+        }
+
+        .sidebar-brand-title {
+            font-family: var(--font-heading);
+            font-size: 15.5px;
+            font-weight: 700;
+            color: var(--accent-bright);
+            letter-spacing: -0.01em;
+        }
+
+        .sidebar-brand-title span {
+            color: var(--accent-2);
+        }
+
+        .sidebar-brand-sub {
+            font-size: 10.5px;
+            color: var(--text-faint);
+            margin-top: 2px;
+        }
+
+        .sidebar-nav {
+            flex: 1;
+            padding: 12px 10px;
+            overflow-y: auto;
+        }
+
+        .nav-section-label {
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-faint);
+            text-transform: uppercase;
+            letter-spacing: 1.4px;
+            padding: 14px 10px 6px;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 12px;
+            border-radius: var(--radius-sm);
+            color: var(--text-dim);
+            text-decoration: none;
+            font-size: 13.5px;
+            font-weight: 500;
+            transition: all 0.15s ease;
+            margin-bottom: 2px;
+        }
+
+        .nav-item:hover {
+            color: var(--text);
+            background: var(--bg-panel);
+        }
+
+        .nav-item.active {
+            color: #fff;
+            background: var(--accent);
+        }
+
+        .nav-item svg {
+            width: 18px;
+            height: 18px;
+            flex-shrink: 0;
+            stroke: currentColor;
+            stroke-width: 1.8;
+            fill: none;
+        }
+
+        .sidebar-footer {
+            padding: 14px 14px;
+            border-top: 1px solid var(--border-soft);
+        }
+
+        .sidebar-user {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--radius-sm);
+            margin-bottom: 8px;
+        }
+
+        .sidebar-user-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            display: grid;
+            place-items: center;
+            font-size: 13px;
+            font-weight: 700;
+            color: #fff;
+            flex-shrink: 0;
+        }
+
+        .sidebar-user-info {
+            overflow: hidden;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .sidebar-user-name {
+            font-size: 12.5px;
+            font-weight: 600;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .sidebar-user-role {
+            font-size: 10.5px;
+            color: var(--text-faint);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .btn-logout-sidebar {
+            display: block;
+            width: 100%;
+            padding: 8px;
+            background: none;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text-faint);
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.15s ease;
+            font-family: var(--font-body);
+        }
+
+        .btn-logout-sidebar:hover {
+            color: var(--crit);
+            border-color: var(--crit);
+            background: var(--crit-bg);
+        }
+
+        /* ─── MAIN WRAPPER ────────────────────────────────────────── */
+        .main-wrapper {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ─── TOPBAR ──────────────────────────────────────────────── */
+        .topbar {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 28px;
+            background: rgba(5,11,36,0.75);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--border-soft);
+        }
+
+        .topbar-title {
+            font-family: var(--font-heading);
+            font-size: 21px;
+            font-weight: 600;
+            color: var(--text);
+            letter-spacing: -0.02em;
+        }
+
+        .topbar-right {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .notification-bell {
+            position: relative;
+            display: inline-grid;
+            place-items: center;
+            width: 36px;
+            height: 36px;
+            border-radius: 9px;
+            background: var(--bg-panel-2, #111f4d);
+            border: 1px solid var(--border, #1e2e63);
+            color: #e2e8f0;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.18s ease;
+        }
+
+        .notification-bell svg {
+            width: 19px;
+            height: 19px;
+            stroke: #e2e8f0;
+            fill: none;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            transition: stroke 0.18s ease, transform 0.18s ease;
+        }
+
+        .notification-bell:hover {
+            border-color: var(--accent-bright, #5c8bff);
+            background: rgba(59, 111, 240, 0.22);
+            color: #ffffff;
+        }
+
+        .notification-bell:hover svg {
+            stroke: #57e8cf;
+            transform: scale(1.08);
+        }
+
+        .notification-badge {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background: var(--crit);
+            color: white;
+            border-radius: 9999px;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 1px 5px;
+            min-width: 17px;
+            text-align: center;
+            border: 2px solid var(--bg-deep);
+            line-height: 1.3;
+        }
+
+        .notification-badge.warn-badge {
+            background: var(--warn);
+            color: #1a1a1a;
+        }
+
+        .topbar-user-pill {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 9999px;
+            font-size: 12.5px;
+            color: var(--text-dim);
+        }
+
+        .topbar-user-pill strong {
+            color: var(--text);
+        }
+
+        /* ─── HAMBURGER (mobile) ──────────────────────────────────── */
+        .hamburger {
+            display: none;
+            background: var(--bg-panel-2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            width: 36px;
+            height: 36px;
+            place-items: center;
+            cursor: pointer;
+            color: var(--text);
+            font-size: 18px;
+        }
+
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(2,6,23,0.6);
+            backdrop-filter: blur(3px);
+            z-index: 190;
+        }
+
+        /* ─── MAIN CONTENT ────────────────────────────────────────── */
+        .main-content {
+            flex: 1;
+            min-width: 0;
+            width: 100%;
+            padding: 28px 32px 60px;
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+           COMPONENT STYLES
+           ═══════════════════════════════════════════════════════════════ */
+
+        /* ─── Messages & Toasts ───────────────────────────────────── */
+        .toast-container {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            z-index: 999999;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            max-width: 440px;
+            width: calc(100vw - 32px);
+            pointer-events: none;
+        }
+
+        .toast-item {
+            pointer-events: auto;
+            background: var(--bg-panel, #0f1c3f);
+            border: 1px solid var(--border, #1e2e63);
+            border-radius: 12px;
+            padding: 14px 16px;
+            box-shadow: 0 16px 36px -6px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.06);
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            position: relative;
+            overflow: hidden;
+            animation: toastSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            transition: opacity 0.28s ease, transform 0.28s ease, max-height 0.28s ease, margin 0.28s ease, padding 0.28s ease;
+            max-height: 240px;
+            color: var(--text, #e2e8f0);
+            font-size: 13px;
+            line-height: 1.45;
+        }
+
+        .toast-item.toast-closing {
+            opacity: 0;
+            transform: translateX(60px) scale(0.95);
+            max-height: 0;
+            margin-bottom: -12px;
+            padding-top: 0;
+            padding-bottom: 0;
+            border-width: 0;
+        }
+
+        @keyframes toastSlideIn {
+            from {
+                opacity: 0;
+                transform: translateX(60px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0) scale(1);
+            }
+        }
+
+        .toast-icon-wrapper {
+            width: 28px;
+            height: 28px;
+            border-radius: 8px;
+            display: grid;
+            place-items: center;
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+
+        .toast-icon-wrapper svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .toast-content {
+            flex: 1;
+            min-width: 0;
+            padding-right: 4px;
+        }
+
+        .toast-title {
+            font-family: var(--font-heading);
+            font-weight: 700;
+            font-size: 13.5px;
+            margin-bottom: 3px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .toast-message {
+            color: var(--text-dim, #94a3b8);
+            font-size: 12.8px;
+            word-break: break-word;
+        }
+
+        .toast-close-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted, #64748b);
+            font-size: 18px;
+            line-height: 1;
+            padding: 2px 4px;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: color 0.15s ease, background 0.15s ease;
+            flex-shrink: 0;
+        }
+
+        .toast-close-btn:hover {
+            color: var(--text, #ffffff);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .toast-progress {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            height: 3px;
+            width: 100%;
+            transform-origin: left center;
+            animation: toastProgressBar linear forwards;
+        }
+
+        @keyframes toastProgressBar {
+            from { transform: scaleX(1); }
+            to { transform: scaleX(0); }
+        }
+
+        .toast-item:hover .toast-progress {
+            animation-play-state: paused;
+        }
+
+        /* Temas por tipo */
+        .toast-item.toast-success {
+            border-left: 4px solid var(--ok, #4ee6ab);
+        }
+        .toast-item.toast-success .toast-icon-wrapper {
+            background: rgba(78, 230, 171, 0.15);
+            color: var(--ok, #4ee6ab);
+        }
+        .toast-item.toast-success .toast-title {
+            color: var(--ok, #4ee6ab);
+        }
+        .toast-item.toast-success .toast-progress {
+            background: var(--ok, #4ee6ab);
+        }
+
+        .toast-item.toast-error, .toast-item.toast-danger {
+            border-left: 4px solid var(--crit, #ff6b7a);
+        }
+        .toast-item.toast-error .toast-icon-wrapper, .toast-item.toast-danger .toast-icon-wrapper {
+            background: rgba(255, 107, 122, 0.15);
+            color: var(--crit, #ff6b7a);
+        }
+        .toast-item.toast-error .toast-title, .toast-item.toast-danger .toast-title {
+            color: var(--crit, #ff6b7a);
+        }
+        .toast-item.toast-error .toast-progress, .toast-item.toast-danger .toast-progress {
+            background: var(--crit, #ff6b7a);
+        }
+
+        .toast-item.toast-warning {
+            border-left: 4px solid var(--warn, #ffbd5c);
+        }
+        .toast-item.toast-warning .toast-icon-wrapper {
+            background: rgba(255, 189, 92, 0.15);
+            color: var(--warn, #ffbd5c);
+        }
+        .toast-item.toast-warning .toast-title {
+            color: var(--warn, #ffbd5c);
+        }
+        .toast-item.toast-warning .toast-progress {
+            background: var(--warn, #ffbd5c);
+        }
+
+        .toast-item.toast-info {
+            border-left: 4px solid var(--accent-bright, #38bdf8);
+        }
+        .toast-item.toast-info .toast-icon-wrapper {
+            background: rgba(56, 189, 248, 0.15);
+            color: var(--accent-bright, #38bdf8);
+        }
+        .toast-item.toast-info .toast-title {
+            color: var(--accent-bright, #38bdf8);
+        }
+        .toast-item.toast-info .toast-progress {
+            background: var(--accent-bright, #38bdf8);
+        }
+
+        .alert {
+            padding: 13px 18px;
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border: 1px solid;
+        }
+
+        .alert-success { background: var(--ok-bg); color: var(--ok); border-color: rgba(78,230,171,0.25); }
+        .alert-error, .alert-danger { background: var(--crit-bg); color: var(--crit); border-color: rgba(255,107,122,0.25); }
+        .alert-warning { background: var(--warn-bg); color: var(--warn); border-color: rgba(255,189,92,0.25); }
+        .alert-info { background: rgba(59,111,240,0.1); color: var(--accent-bright); border-color: rgba(59,111,240,0.25); }
+
+        /* ─── Buttons ─────────────────────────────────────────────── */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 11px 22px;
+            font-size: 13.5px;
+            font-weight: 600;
+            font-family: var(--font-body);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.15s ease;
+            border: 1px solid transparent;
+            gap: 6px;
+            line-height: 1;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent), #2f56c9);
+            color: #fff;
+            box-shadow: 0 8px 20px -8px rgba(59,111,240,0.5);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 24px -8px rgba(59,111,240,0.6);
+        }
+        .btn-primary:active { transform: translateY(0); }
+
+        .btn-secondary {
+            background: var(--bg-panel-2);
+            color: var(--text-dim);
+            border-color: var(--border);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-elevated);
+            color: var(--text);
+            border-color: var(--accent);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, var(--crit), #c94040);
+            color: #fff;
+            box-shadow: 0 8px 20px -8px rgba(255,107,122,0.4);
+        }
+
+        .btn-danger:hover { transform: translateY(-1px); }
+        .btn-danger:active { transform: translateY(0); }
+
+        .btn-sm {
+            padding: 8px 14px;
+            font-size: 12.5px;
+        }
+
+        /* ─── Cards / Panels ──────────────────────────────────────── */
+        .card {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px 22px 22px;
+            margin-bottom: 1.5rem;
+            min-width: 0;
+            max-width: 100%;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid var(--border-soft);
+        }
+
+        .card-title {
+            font-family: var(--font-heading);
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        /* ─── Tables ──────────────────────────────────────────────── */
+        .table-responsive {
+            overflow-x: auto;
+            width: 100%;
+        }
+
+        table.data-table, table.table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12.8px;
+            text-align: left;
+        }
+
+        table.data-table th, table.table th {
+            padding: 0 12px 10px;
+            color: var(--text-faint);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 10.5px;
+            letter-spacing: 0.8px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        table.data-table td, table.table td {
+            padding: 11px 12px;
+            border-bottom: 1px solid var(--border-soft);
+            color: var(--text-dim);
+        }
+
+        table.data-table tr:hover td, table.table tr:hover td {
+            background: rgba(92,139,255,0.05);
+        }
+
+        table.data-table td strong, table.table td strong {
+            color: var(--text);
+        }
+
+        table.data-table td a, table.table td a {
+            color: var(--accent-bright);
+            text-decoration: none;
+        }
+
+        table.data-table td a:hover, table.table td a:hover {
+            text-decoration: underline;
+        }
+
+        table.data-table td a.btn, table.table td a.btn {
+            text-decoration: none;
+        }
+
+        table.data-table td a.btn-primary, table.table td a.btn-primary,
+        table.data-table td a.btn-danger, table.table td a.btn-danger {
+            color: #ffffff !important;
+        }
+
+        table.data-table td a.btn-secondary, table.table td a.btn-secondary {
+            color: var(--text-dim) !important;
+        }
+
+        .table-item-link {
+            color: var(--text) !important;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-weight: 600;
+            transition: color 0.15s ease;
+        }
+        .table-item-link:hover {
+            color: var(--accent-bright) !important;
+            text-decoration: underline !important;
+        }
+
+        /* ─── Forms ───────────────────────────────────────────────── */
+        .form-group {
+            margin-bottom: 1.25rem;
+        }
+
+        .form-group label, label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-dim);
+        }
+
+        .form-control,
+        input[type="text"], input[type="number"], input[type="email"],
+        input[type="password"], input[type="date"], input[type="datetime-local"],
+        input[type="url"], input[type="search"], input[type="tel"],
+        select, textarea {
+            width: 100%;
+            padding: 10px 12px;
+            font-size: 13.5px;
+            font-family: var(--font-body);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            background: var(--bg-panel-2);
+            color: var(--text);
+            transition: border-color 0.15s ease;
+        }
+
+        input[type="date"], input[type="datetime-local"] {
+            color-scheme: dark !important;
+        }
+
+        input[type="date"]::-webkit-calendar-picker-indicator,
+        input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+            filter: brightness(0) invert(1) drop-shadow(0 0 2px rgba(92, 139, 255, 0.7)) !important;
+            cursor: pointer;
+            opacity: 0.95 !important;
+            padding: 3px;
+            border-radius: 4px;
+            transition: opacity 0.15s ease, filter 0.15s ease, background 0.15s ease, transform 0.15s ease;
+        }
+
+        input[type="date"]::-webkit-calendar-picker-indicator:hover,
+        input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
+            opacity: 1 !important;
+            filter: brightness(0) invert(1) drop-shadow(0 0 6px #5c8bff) !important;
+            background: rgba(92, 139, 255, 0.25);
+            transform: scale(1.15);
+        }
+
+        .form-control:focus,
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: var(--accent-bright);
+            box-shadow: 0 0 0 3px rgba(59,111,240,0.15);
+        }
+
+        select option {
+            background: var(--bg-panel-2);
+            color: var(--text);
+        }
+
+        input[type="checkbox"], input[type="radio"] {
+            width: auto;
+            accent-color: var(--accent);
+        }
+
+        .form-help {
+            font-size: 11px;
+            color: var(--text-faint);
+            margin-top: 4px;
+        }
+
+        .form-error, .errorlist {
+            color: var(--crit);
+            font-size: 12px;
+            margin-top: 4px;
+            font-weight: 500;
+            list-style: none;
+            padding: 0;
+        }
+
+        .helptext {
+            font-size: 11px;
+            color: var(--text-faint);
+            display: block;
+            margin-top: 4px;
+        }
+
+        /* ─── Badges ──────────────────────────────────────────────── */
+        .badge {
+            display: inline-block;
+            font-size: 10.8px;
+            font-weight: 600;
+            padding: 4px 9px;
+            border-radius: 20px;
+            line-height: 1.3;
+        }
+
+        .badge-ok { background: var(--ok-bg); color: var(--ok); }
+        .badge-crit { background: var(--crit-bg); color: var(--crit); }
+        .badge-warn { background: var(--warn-bg); color: var(--warn); }
+        .badge-accent { background: rgba(59,111,240,0.12); color: var(--accent-bright); }
+        .badge-purple { background: rgba(139,92,246,0.12); color: #c48bff; }
+
+        /* ─── Code ────────────────────────────────────────────────── */
+        code {
+            font-family: var(--font-mono);
+            font-size: 11.5px;
+            background: var(--bg-panel-2);
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: var(--accent-2);
+            border: 1px solid var(--border-soft);
+        }
+
+        /* ─── Pagination ──────────────────────────────────────────── */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-top: 1.5rem;
+            align-items: center;
+        }
+
+        .pagination .page-info {
+            font-size: 12.5px;
+            color: var(--text-faint);
+        }
+
+        /* ─── Utility ─────────────────────────────────────────────── */
+        .text-dim { color: var(--text-dim); }
+        .text-faint { color: var(--text-faint); }
+        .text-ok { color: var(--ok); }
+        .text-crit { color: var(--crit); }
+        .text-warn { color: var(--warn); }
+        .text-accent { color: var(--accent-bright); }
+        .font-heading { font-family: var(--font-heading); }
+        .font-mono { font-family: var(--font-mono); }
+
+        /* ─── Dashboard KPI & Layout Grids ────────────────────────── */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .kpi-card {
+            background: linear-gradient(160deg, var(--bg-panel), var(--bg-panel-2));
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px 20px 18px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: var(--shadow);
+            transition: transform 0.15s ease, border-color 0.15s ease;
+        }
+
+        .kpi-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--border-strong);
+        }
+
+        .kpi-card::after {
+            content: '';
+            position: absolute;
+            top: -20px;
+            right: -20px;
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            opacity: 0.08;
+        }
+
+        .kpi-card.kpi-blue::after { background: var(--accent); }
+        .kpi-card.kpi-green::after { background: var(--ok); }
+        .kpi-card.kpi-red::after { background: var(--crit); }
+        .kpi-card.kpi-amber::after { background: var(--warn); }
+        .kpi-card.kpi-purple::after { background: #8b5cf6; }
+
+        .kpi-label {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-faint);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        }
+
+        .kpi-value {
+            font-family: var(--font-heading);
+            font-size: 32px;
+            font-weight: 700;
+            line-height: 1.1;
+            margin-bottom: 4px;
+        }
+
+        .kpi-footnote {
+            font-size: 11.5px;
+            color: var(--text-faint);
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: 1.35fr 1fr;
+            gap: 20px;
+            margin-bottom: 28px;
+        }
+
+        .chart-container {
+            height: 260px;
+            position: relative;
+        }
+
+        .tables-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        /* ─── Module Tabs (Sub-navigation inside each module) ────── */
+        .module-tabs {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+            padding: 8px 10px;
+            background: rgba(13, 25, 64, 0.72);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+        }
+
+        .module-tab {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-dim);
+            text-decoration: none;
+            border: 1px solid transparent;
+            transition: all 0.15s ease;
+        }
+
+        .module-tab:hover {
+            color: var(--text);
+            background: rgba(255, 255, 255, 0.05);
+            text-decoration: none;
+        }
+
+        .module-tab.active {
+            color: #fff;
+            font-weight: 600;
+            background: linear-gradient(90deg, rgba(59, 111, 240, 0.28), rgba(59, 111, 240, 0.12));
+            border-color: rgba(92, 139, 255, 0.38);
+            box-shadow: 0 2px 10px rgba(59, 111, 240, 0.18);
+        }
+
+        .module-tab svg {
+            width: 15px;
+            height: 15px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 1.9;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            flex-shrink: 0;
+        }
+
+        .module-tab.active svg {
+            stroke: var(--accent-teal);
+        }
+
+        @media (max-width: 1280px) {
+            .kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        }
+
+        /* ─── Modals (<dialog>) ───────────────────────────────────── */
+        dialog.app-modal {
+            margin: auto;
+            background: var(--bg-panel);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 0;
+            width: min(640px, 94vw);
+            max-height: 90dvh;
+            box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.75);
+            overflow: hidden;
+        }
+
+        dialog.app-modal[open] {
+            display: flex;
+            flex-direction: column;
+        }
+
+        dialog.app-modal::backdrop {
+            background: rgba(2, 6, 23, 0.72);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+        }
+
+        .app-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            background: var(--bg-deep-2);
+            border-bottom: 1px solid var(--border-soft);
+            flex-shrink: 0;
+        }
+
+        .app-modal-title {
+            font-family: var(--font-heading);
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text);
+            margin: 0;
+        }
+
+        .app-modal-close {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+            width: 30px;
+            height: 30px;
+            border-radius: 7px;
+            cursor: pointer;
+            display: inline-grid;
+            place-items: center;
+            font-size: 15px;
+            line-height: 1;
+            transition: all 0.15s ease;
+        }
+
+        .app-modal-close:hover {
+            color: var(--crit);
+            border-color: var(--crit);
+            background: var(--crit-bg);
+        }
+
+        .app-modal-body {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .app-modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            padding: 14px 20px;
+            background: var(--bg-deep-2);
+            border-top: 1px solid var(--border-soft);
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+
+        /* ─── Single-Input Product Combobox (Buscador Desplegable) ─── */
+        .product-combobox {
+            position: relative;
+            width: 100%;
+        }
+        .product-combobox-input {
+            width: 100%;
+            padding-right: 34px !important;
+            cursor: text;
+        }
+        .product-combobox-arrow {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            pointer-events: none;
+            color: var(--text-dim);
+            font-size: 11px;
+            transition: transform 0.15s ease;
+        }
+        .product-combobox.open .product-combobox-arrow {
+            transform: translateY(-50%) rotate(180deg);
+        }
+        .product-combobox-menu {
+            display: none;
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            right: 0;
+            max-height: 220px;
+            overflow-y: auto;
+            background: var(--bg-deep-2);
+            border: 1px solid var(--accent-bright);
+            border-radius: var(--radius-sm);
+            box-shadow: 0 14px 32px rgba(0, 0, 0, 0.68);
+            z-index: 560;
+            padding: 5px;
+        }
+        .product-combobox.open .product-combobox-menu {
+            display: block;
+        }
+        .product-combobox-option {
+            padding: 8px 10px;
+            border-radius: 6px;
+            font-size: 12.8px;
+            color: var(--text);
+            cursor: pointer;
+            transition: background 0.12s ease;
+        }
+        .product-combobox-option:hover,
+        .product-combobox-option.active {
+            background: rgba(59, 111, 240, 0.22);
+            color: #fff;
+        }
+        .product-combobox-empty {
+            padding: 9px 10px;
+            font-size: 12px;
+            color: var(--text-muted);
+            text-align: center;
+        }
+
+        /* ─── Filter Pills / Tabs ─────────────────────────────────── */
+        .filter-pills {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .filter-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 8px 14px;
+            border-radius: 999px;
+            font-size: 12.5px;
+            font-weight: 600;
+            color: var(--text-dim);
+            background: var(--bg-panel-2);
+            border: 1px solid var(--border);
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .filter-pill svg {
+            width: 14px;
+            height: 14px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            flex-shrink: 0;
+        }
+
+        .filter-pill:hover {
+            color: var(--text);
+            border-color: var(--accent);
+            background: var(--bg-elevated);
+        }
+
+        .filter-pill.active {
+            color: #fff;
+            background: var(--accent);
+            border-color: var(--accent-bright);
+            box-shadow: 0 4px 14px -4px rgba(59, 111, 240, 0.55);
+        }
+
+        /* ─── Compact Action Group ────────────────────────────────── */
+        .action-group {
+            display: inline-flex;
+            gap: 6px;
+            align-items: center;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+        }
+
+        td .action-group {
+            flex-wrap: nowrap;
+            white-space: nowrap;
+        }
+
+        .form-grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+        }
+
+        /* ─── Minimalist Status Indicators (No-wrap) ──────────────── */
+        .status-inline {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            white-space: nowrap;
+            font-size: 12.5px;
+            font-weight: 600;
+            line-height: 1.2;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .status-inline.status-ok { color: var(--ok); }
+        .status-inline.status-ok .status-dot { background: var(--ok); box-shadow: 0 0 8px rgba(59, 226, 154, 0.55); }
+        .status-inline.status-warn { color: var(--warn); }
+        .status-inline.status-warn .status-dot { background: var(--warn); box-shadow: 0 0 8px rgba(255, 189, 92, 0.55); }
+        .status-inline.status-crit { color: var(--crit); }
+        .status-inline.status-crit .status-dot { background: var(--crit); box-shadow: 0 0 8px rgba(255, 107, 122, 0.55); }
+        .status-inline.status-muted { color: var(--text-dim); }
+        .status-inline.status-muted .status-dot { background: var(--text-faint); }
+
+        /* ─── Collapsible Multi-Select Dropdown (Ubicaciones) ─────── */
+        .multi-dropdown {
+            position: relative;
+            width: 100%;
+        }
+        .multi-dropdown-toggle {
+            width: 100%;
+            padding: 10px 12px;
+            font-size: 13.5px;
+            font-family: var(--font-body);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            background: var(--bg-panel-2);
+            color: var(--text);
+            text-align: left;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            transition: border-color 0.15s ease;
+        }
+        .multi-dropdown-toggle:hover,
+        .multi-dropdown.open .multi-dropdown-toggle {
+            border-color: var(--accent-bright);
+        }
+        .multi-dropdown-label {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+        }
+        .multi-dropdown-arrow {
+            font-size: 11px;
+            color: var(--text-dim);
+            transition: transform 0.15s ease;
+        }
+        .multi-dropdown.open .multi-dropdown-arrow {
+            transform: rotate(180deg);
+        }
+        .multi-dropdown-menu {
+            display: none;
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            right: 0;
+            max-height: 210px;
+            overflow-y: auto;
+            background: var(--bg-deep-2);
+            border: 1px solid var(--accent-bright);
+            border-radius: var(--radius-sm);
+            box-shadow: 0 14px 32px rgba(0, 0, 0, 0.65);
+            z-index: 500;
+            padding: 6px;
+        }
+        .multi-dropdown.open .multi-dropdown-menu {
+            display: block;
+        }
+        .multi-dropdown-item {
+            display: flex !important;
+            align-items: center;
+            gap: 9px;
+            padding: 7px 9px;
+            border-radius: 6px;
+            font-size: 12.8px !important;
+            color: var(--text) !important;
+            cursor: pointer;
+            margin: 0 !important;
+            user-select: none;
+        }
+        .multi-dropdown-item:hover {
+            background: rgba(92, 139, 255, 0.12);
+        }
+
+        /* ─── Password Show/Hide Toggle ───────────────────────────── */
+        .pwd-input-wrap {
+            position: relative;
+            display: flex;
+            align-items: center;
+            width: 100%;
+        }
+        .pwd-input-wrap input {
+            padding-right: 42px !important;
+        }
+        .pwd-toggle-btn {
+            position: absolute;
+            right: 8px;
+            background: transparent;
+            border: none;
+            color: var(--text-dim);
+            cursor: pointer;
+            padding: 4px 6px;
+            border-radius: 6px;
+            font-size: 14px;
+            line-height: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: color 0.15s ease, background 0.15s ease;
+        }
+        .pwd-toggle-btn:hover {
+            color: var(--accent-2);
+            background: rgba(87, 232, 207, 0.10);
+        }
+
+        /* ─── Haku IA Button in Sidebar ───────────────────────────── */
+        .haku-sidebar-btn {
+            margin-top: 12px;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            padding: 11px 13px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, rgba(59, 111, 240, 0.24) 0%, rgba(87, 232, 207, 0.18) 100%);
+            border: 1px solid rgba(87, 232, 207, 0.45);
+            color: #ffffff;
+            font-family: var(--font-heading);
+            font-size: 13.5px;
+            font-weight: 600;
+            cursor: pointer;
+            text-align: left;
+            box-shadow: 0 6px 20px -6px rgba(87, 232, 207, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .haku-sidebar-btn:hover {
+            transform: translateY(-1px);
+            border-color: var(--accent-2);
+            box-shadow: 0 10px 26px -6px rgba(87, 232, 207, 0.55);
+            background: linear-gradient(135deg, rgba(59, 111, 240, 0.36) 0%, rgba(87, 232, 207, 0.28) 100%);
+        }
+        .haku-icon-orb {
+            width: 30px;
+            height: 30px;
+            border-radius: 9px;
+            background: linear-gradient(135deg, #3b6ff0, #57e8cf);
+            display: grid;
+            place-items: center;
+            color: #050b24;
+            flex-shrink: 0;
+            box-shadow: 0 0 12px rgba(87, 232, 207, 0.5);
+        }
+        .haku-icon-orb svg {
+            width: 16px;
+            height: 16px;
+            stroke: #050b24;
+            stroke-width: 2.2;
+            fill: none;
+        }
+        .haku-pulse-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--accent-2);
+            box-shadow: 0 0 8px var(--accent-2);
+            margin-left: auto;
+        }
+
+        /* ─── Topbar Bell Popover / Dropdown (Sin desenfoque ni centrado) ─── */
+        .notif-bell-wrapper {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+        }
+        .notification-bell svg {
+            width: 18px;
+            height: 18px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 1.9;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+        .notif-dropdown-panel {
+            display: none;
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            width: min(440px, 92vw);
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.72);
+            z-index: 600;
+            overflow: hidden;
+            flex-direction: column;
+        }
+        .notif-dropdown-panel.open {
+            display: flex;
+        }
+        .notif-dropdown-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            padding: 13px 16px;
+            background: var(--bg-deep-2);
+            border-bottom: 1px solid var(--border-soft);
+        }
+        .notif-dropdown-body {
+            padding: 12px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 9px;
+            max-height: 390px;
+            overflow-y: auto;
+        }
+        .notif-dropdown-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 14px;
+            background: var(--bg-deep-2);
+            border-top: 1px solid var(--border-soft);
+        }
+        .notif-float-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            padding: 11px 13px;
+            border-radius: var(--radius-sm);
+            background: var(--bg-panel-2);
+            border: 1px solid var(--border);
+            border-left: 3px solid var(--accent);
+            transition: border-color 0.15s ease;
+        }
+        .notif-float-item.unread-crit,
+        .notif-float-item.alert-crit {
+            border-left-color: var(--crit);
+            background: linear-gradient(90deg, rgba(255, 107, 122, 0.10), var(--bg-panel-2) 55%);
+        }
+        .notif-float-item.unread-warn,
+        .notif-float-item.alert-warn {
+            border-left-color: var(--warn);
+            background: linear-gradient(90deg, rgba(255, 189, 92, 0.10), var(--bg-panel-2) 55%);
+        }
+        .notif-float-item:hover {
+            border-color: var(--accent-bright);
+        }
+
+        /* ═══════════════════════════════════════════════════════════════
+           RESPONSIVE — Universal (Desktop, Tablet, Apple iOS, Mobile)
+           ═══════════════════════════════════════════════════════════════ */
+        @media (max-width: 980px) {
+            .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .charts-grid { grid-template-columns: minmax(0, 1fr); }
+            .tables-grid { grid-template-columns: minmax(0, 1fr); }
+
+            .sidebar {
+                position: fixed;
+                left: -260px;
+                top: 0;
+                height: 100dvh;
+                transition: left 0.25s ease;
+                z-index: 300;
+            }
+
+            .sidebar.open {
+                left: 0;
+            }
+
+            .sidebar-overlay.open {
+                display: block;
+            }
+
+            .hamburger {
+                display: inline-grid;
+            }
+
+            .main-content {
+                padding: 18px 14px 50px;
+            }
+
+            .topbar {
+                padding: 12px 14px;
+            }
+
+            .topbar-user-pill {
+                display: none;
+            }
+
+            .card-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+            .kpi-card { padding: 14px; }
+            .kpi-value { font-size: 22px; }
+            .topbar-title {
+                font-size: 15.5px;
+            }
+            .card {
+                padding: 14px;
+                border-radius: 10px;
+            }
+            .form-grid-2 {
+                grid-template-columns: minmax(0, 1fr);
+                gap: 10px;
+            }
+            dialog.app-modal {
+                width: 96vw;
+                max-height: 92dvh;
+                border-radius: 12px;
+            }
+            .app-modal-body {
+                padding: 14px;
+            }
+            .btn {
+                padding: 9px 14px;
+                font-size: 12.5px;
+            }
+            .btn-sm {
+                padding: 6px 10px;
+                font-size: 11.5px;
+            }
+        }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <div class="app-layout">
+        <!-- ═══ SIDEBAR ═══ -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-brand">
+                <a href="{% url 'web:dashboard' %}">
+                    <div class="sidebar-brand-title">Inventario <span>AudacIA</span></div>
+                    <div class="sidebar-brand-sub">Sistema de Gestión de Inventario</div>
+                </a>
+            </div>
+
+            <nav class="sidebar-nav" style="gap: 6px; padding-top: 16px;">
+                {% if user.es_administrador or 'analitica.ver_reportes' in user.get_permisos_codigos %}
+                <a href="{% url 'web:dashboard' %}" class="nav-item {% block sidebar_dashboard %}{% endblock %}">
+                    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+                    Resumen General
+                </a>
+                {% endif %}
+
+                {% if user.es_administrador or user.puede_acceder_modulo_catalogo %}
+                <a href="{% url 'inventario:producto-lista' %}" class="nav-item {% block sidebar_productos %}{% endblock %}{% block sidebar_alertas %}{% endblock %}{% block sidebar_rep_existencias %}{% endblock %}">
+                    <svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
+                    Catálogo y Stock
+                    {% if alertas_resumen.total_alertas_stock > 0 %}
+                        <span class="badge {% if alertas_resumen.total_criticas > 0 %}badge-crit{% else %}badge-warn{% endif %}" style="margin-left: auto; font-size: 10px; padding: 2px 7px;" title="{{ alertas_resumen.total_alertas_stock }} alertas de stock">{{ alertas_resumen.total_alertas_stock }}</span>
+                    {% endif %}
+                </a>
+                {% endif %}
+
+                {% if user.es_administrador or user.puede_acceder_modulo_movimientos %}
+                <a href="{% url 'inventario:movimiento-lista' %}" class="nav-item {% block sidebar_movimientos %}{% endblock %}{% block sidebar_entrada %}{% endblock %}{% block sidebar_salida %}{% endblock %}{% block sidebar_prestamos %}{% endblock %}{% block sidebar_conteos %}{% endblock %}{% block sidebar_rep_prestamos %}{% endblock %}{% block sidebar_rep_movimientos %}{% endblock %}{% block sidebar_rep_estancados %}{% endblock %}">
+                    <svg viewBox="0 0 24 24"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
+                    Movimientos
+                    {% if user.es_administrador and alertas_resumen.total_conteos_no_leidos > 0 %}
+                        <span class="badge" style="margin-left: auto; font-size: 10px; padding: 2px 7px; background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4);" title="{{ alertas_resumen.total_conteos_no_leidos }} conteo(s) físico(s) pendiente(s) de aprobación">{{ alertas_resumen.total_conteos_no_leidos }}</span>
+                    {% endif %}
+                </a>
+                {% endif %}
+
+                {% if user.es_administrador or user.puede_acceder_modulo_infraestructura %}
+                <a href="{% url 'inventario:categoria-lista' %}" class="nav-item {% block sidebar_categorias %}{% endblock %}{% block sidebar_ubicaciones %}{% endblock %}{% block sidebar_almacenes %}{% endblock %}">
+                    <svg viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z"/><circle cx="17" cy="17" r="3"/></svg>
+                    Categorías y Almacenes
+                </a>
+                {% endif %}
+
+                {% if user.es_administrador %}
+                <a href="{% url 'cuentas:usuario_lista' %}" class="nav-item {% block sidebar_usuarios %}{% endblock %}">
+                    <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+                    Usuarios y Roles
+                </a>
+
+                <a href="{% url 'web:centro-exportaciones' %}" class="nav-item {% block sidebar_exportaciones %}{% endblock %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    Exportar (Excel / CSV)
+                </a>
+                {% endif %}
+
+                {% if user.is_superuser or user.rol == 'SUPERUSUARIO' %}
+                <a href="{% url 'inventario:respaldo-lista' %}" class="nav-item {% block sidebar_respaldos %}{% endblock %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <ellipse cx="12" cy="5" rx="9" ry="3"/>
+                        <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+                        <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+                    </svg>
+                    Copias de Seguridad
+                </a>
+                {% endif %}
+                <span style="display:none;">{% block sidebar_perfil %}{% endblock %}</span>
+
+                <button type="button" class="haku-sidebar-btn" onclick="openAppModal('modalHakuPreview')" title="Abrir Haku IA" style="margin-top: 14px;">
+                    <span class="haku-icon-orb">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                            <line x1="12" y1="19" x2="12" y2="22"/>
+                        </svg>
+                    </span>
+                    <div style="display: flex; flex-direction: column; line-height: 1.2;">
+                        <span style="font-size: 13.5px; font-weight: 700; color: #fff;">Haku IA</span>
+                        <span style="font-size: 10.5px; color: var(--accent-2); font-weight: 500;">Asistente de Voz</span>
+                    </div>
+                    <span class="haku-pulse-dot"></span>
+                </button>
+            </nav>
+
+            {% if user.is_authenticated %}
+            <div class="sidebar-footer">
+                <a href="{% url 'cuentas:perfil' %}" class="sidebar-user" style="text-decoration: none;" title="Mi Perfil — Datos personales y contraseña">
+                    <div class="sidebar-user-avatar">{{ user.username|first|upper }}</div>
+                    <div class="sidebar-user-info">
+                        <div class="sidebar-user-name">{{ user.nombre_completo|default:user.username }}</div>
+                        <div class="sidebar-user-role">{{ user.get_rol_display|default:user.rol }}{% if user.almacen_asignado %} · {{ user.almacen_asignado.nombre }}{% endif %}</div>
+                    </div>
+                </a>
+                <form action="{% url 'cuentas:logout' %}" method="post">
+                    {% csrf_token %}
+                    <button type="submit" class="btn-logout-sidebar">Cerrar sesión</button>
+                </form>
+            </div>
+            {% endif %}
+        </aside>
+
+        <!-- ═══ OVERLAY (mobile) ═══ -->
+        <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+        <!-- ═══ MAIN ═══ -->
+        <div class="main-wrapper">
+            <header class="topbar">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <button class="hamburger" id="hamburgerBtn" onclick="toggleSidebar()" aria-label="Menú">
+                        <svg viewBox="0 0 24 24" style="width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round;"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                    </button>
+                    <h1 class="topbar-title">{% block page_title %}Inventario AudacIA{% endblock %}</h1>
+                </div>
+                <div class="topbar-right">
+                    {% if user.is_authenticated %}
+                    <!-- Campana de Notificaciones con panel desplegable debajo del icono (sin desenfoque ni centrado) -->
+                    <div class="notif-bell-wrapper" id="notifBellWrapper">
+                        <button type="button" class="notification-bell" id="btnToggleNotifDropdown" title="Notificaciones pendientes" aria-label="Notificaciones">
+                            <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+                            {% if alertas_resumen.total_no_leidas > 0 %}
+                                <span class="notification-badge {% if alertas_resumen.total_criticas == 0 and alertas_resumen.total_conteos == 0 %}warn-badge{% endif %}" id="notifBellBadge">
+                                    {{ alertas_resumen.total_no_leidas }}
+                                </span>
+                            {% elif alertas_resumen.total_alertas > 0 %}
+                                <span class="notification-badge warn-badge" id="notifBellBadge" style="display: none;">
+                                    0
+                                </span>
+                            {% endif %}
+                        </button>
+
+                        <!-- Panel desplegable anclado debajo de la campana -->
+                        <div id="panelNotificacionesFlotante" class="notif-dropdown-panel">
+                            <div class="notif-dropdown-header">
+                                <div>
+                                    <div style="font-family: var(--font-heading); font-size: 14.5px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 7px;">
+                                        <svg viewBox="0 0 24 24" style="width: 15px; height: 15px; stroke: var(--accent-2); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+                                        Notificaciones
+                                    </div>
+                                    <div id="notifSubtitleText" style="font-size: 11.5px; color: var(--text-muted); margin-top: 2px;">
+                                        {% if alertas_resumen.total_no_leidas > 0 %}
+                                            Tienes <strong style="color: var(--crit);" id="notifPendingCountText">{{ alertas_resumen.total_no_leidas }}</strong> notificación(es) pendiente(s).
+                                        {% elif alertas_resumen.total_alertas > 0 %}
+                                            Estás al día ({{ alertas_resumen.total_alertas }} alerta(s) revisada(s)).
+                                        {% else %}
+                                            No tienes notificaciones pendientes.
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                {% if alertas_resumen.total_no_leidas > 0 %}
+                                    <form method="post" action="{% url 'inventario:alerta-marcar-leida' %}" class="js-notif-ajax-form" data-accion="todas" style="margin: 0;">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="accion" value="todas">
+                                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                        <button type="submit" class="btn btn-sm btn-secondary" style="padding: 5px 9px; font-size: 11px;">
+                                            Marcar todas
+                                        </button>
+                                    </form>
+                                {% endif %}
+                            </div>
+
+                            <div class="notif-dropdown-body">
+                                {% if alertas_resumen.criticas_no_leidas or alertas_resumen.bajas_no_leidas or alertas_resumen.conteos_no_leidos %}
+                                    {% for c in alertas_resumen.conteos_no_leidos %}
+                                        <div class="notif-float-item alert-conteo" data-notif-item="{{ c.notificacion_key }}" style="border-left: 3px solid #38bdf8; background: rgba(56, 189, 248, 0.07);">
+                                            <a href="{% url 'inventario:conteo-lista' %}"
+                                               onclick="marcarYRedirigirGlobal(event, '{{ c.notificacion_key }}', '{% url 'inventario:conteo-lista' %}')"
+                                               style="flex: 1; min-width: 0; text-decoration: none; color: inherit; cursor: pointer;">
+                                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                                    <span class="status-inline" style="background: rgba(56, 189, 248, 0.18); color: #38bdf8; font-weight: 600; font-size: 11px; padding: 2px 7px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px;">
+                                                        <span class="status-dot" style="background: #38bdf8; width: 6px; height: 6px; border-radius: 50%;"></span>Conteo Físico
+                                                    </span>
+                                                    <strong style="color: var(--text); font-size: 13px;">{{ c.producto.codigo_interno }} — {{ c.producto.nombre }}</strong>
+                                                    <span class="badge badge-accent js-notif-new-badge" style="font-size: 9.5px; padding: 1px 6px;">Por Aprobar</span>
+                                                </div>
+                                                <div style="font-size: 11.8px; color: var(--text-dim); margin-top: 3px;">
+                                                    Bodega <strong>{{ c.almacen.nombre }}</strong> · Contado: <strong>{{ c.cantidad_contada }}</strong> vs Sistema: <strong>{{ c.stock_sistema }}</strong>
+                                                    <span style="font-weight: 600; {% if c.diferencia < 0 %}color: var(--crit);{% elif c.diferencia > 0 %}color: #4ade80;{% else %}color: var(--text-muted);{% endif %}">
+                                                        (Dif: {{ c.diferencia|stringformat:"+d" }})
+                                                    </span>
+                                                </div>
+                                            </a>
+                                            <form method="post" action="{% url 'inventario:alerta-marcar-leida' %}" class="js-notif-ajax-form" style="margin: 0; flex-shrink: 0;">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="key" value="{{ c.notificacion_key }}">
+                                                <input type="hidden" name="accion" value="una" class="js-notif-accion-input">
+                                                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                                <button type="submit" class="btn btn-sm btn-secondary js-notif-btn-label" style="padding: 5px 9px; font-size: 11px;">
+                                                    Marcar leída
+                                                </button>
+                                            </form>
+                                        </div>
+                                    {% endfor %}
+
+                                    {% for ex in alertas_resumen.criticas_no_leidas %}
+                                        <div class="notif-float-item alert-crit" data-notif-item="{{ ex.notificacion_key }}">
+                                            <a href="{% url 'inventario:producto-detalle' ex.producto.pk %}"
+                                               onclick="marcarYRedirigirGlobal(event, '{{ ex.notificacion_key }}', '{% url 'inventario:producto-detalle' ex.producto.pk %}')"
+                                               style="flex: 1; min-width: 0; text-decoration: none; color: inherit; cursor: pointer;">
+                                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                                    <span class="status-inline status-crit"><span class="status-dot"></span>Sin stock</span>
+                                                    <strong style="color: var(--text); font-size: 13px;">{{ ex.producto.codigo_interno }} — {{ ex.producto.nombre }}</strong>
+                                                    <span class="badge badge-accent js-notif-new-badge" style="font-size: 9.5px; padding: 1px 6px;">Nueva</span>
+                                                </div>
+                                                <div style="font-size: 11.8px; color: var(--text-dim); margin-top: 3px;">
+                                                    Bodega <strong>{{ ex.almacen.nombre }}</strong> · Disponible: <strong>0</strong> (mínimo {{ ex.producto.stock_minimo }})
+                                                </div>
+                                            </a>
+                                            <form method="post" action="{% url 'inventario:alerta-marcar-leida' %}" class="js-notif-ajax-form" style="margin: 0; flex-shrink: 0;">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="key" value="{{ ex.notificacion_key }}">
+                                                <input type="hidden" name="accion" value="una" class="js-notif-accion-input">
+                                                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                                <button type="submit" class="btn btn-sm btn-secondary js-notif-btn-label" style="padding: 3px 8px; font-size: 10.5px; opacity: 0.85;">
+                                                    Marcar leída
+                                                </button>
+                                            </form>
+                                        </div>
+                                    {% endfor %}
+
+                                    {% for ex in alertas_resumen.bajas_no_leidas %}
+                                        <div class="notif-float-item alert-warn" data-notif-item="{{ ex.notificacion_key }}">
+                                            <a href="{% url 'inventario:producto-detalle' ex.producto.pk %}"
+                                               onclick="marcarYRedirigirGlobal(event, '{{ ex.notificacion_key }}', '{% url 'inventario:producto-detalle' ex.producto.pk %}')"
+                                               style="flex: 1; min-width: 0; text-decoration: none; color: inherit; cursor: pointer;">
+                                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                                    <span class="status-inline status-warn"><span class="status-dot"></span>Stock bajo</span>
+                                                    <strong style="color: var(--text); font-size: 13px;">{{ ex.producto.codigo_interno }} — {{ ex.producto.nombre }}</strong>
+                                                    <span class="badge badge-accent js-notif-new-badge" style="font-size: 9.5px; padding: 1px 6px;">Nueva</span>
+                                                </div>
+                                                <div style="font-size: 11.8px; color: var(--text-dim); margin-top: 3px;">
+                                                    Bodega <strong>{{ ex.almacen.nombre }}</strong> · Disponible: <strong>{{ ex.stock_disponible }}</strong> (mínimo {{ ex.producto.stock_minimo }})
+                                                </div>
+                                            </a>
+                                            <form method="post" action="{% url 'inventario:alerta-marcar-leida' %}" class="js-notif-ajax-form" style="margin: 0; flex-shrink: 0;">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="key" value="{{ ex.notificacion_key }}">
+                                                <input type="hidden" name="accion" value="una" class="js-notif-accion-input">
+                                                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                                <button type="submit" class="btn btn-sm btn-secondary js-notif-btn-label" style="padding: 3px 8px; font-size: 10.5px; opacity: 0.85;">
+                                                    Marcar leída
+                                                </button>
+                                            </form>
+                                        </div>
+                                    {% endfor %}
+                                {% else %}
+                                    <div id="notifEmptyState" style="text-align: center; padding: 1.75rem 1rem; color: var(--text-muted); font-size: 12.5px;">
+                                        No tienes notificaciones pendientes.
+                                    </div>
+                                {% endif %}
+                            </div>
+
+                            <div class="notif-dropdown-footer" style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: space-between;">
+                                <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                    <a href="{% url 'inventario:alertas-lista' %}" class="btn btn-sm btn-secondary">
+                                        Ver Alertas de Stock
+                                    </a>
+                                    {% if user.es_administrador %}
+                                    <a href="{% url 'inventario:conteo-lista' %}" class="btn btn-sm btn-secondary">
+                                        Ver Conteos Físicos
+                                    </a>
+                                    {% endif %}
+                                </div>
+                                <button type="button" class="btn btn-sm btn-secondary" id="btnCerrarNotifDropdown">Cerrar</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <a href="{% url 'cuentas:perfil' %}" class="topbar-user-pill" style="text-decoration: none;" title="Mi Perfil — Datos personales y contraseña">
+                        <strong>{{ user.nombre_completo|default:user.username }}</strong>
+                        <span class="badge badge-accent">{{ user.rol }}</span>
+                    </a>
+                    {% endif %}
+                </div>
+            </header>
+
+            <!-- Contenedor flotante de Notificaciones Toast -->
+            <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+            {% if messages %}
+                <div id="djangoMessagesData" style="display: none;" aria-hidden="true">
+                    {% for message in messages %}
+                        <div class="js-django-msg" data-message="{{ message }}" data-tags="{{ message.tags|default:'info' }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+
+            <main class="main-content">
+
+                {% with url_name=request.resolver_match.url_name %}
+                    {% if url_name in 'producto-lista,producto-detalle,producto-editar,producto-fusionar,alertas-lista' %}
+                        <nav class="module-tabs" aria-label="Submenú de Catálogo y Stock">
+                            {% if user.es_administrador or 'catalogo.ver' in user.get_permisos_codigos %}
+                            <a href="{% url 'inventario:producto-lista' %}" class="module-tab {% if url_name != 'alertas-lista' %}active{% endif %}">
+                                <svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+                                Catálogo de Productos
+                            </a>
+                            {% endif %}
+                            {% if user.es_administrador or 'analitica.ver_alertas' in user.get_permisos_codigos %}
+                            <a href="{% url 'inventario:alertas-lista' %}" class="module-tab {% if url_name == 'alertas-lista' %}active{% endif %}">
+                                <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+                                Alertas de Stock
+                                {% if alertas_resumen.total_alertas_stock > 0 %}
+                                    <span class="badge {% if alertas_resumen.total_criticas > 0 %}badge-crit{% else %}badge-warn{% endif %}" style="font-size: 10px; padding: 1px 6px;">{{ alertas_resumen.total_alertas_stock }}</span>
+                                {% endif %}
+                            </a>
+                            {% endif %}
+                        </nav>
+                    {% elif url_name in 'categoria-lista,categoria-crear,categoria-editar,categoria-desactivar,categoria-trasladar,ubicacion-lista,ubicacion-crear,ubicacion-editar,ubicacion-desactivar,trasladar-ubicacion,almacen-lista,almacen-crear,almacen-editar,almacen-desactivar,trasladar-almacen' %}
+                        <nav class="module-tabs" aria-label="Submenú de Categorías y Almacenes">
+                            {% if user.es_administrador or 'infraestructura.ver' in user.get_permisos_codigos %}
+                            <a href="{% url 'inventario:categoria-lista' %}" class="module-tab {% if 'categoria' in url_name %}active{% endif %}">
+                                <svg viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z"/><circle cx="17" cy="17" r="3"/></svg>
+                                Categorías y Tipos
+                            </a>
+                            <a href="{% url 'inventario:ubicacion-lista' %}" class="module-tab {% if 'ubicacion' in url_name %}active{% endif %}">
+                                <svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>
+                                Ubicaciones Físicas
+                            </a>
+                            <a href="{% url 'inventario:almacen-lista' %}" class="module-tab {% if 'almacen' in url_name %}active{% endif %}">
+                                <svg viewBox="0 0 24 24"><path d="M3 21V8l9-5 9 5v13"/><path d="M9 21V12h6v9"/></svg>
+                                Almacenes
+                            </a>
+                            {% endif %}
+                        </nav>
+                    {% endif %}
+                {% endwith %}
+
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+    </div>
+
+    {% if user.is_authenticated %}
+    <form id="formRedirectNotifGlobal" method="post" action="{% url 'inventario:alerta-marcar-leida' %}" style="display: none;">
+        {% csrf_token %}
+        <input type="hidden" name="key" id="inputNotifKeyGlobal">
+        <input type="hidden" name="accion" value="una">
+        <input type="hidden" name="redirect_to" id="inputNotifRedirectGlobal">
+    </form>
+
+    <!-- ═══ MODAL VISUAL HAKU IA ═══ -->
+    <dialog id="modalHakuPreview" class="app-modal" style="width: min(460px, 94vw);">
+        <div class="app-modal-header">
+            <h2 class="app-modal-title" style="display: flex; align-items: center; gap: 8px;">
+                <svg viewBox="0 0 24 24" style="width: 18px; height: 18px; stroke: var(--accent-2); fill: none; stroke-width: 2;"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+                Haku IA — Asistente de Voz
+            </h2>
+            <button type="button" class="app-modal-close" onclick="closeAppModal('modalHakuPreview')" aria-label="Cerrar">×</button>
+        </div>
+        <div class="app-modal-body" style="text-align: center; padding: 28px 22px;">
+            <div style="width: 64px; height: 64px; margin: 0 auto 14px; border-radius: 18px; background: linear-gradient(135deg, #3b6ff0, #57e8cf); display: grid; place-items: center; box-shadow: 0 10px 30px rgba(87, 232, 207, 0.35);">
+                <svg viewBox="0 0 24 24" style="width: 32px; height: 32px; stroke: #050b24; stroke-width: 2.2; fill: none;">
+                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                    <line x1="12" y1="19" x2="12" y2="22"/>
+                </svg>
+            </div>
+            <h3 style="font-family: var(--font-heading); font-size: 17px; color: var(--text); margin-bottom: 6px;">
+                Interfaz Conversacional Haku
+            </h3>
+            <p style="font-size: 13px; color: var(--text-dim); line-height: 1.55;">
+                Desde aquí podrás consultar existencias, registrar entradas, préstamos y traslados mediante comandos de voz e inteligencia artificial.
+            </p>
+        </div>
+        <div class="app-modal-footer">
+            <button type="button" class="btn btn-primary" onclick="closeAppModal('modalHakuPreview')">Entendido</button>
+        </div>
+    </dialog>
+    {% endif %}
+
+    <!-- ═══ MODAL GLOBAL DE CONFIRMACIÓN ELEGANTE ═══ -->
+    <dialog id="modalConfirmacionGlobal" class="app-modal modal-confirmacion" style="width: min(480px, 94vw); border-radius: 14px; overflow: hidden; border: 1px solid var(--border); box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.75);">
+        <div class="app-modal-header" style="padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: var(--bg-panel);">
+            <h2 class="app-modal-title" id="modalConfirmTitulo" style="font-size: 15.5px; font-weight: 700; display: flex; align-items: center; gap: 10px; margin: 0; color: var(--text);">
+                <span id="modalConfirmIconContainer" style="width: 30px; height: 30px; border-radius: 8px; display: inline-grid; place-items: center; background: rgba(59, 111, 240, 0.15); color: var(--accent-bright); flex-shrink: 0;">
+                    <svg id="modalConfirmIconSvg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                </span>
+                <span id="modalConfirmTituloTexto">Confirmar Acción</span>
+            </h2>
+            <button type="button" class="app-modal-close" id="btnModalConfirmCerrar" style="background: none; border: none; color: var(--text-muted); font-size: 22px; line-height: 1; cursor: pointer; padding: 0 4px;" aria-label="Cerrar">&times;</button>
+        </div>
+        <div class="app-modal-body" style="padding: 22px 20px; background: var(--bg-panel);">
+            <p id="modalConfirmMensaje" style="margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--text-dim);"></p>
+        </div>
+        <div style="padding: 14px 20px 16px; display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid var(--border); background: var(--bg-deep-2, rgba(0,0,0,0.18));">
+            <button type="button" class="btn btn-secondary" id="btnModalConfirmCancelar" style="padding: 8px 18px; font-size: 13px;">
+                Cancelar
+            </button>
+            <button type="button" class="btn btn-primary" id="btnModalConfirmAceptar" style="padding: 8px 20px; font-size: 13px;">
+                Confirmar
+            </button>
+        </div>
+    </dialog>
+
+    <script>
+        /* ─── Motor Global de Notificaciones Toast ──────────────────── */
+        var toastIcons = {
+            success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+            error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+            danger: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+            warning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+            info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
+        };
+
+        var toastTitles = {
+            success: 'Operación Exitosa',
+            error: 'Atención / Error',
+            danger: 'Error Crítico',
+            warning: 'Advertencia',
+            info: 'Notificación del Sistema'
+        };
+
+        function showToast(message, type, duration) {
+            var container = document.getElementById("toastContainer");
+            if (!container) {
+                container = document.createElement("div");
+                container.id = "toastContainer";
+                container.className = "toast-container";
+                document.body.appendChild(container);
+            }
+
+            var cleanType = (type || "info").toLowerCase();
+            if (cleanType.indexOf("success") !== -1) cleanType = "success";
+            else if (cleanType.indexOf("error") !== -1) cleanType = "error";
+            else if (cleanType.indexOf("danger") !== -1) cleanType = "danger";
+            else if (cleanType.indexOf("warning") !== -1) cleanType = "warning";
+            else cleanType = "info";
+
+            var timeMs = (typeof duration === "number" && duration > 0) ? duration : 5000;
+            var title = toastTitles[cleanType] || 'Notificación';
+            var iconSvg = toastIcons[cleanType] || toastIcons.info;
+
+            var toast = document.createElement("div");
+            toast.className = "toast-item toast-" + cleanType;
+            toast.setAttribute("role", "alert");
+            toast.innerHTML = 
+                '<div class="toast-icon-wrapper">' + iconSvg + '</div>' +
+                '<div class="toast-content">' +
+                    '<div class="toast-title">' + title + '</div>' +
+                    '<div class="toast-message">' + message + '</div>' +
+                '</div>' +
+                '<button type="button" class="toast-close-btn" aria-label="Cerrar">&times;</button>' +
+                '<div class="toast-progress" style="animation-duration: ' + timeMs + 'ms;"></div>';
+
+            container.appendChild(toast);
+
+            var isPaused = false;
+            var remainingTime = timeMs;
+            var timerStart = Date.now();
+            var dismissTimeout = null;
+
+            function startTimer() {
+                timerStart = Date.now();
+                dismissTimeout = setTimeout(function() {
+                    dismiss();
+                }, remainingTime);
+            }
+
+            function pauseTimer() {
+                if (dismissTimeout) {
+                    clearTimeout(dismissTimeout);
+                    dismissTimeout = null;
+                    remainingTime -= (Date.now() - timerStart);
+                    if (remainingTime < 300) remainingTime = 300;
+                }
+            }
+
+            function dismiss() {
+                if (dismissTimeout) clearTimeout(dismissTimeout);
+                toast.classList.add("toast-closing");
+                setTimeout(function() {
+                    if (toast.parentNode) toast.parentNode.removeChild(toast);
+                }, 300);
+            }
+
+            toast.querySelector(".toast-close-btn").addEventListener("click", function(e) {
+                e.stopPropagation();
+                dismiss();
+            });
+
+            toast.addEventListener("mouseenter", pauseTimer);
+            toast.addEventListener("mouseleave", startTimer);
+
+            startTimer();
+            return { dismiss: dismiss };
+        }
+        window.showToast = showToast;
+
+        /* ─── Diálogo de Confirmación Elegante (Reemplazo de confirm()) ─── */
+        window.appConfirm = function(options) {
+            return new Promise(function(resolve) {
+                var dlg = document.getElementById("modalConfirmacionGlobal");
+                if (!dlg || typeof dlg.showModal !== "function") {
+                    var fallbackMsg = typeof options === "string" ? options : (options ? options.message : "¿Desea continuar?");
+                    resolve(window.confirm(fallbackMsg));
+                    return;
+                }
+
+                var opts = typeof options === "string" ? { message: options } : (options || {});
+                var title = opts.title || "Confirmar Acción";
+                var message = opts.message || "¿Está seguro de realizar esta acción?";
+                var confirmText = opts.confirmText || "Confirmar";
+                var cancelText = opts.cancelText || "Cancelar";
+                var isDanger = !!opts.danger || !!opts.isDanger;
+
+                document.getElementById("modalConfirmTituloTexto").textContent = title;
+                document.getElementById("modalConfirmMensaje").textContent = message;
+
+                var btnAceptar = document.getElementById("btnModalConfirmAceptar");
+                var btnCancelar = document.getElementById("btnModalConfirmCancelar");
+                var btnCerrar = document.getElementById("btnModalConfirmCerrar");
+                var iconContainer = document.getElementById("modalConfirmIconContainer");
+                var iconSvg = document.getElementById("modalConfirmIconSvg");
+
+                btnAceptar.textContent = confirmText;
+                btnCancelar.textContent = cancelText;
+
+                if (isDanger) {
+                    btnAceptar.className = "btn btn-danger";
+                    btnAceptar.style.background = "var(--crit, #ff6b7a)";
+                    btnAceptar.style.borderColor = "var(--crit, #ff6b7a)";
+                    btnAceptar.style.color = "#ffffff";
+                    iconContainer.style.background = "rgba(255, 107, 122, 0.15)";
+                    iconContainer.style.color = "var(--crit, #ff6b7a)";
+                    iconSvg.innerHTML = '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>';
+                } else {
+                    btnAceptar.className = "btn btn-primary";
+                    btnAceptar.style.background = "";
+                    btnAceptar.style.borderColor = "";
+                    btnAceptar.style.color = "";
+                    iconContainer.style.background = "rgba(59, 111, 240, 0.15)";
+                    iconContainer.style.color = "var(--accent-bright, #38bdf8)";
+                    iconSvg.innerHTML = '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>';
+                }
+
+                function cleanup(result) {
+                    btnAceptar.removeEventListener("click", onAceptar);
+                    btnCancelar.removeEventListener("click", onCancelar);
+                    btnCerrar.removeEventListener("click", onCancelar);
+                    dlg.removeEventListener("close", onClose);
+                    if (dlg.open) dlg.close();
+                    resolve(result);
+                }
+
+                function onAceptar() { cleanup(true); }
+                function onCancelar() { cleanup(false); }
+                function onClose() { cleanup(false); }
+
+                btnAceptar.addEventListener("click", onAceptar);
+                btnCancelar.addEventListener("click", onCancelar);
+                btnCerrar.addEventListener("click", onCancelar);
+                dlg.addEventListener("close", onClose, { once: true });
+
+                dlg.showModal();
+                btnAceptar.focus();
+            });
+        };
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('open');
+            document.getElementById('sidebarOverlay').classList.toggle('open');
+        }
+        function closeSidebar() {
+            document.getElementById('sidebar').classList.remove('open');
+            document.getElementById('sidebarOverlay').classList.remove('open');
+        }
+
+        /* ─── Helpers globales para Modales (<dialog>) ─── */
+        function limpiarErroresModal(dlg) {
+            if (!dlg) return;
+            dlg.querySelectorAll(".is-invalid").forEach(function(el) {
+                el.classList.remove("is-invalid");
+                el.style.borderColor = "";
+            });
+            dlg.querySelectorAll(".js-modal-error-msg, .app-modal-alert-error, .alert").forEach(function(el) {
+                el.remove();
+            });
+        }
+
+        function openAppModal(id) {
+            var dlg = document.getElementById(id);
+            if (dlg) {
+                limpiarErroresModal(dlg);
+                if (typeof dlg.showModal === 'function') {
+                    dlg.showModal();
+                }
+            }
+        }
+        function closeAppModal(id) {
+            var dlg = document.getElementById(id);
+            if (dlg) {
+                limpiarErroresModal(dlg);
+                if (typeof dlg.close === 'function') {
+                    dlg.close();
+                }
+            }
+        }
+
+        function marcarYRedirigirGlobal(event, key, targetUrl) {
+            event.preventDefault();
+            var form = document.getElementById("formRedirectNotifGlobal");
+            if (!form) {
+                window.location.href = targetUrl;
+                return;
+            }
+            document.getElementById("inputNotifKeyGlobal").value = key;
+            document.getElementById("inputNotifRedirectGlobal").value = targetUrl;
+            form.submit();
+        }
+
+        document.addEventListener("DOMContentLoaded", function() {
+            // Inicializar Toasts a partir de mensajes Django en la carga inicial
+            var djangoMsgContainer = document.getElementById("djangoMessagesData");
+            if (djangoMsgContainer) {
+                var msgs = djangoMsgContainer.querySelectorAll(".js-django-msg");
+                msgs.forEach(function(el, idx) {
+                    var text = el.getAttribute("data-message") || el.textContent;
+                    var tags = el.getAttribute("data-tags") || "info";
+                    setTimeout(function() {
+                        showToast(text, tags);
+                    }, idx * 120);
+                });
+            }
+
+            // Delegación global para diálogos de confirmación [data-confirm]
+            document.addEventListener("click", function(e) {
+                var trigger = e.target.closest("[data-confirm]");
+                if (!trigger) return;
+
+                e.preventDefault();
+                e.stopPropagation();
+
+                var msg = trigger.getAttribute("data-confirm");
+                var title = trigger.getAttribute("data-confirm-title") || "Confirmación Requerida";
+                var confirmText = trigger.getAttribute("data-confirm-btn") || "Confirmar";
+                var isDanger = trigger.getAttribute("data-confirm-danger") === "true" ||
+                               trigger.classList.contains("btn-danger") ||
+                               trigger.getAttribute("data-action-danger") === "true";
+
+                window.appConfirm({
+                    title: title,
+                    message: msg,
+                    confirmText: confirmText,
+                    danger: isDanger
+                }).then(function(confirmed) {
+                    if (!confirmed) return;
+                    if (trigger.tagName === "A" && trigger.href) {
+                        window.location.href = trigger.href;
+                    } else if (trigger.form) {
+                        trigger.form.submit();
+                    } else {
+                        var form = trigger.closest("form");
+                        if (form) form.submit();
+                    }
+                });
+            }, true);
+
+            document.addEventListener("submit", function(e) {
+                var form = e.target;
+                if (!form || !form.hasAttribute("data-confirm")) return;
+                if (form._confirmedByModal) {
+                    delete form._confirmedByModal;
+                    return;
+                }
+
+                e.preventDefault();
+                e.stopPropagation();
+
+                var msg = form.getAttribute("data-confirm");
+                var title = form.getAttribute("data-confirm-title") || "Confirmación Requerida";
+                var confirmText = form.getAttribute("data-confirm-btn") || "Confirmar";
+                var isDanger = form.getAttribute("data-confirm-danger") === "true";
+
+                window.appConfirm({
+                    title: title,
+                    message: msg,
+                    confirmText: confirmText,
+                    danger: isDanger
+                }).then(function(confirmed) {
+                    if (confirmed) {
+                        form._confirmedByModal = true;
+                        form.submit();
+                    }
+                });
+            }, true);
+
+            // Limpieza automática de errores en diálogos y modales al cerrarse
+            document.querySelectorAll("dialog").forEach(function(dlg) {
+                dlg.addEventListener("close", function() {
+                    limpiarErroresModal(dlg);
+                });
+            });
+
+            // 0. Dropdown de Notificaciones bajo la campana (sin cerrar al marcar como leída)
+            var bellWrapper = document.getElementById("notifBellWrapper");
+            var btnBell = document.getElementById("btnToggleNotifDropdown");
+            var panelNotif = document.getElementById("panelNotificacionesFlotante");
+            var btnCerrarNotif = document.getElementById("btnCerrarNotifDropdown");
+
+            if (btnBell && panelNotif) {
+                btnBell.addEventListener("click", function(e) {
+                    e.stopPropagation();
+                    panelNotif.classList.toggle("open");
+                });
+                panelNotif.addEventListener("click", function(e) {
+                    e.stopPropagation();
+                });
+                if (btnCerrarNotif) {
+                    btnCerrarNotif.addEventListener("click", function() {
+                        panelNotif.classList.remove("open");
+                    });
+                }
+                document.addEventListener("click", function(e) {
+                    if (bellWrapper && !bellWrapper.contains(e.target)) {
+                        panelNotif.classList.remove("open");
+                    }
+                });
+
+                function actualizarContadorCampana(totalPendientes) {
+                    var nuevos = (typeof totalPendientes === "number")
+                        ? totalPendientes
+                        : panelNotif.querySelectorAll('.js-notif-new-badge:not([style*="display: none"])').length;
+                    var badge = document.getElementById("notifBellBadge");
+                    var subTxt = document.getElementById("notifSubtitleText");
+                    if (badge) {
+                        if (nuevos > 0) {
+                            badge.textContent = String(nuevos);
+                            badge.style.display = "grid";
+                        } else {
+                            badge.textContent = "0";
+                            badge.style.display = "none";
+                        }
+                    }
+                    if (subTxt) {
+                        if (nuevos > 0) {
+                            subTxt.innerHTML = 'Tienes <strong style="color: var(--crit);">' + nuevos + '</strong> notificación(es) pendiente(s).';
+                        } else {
+                            subTxt.textContent = "Estás al día con tus notificaciones.";
+                        }
+                    }
+                }
+
+                panelNotif.querySelectorAll(".js-notif-ajax-form").forEach(function(form) {
+                    form.addEventListener("submit", function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        var fd = new FormData(form);
+                        var accion = fd.get("accion");
+                        fetch(form.action, {
+                            method: "POST",
+                            body: fd,
+                            headers: { "X-Requested-With": "XMLHttpRequest" },
+                            credentials: "same-origin"
+                        }).then(function(r) {
+                            if (!r.ok) throw new Error("HTTP " + r.status);
+                            return r.json();
+                        }).then(function(data) {
+                            var notifBody = panelNotif.querySelector(".notif-dropdown-body");
+                            var formMarcarTodas = panelNotif.querySelector('form[data-accion="todas"]');
+                            function ensureEmptyState() {
+                                var remaining = notifBody.querySelectorAll(".notif-float-item");
+                                if (remaining.length === 0) {
+                                    if (formMarcarTodas) formMarcarTodas.style.display = "none";
+                                    var emptyMsg = document.getElementById("notifEmptyState");
+                                    if (!emptyMsg) {
+                                        emptyMsg = document.createElement("div");
+                                        emptyMsg.id = "notifEmptyState";
+                                        emptyMsg.style.cssText = "text-align: center; padding: 1.75rem 1rem; color: var(--text-muted); font-size: 12.5px;";
+                                        emptyMsg.textContent = "No tienes notificaciones pendientes.";
+                                        notifBody.appendChild(emptyMsg);
+                                    } else {
+                                        emptyMsg.style.display = "block";
+                                    }
+                                }
+                            }
+
+                            if (accion === "todas") {
+                                var items = panelNotif.querySelectorAll(".notif-float-item");
+                                items.forEach(function(item) {
+                                    item.style.transition = "opacity 0.2s ease, transform 0.2s ease";
+                                    item.style.opacity = "0";
+                                    item.style.transform = "translateX(10px)";
+                                    setTimeout(function() {
+                                        item.remove();
+                                        ensureEmptyState();
+                                    }, 200);
+                                });
+                                if (formMarcarTodas) formMarcarTodas.style.display = "none";
+                                setTimeout(ensureEmptyState, 250);
+                            } else {
+                                var item = form.closest(".notif-float-item");
+                                if (item) {
+                                    item.style.transition = "opacity 0.2s ease, transform 0.2s ease";
+                                    item.style.opacity = "0";
+                                    item.style.transform = "translateX(10px)";
+                                    setTimeout(function() {
+                                        item.remove();
+                                        ensureEmptyState();
+                                    }, 200);
+                                }
+                            }
+                            actualizarContadorCampana(data ? data.total_no_leidas : 0);
+                        }).catch(function(err) {
+                            console.error("Error al actualizar notificación:", err);
+                        });
+                    });
+                });
+            }
+
+            // Cerrar modal (<dialog>) al hacer clic en el backdrop
+            document.querySelectorAll("dialog.app-modal").forEach(function(dlg) {
+                dlg.addEventListener("click", function(e) {
+                    var rect = dlg.getBoundingClientRect();
+                    var inDialog = (
+                        rect.top <= e.clientY && e.clientY <= rect.top + rect.height &&
+                        rect.left <= e.clientX && e.clientX <= rect.left + rect.width
+                    );
+                    if (!inDialog) {
+                        dlg.close();
+                    }
+                });
+            });
+
+            // Manejador global AJAX para formularios dentro de modales (<dialog class="app-modal">) (Punto 3)
+            document.addEventListener("submit", function(e) {
+                var form = e.target;
+                var dlg = form.closest("dialog.app-modal");
+                if (!dlg) return;
+                if (form.getAttribute("data-no-ajax") === "true") return;
+                if (e.defaultPrevented) return;
+
+                e.preventDefault();
+
+                var submitBtn = form.querySelector('button[type="submit"]');
+                var originalBtnHtml = submitBtn ? submitBtn.innerHTML : "";
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = '<span style="display: inline-flex; align-items: center; gap: 6px;">Procesando...</span>';
+                }
+
+                // Limpiar errores visuales previos dentro del modal
+                form.querySelectorAll(".is-invalid").forEach(function(el) {
+                    el.classList.remove("is-invalid");
+                    el.style.borderColor = "";
+                });
+                form.querySelectorAll(".js-modal-error-msg, .app-modal-alert-error").forEach(function(el) {
+                    el.remove();
+                });
+                var modalAlerts = dlg.querySelectorAll(".app-modal-alert-error");
+                modalAlerts.forEach(function(a) { a.remove(); });
+
+                var formData = new FormData(form);
+                var actionUrl = form.action || window.location.href;
+                var method = (form.method || "POST").toUpperCase();
+
+                fetch(actionUrl, {
+                    method: method,
+                    body: formData,
+                    headers: {
+                        "X-Requested-With": "XMLHttpRequest"
+                    },
+                    credentials: "same-origin"
+                })
+                .then(function(response) {
+                    var isJson = (response.headers.get("content-type") || "").indexOf("application/json") !== -1;
+                    if (!isJson) {
+                        if (response.redirected) {
+                            window.location.href = response.url;
+                            return;
+                        }
+                        if (response.ok) {
+                            window.location.reload();
+                            return;
+                        }
+                        return response.text().then(function(html) {
+                            throw new Error("Respuesta no JSON con código " + response.status);
+                        });
+                    }
+                    return response.json().then(function(data) {
+                        return { ok: response.ok, status: response.status, data: data };
+                    });
+                })
+                .then(function(res) {
+                    if (!res) return;
+                    if (res.ok && res.data && res.data.success !== false) {
+                        if (res.data.redirect_url) {
+                            window.location.href = res.data.redirect_url;
+                        } else {
+                            window.location.reload();
+                        }
+                        return;
+                    }
+
+                    // Hubo errores de validación (status 400 o success: false)
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = originalBtnHtml;
+                    }
+
+                    var errors = (res.data && res.data.errors) ? res.data.errors : {};
+                    var generalErrors = [];
+                    var modalBody = form.querySelector(".app-modal-body") || dlg.querySelector(".app-modal-body") || form;
+
+                    Object.keys(errors).forEach(function(field) {
+                        var fieldErrors = errors[field];
+                        if (!Array.isArray(fieldErrors)) fieldErrors = [fieldErrors];
+
+                        if (field === "__all__" || field === "non_field_errors") {
+                            generalErrors = generalErrors.concat(fieldErrors);
+                        } else {
+                            var input = form.querySelector('[name="' + field + '"]');
+                            if (input) {
+                                input.classList.add("is-invalid");
+                                input.style.borderColor = "var(--accent-danger)";
+                                var errSpan = document.createElement("div");
+                                errSpan.className = "js-modal-error-msg";
+                                errSpan.style.cssText = "color: #fca5a5; font-size: 12px; margin-top: 4px; display: block; font-weight: 500;";
+                                errSpan.innerHTML = fieldErrors.join("<br>");
+                                input.parentNode.appendChild(errSpan);
+                            } else {
+                                generalErrors = generalErrors.concat(fieldErrors);
+                            }
+                        }
+                    });
+
+                    if (generalErrors.length > 0) {
+                        var alertDiv = document.createElement("div");
+                        alertDiv.className = "app-modal-alert-error";
+                        alertDiv.style.cssText = "background: rgba(239, 68, 68, 0.15); border: 1px solid var(--accent-danger); color: #fca5a5; padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 14px; display: flex; align-items: flex-start; gap: 8px;";
+                        alertDiv.innerHTML = '<span style="font-size: 15px; line-height: 1;">⚠️</span><div>' + generalErrors.join("<br>") + '</div>';
+                        modalBody.insertBefore(alertDiv, modalBody.firstChild);
+                    }
+                })
+                .catch(function(err) {
+                    console.error("Error al procesar formulario modal:", err);
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = originalBtnHtml;
+                    }
+                    var modalBody = form.querySelector(".app-modal-body") || dlg.querySelector(".app-modal-body") || form;
+                    var alertDiv = document.createElement("div");
+                    alertDiv.className = "app-modal-alert-error";
+                    alertDiv.style.cssText = "background: rgba(239, 68, 68, 0.15); border: 1px solid var(--accent-danger); color: #fca5a5; padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 14px;";
+                    alertDiv.textContent = "Error al comunicarse con el servidor. Verifica los datos ingresados.";
+                    modalBody.insertBefore(alertDiv, modalBody.firstChild);
+                });
+            });
+
+            // 1. Auto-filtrado sin botón: formularios con data-auto-filter="true" (Punto 16)
+            var focusName = sessionStorage.getItem("search_auto_focus");
+            if (focusName) {
+                sessionStorage.removeItem("search_auto_focus");
+                var targetInput = document.querySelector('form[data-auto-filter="true"] input[name="' + focusName + '"]') ||
+                                  document.querySelector('input[name="' + focusName + '"]');
+                if (targetInput) {
+                    targetInput.focus();
+                    var pos = parseInt(sessionStorage.getItem("search_caret_pos") || targetInput.value.length, 10);
+                    if (!isNaN(pos) && pos >= 0) {
+                        try { targetInput.setSelectionRange(pos, pos); } catch (e) {}
+                    }
+                    sessionStorage.removeItem("search_caret_pos");
+                }
+            }
+
+            document.querySelectorAll('form[data-auto-filter="true"]').forEach(function(form) {
+                function submitCleanForm(sourceInput) {
+                    if (sourceInput && sourceInput.name) {
+                        sessionStorage.setItem("search_auto_focus", sourceInput.name);
+                        try {
+                            sessionStorage.setItem("search_caret_pos", String(sourceInput.selectionEnd || sourceInput.value.length));
+                        } catch (e) {}
+                    }
+                    if ((form.method || "get").toLowerCase() === "get") {
+                        var formData = new FormData(form);
+                        var cleanParams = new URLSearchParams();
+                        formData.forEach(function(val, key) {
+                            if (val && typeof val === "string" && val.trim()) {
+                                cleanParams.append(key, val.trim());
+                            }
+                        });
+                        var query = cleanParams.toString();
+                        var action = form.getAttribute("action") || window.location.pathname;
+                        window.location.href = action + (query ? "?" + query : "");
+                        return;
+                    }
+                    form.submit();
+                }
+
+                form.querySelectorAll("select, input[type='checkbox'], input[type='radio'], input[type='date'], input[type='datetime-local']").forEach(function(el) {
+                    el.addEventListener("change", function() {
+                        submitCleanForm(el);
+                    });
+                });
+                var timer = null;
+                form.querySelectorAll("input[type='text'], input[type='search'], input[type='number']").forEach(function(input) {
+                    input.addEventListener("input", function() {
+                        clearTimeout(timer);
+                        timer = setTimeout(function() {
+                            submitCleanForm(input);
+                        }, 550);
+                    });
+                    input.addEventListener("change", function() {
+                        clearTimeout(timer);
+                        submitCleanForm(input);
+                    });
+                });
+            });
+
+            // Atajo de teclado para buscar: presionar '/' o 'Ctrl+K' (Punto 16)
+            document.addEventListener("keydown", function(e) {
+                var activeTag = (document.activeElement && document.activeElement.tagName) ? document.activeElement.tagName.toLowerCase() : "";
+                var isEditing = activeTag === "input" || activeTag === "textarea" || (document.activeElement && document.activeElement.isContentEditable);
+
+                if ((e.key === "/" && !isEditing) || ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K"))) {
+                    var searchInput = document.querySelector('#inputFiltroUsuarios') ||
+                                      document.querySelector('form[data-auto-filter="true"] input[name="q"]') ||
+                                      document.querySelector('input[name="q"]') ||
+                                      document.querySelector('input[type="search"]');
+                    if (searchInput) {
+                        e.preventDefault();
+                        searchInput.focus();
+                        searchInput.select();
+                    }
+                }
+            });
+
+            // 2. Un solo campo combobox para productos: al presionar permite escribir y despliega la lista abajo en tiempo real
+            function initSearchableSelects(root) {
+                (root || document).querySelectorAll('select[name="producto"], select[data-searchable="true"]').forEach(function(sel) {
+                    if (sel.dataset.searchInitialized === "1" || sel.dataset.noCombobox === "1") return;
+                    sel.dataset.searchInitialized = "1";
+                    sel.style.display = "none";
+
+                    var combobox = document.createElement("div");
+                    combobox.className = "product-combobox";
+                    sel.parentNode.insertBefore(combobox, sel.nextSibling);
+
+                    var input = document.createElement("input");
+                    input.type = "text";
+                    input.className = "form-control product-combobox-input";
+                    input.placeholder = "Escribe o selecciona un producto...";
+                    input.autocomplete = "off";
+
+                    var arrow = document.createElement("span");
+                    arrow.className = "product-combobox-arrow";
+                    arrow.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+
+                    var menu = document.createElement("div");
+                    menu.className = "product-combobox-menu";
+
+                    combobox.appendChild(input);
+                    combobox.appendChild(arrow);
+                    combobox.appendChild(menu);
+
+                    var allOptions = Array.from(sel.options)
+                        .filter(function(opt) { return Boolean(opt.value); })
+                        .map(function(opt) {
+                            return {
+                                value: String(opt.value),
+                                text: opt.text
+                            };
+                        });
+
+                    function syncFromSelect() {
+                        var currentOpt = allOptions.find(function(o) { return o.value === String(sel.value); });
+                        input.value = currentOpt ? currentOpt.text : "";
+                    }
+
+                    function renderMenu(filterText) {
+                        menu.innerHTML = "";
+                        var q = (filterText || "").trim().toLowerCase();
+                        var matched = allOptions.filter(function(o) {
+                            return !q || o.text.toLowerCase().indexOf(q) !== -1;
+                        });
+
+                        if (matched.length === 0) {
+                            var empty = document.createElement("div");
+                            empty.className = "product-combobox-empty";
+                            empty.textContent = "No se encontraron productos coincidentes";
+                            menu.appendChild(empty);
+                            return;
+                        }
+
+                        matched.forEach(function(o) {
+                            var item = document.createElement("div");
+                            item.className = "product-combobox-option" + (String(sel.value) === o.value ? " active" : "");
+                            item.textContent = o.text;
+                            item.addEventListener("mousedown", function(e) {
+                                e.preventDefault();
+                                sel.value = o.value;
+                                input.value = o.text;
+                                combobox.classList.remove("open");
+                                sel.dispatchEvent(new Event("change", { bubbles: true }));
+                            });
+                            menu.appendChild(item);
+                        });
+                    }
+
+                    input.addEventListener("focus", function() {
+                        renderMenu("");
+                        combobox.classList.add("open");
+                        input.select();
+                    });
+
+                    input.addEventListener("click", function(e) {
+                        e.stopPropagation();
+                        renderMenu(input.value === (allOptions.find(function(o) { return o.value === String(sel.value); }) || {}).text ? "" : input.value);
+                        combobox.classList.add("open");
+                    });
+
+                    input.addEventListener("input", function() {
+                        var q = input.value;
+                        renderMenu(q);
+                        combobox.classList.add("open");
+                        var qLow = q.trim().toLowerCase();
+                        var exactOrSingle = allOptions.filter(function(o) {
+                            return o.text.toLowerCase().indexOf(qLow) !== -1;
+                        });
+                        if (qLow && exactOrSingle.length === 1) {
+                            sel.value = exactOrSingle[0].value;
+                            sel.dispatchEvent(new Event("change", { bubbles: true }));
+                        }
+                    });
+
+                    input.addEventListener("blur", function() {
+                        setTimeout(function() {
+                            combobox.classList.remove("open");
+                            syncFromSelect();
+                        }, 150);
+                    });
+
+                    if (sel.form) {
+                        sel.form.addEventListener("reset", function() {
+                            setTimeout(syncFromSelect, 10);
+                        });
+                    }
+
+                    sel._syncCombobox = syncFromSelect;
+                    syncFromSelect();
+                });
+            }
+            window.initSearchableSelects = initSearchableSelects;
+            initSearchableSelects(document);
+
+            // 3. Lista desplegable colapsable para select[multiple] (Ubicaciones Físicas)
+            function syncMultiSelectDropdown(sel) {
+                if (!sel || !sel._multiDropdownUpdate) return;
+                sel._multiDropdownUpdate();
+            }
+            window.syncMultiSelectDropdown = syncMultiSelectDropdown;
+
+            function initMultiSelectDropdowns(root) {
+                (root || document).querySelectorAll("select[multiple]").forEach(function(sel) {
+                    if (sel.dataset.multiDropdownInit === "1") return;
+                    sel.dataset.multiDropdownInit = "1";
+                    sel.style.display = "none";
+
+                    var container = document.createElement("div");
+                    container.className = "multi-dropdown";
+                    sel.parentNode.insertBefore(container, sel.nextSibling);
+
+                    var toggleBtn = document.createElement("button");
+                    toggleBtn.type = "button";
+                    toggleBtn.className = "multi-dropdown-toggle";
+
+                    var labelSpan = document.createElement("span");
+                    labelSpan.className = "multi-dropdown-label";
+                    var arrowSpan = document.createElement("span");
+                    arrowSpan.className = "multi-dropdown-arrow";
+                    arrowSpan.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+
+                    toggleBtn.appendChild(labelSpan);
+                    toggleBtn.appendChild(arrowSpan);
+
+                    var menu = document.createElement("div");
+                    menu.className = "multi-dropdown-menu";
+
+                    container.appendChild(toggleBtn);
+                    container.appendChild(menu);
+
+                    function renderOptions() {
+                        menu.innerHTML = "";
+                        var opts = Array.from(sel.options);
+                        if (opts.length === 0) {
+                            var emptyMsg = document.createElement("div");
+                            emptyMsg.style.padding = "8px 10px";
+                            emptyMsg.style.fontSize = "12px";
+                            emptyMsg.style.color = "var(--text-muted)";
+                            emptyMsg.textContent = "No hay ubicaciones disponibles";
+                            menu.appendChild(emptyMsg);
+                        } else {
+                            opts.forEach(function(opt) {
+                                var itemLabel = document.createElement("label");
+                                itemLabel.className = "multi-dropdown-item";
+                                var chk = document.createElement("input");
+                                chk.type = "checkbox";
+                                chk.checked = opt.selected;
+                                chk.addEventListener("change", function() {
+                                    opt.selected = chk.checked;
+                                    updateButtonText();
+                                });
+                                var txt = document.createElement("span");
+                                txt.textContent = opt.text;
+                                itemLabel.appendChild(chk);
+                                itemLabel.appendChild(txt);
+                                menu.appendChild(itemLabel);
+                            });
+                        }
+                        updateButtonText();
+                    }
+
+                    function updateButtonText() {
+                        var selectedTexts = Array.from(sel.options)
+                            .filter(function(o) { return o.selected; })
+                            .map(function(o) { return o.text; });
+                        if (selectedTexts.length === 0) {
+                            labelSpan.textContent = "Seleccionar ubicaciones físicas...";
+                            labelSpan.style.color = "var(--text-muted)";
+                        } else if (selectedTexts.length <= 2) {
+                            labelSpan.textContent = selectedTexts.join(", ");
+                            labelSpan.style.color = "var(--text)";
+                        } else {
+                            labelSpan.textContent = selectedTexts.length + " ubicaciones seleccionadas";
+                            labelSpan.style.color = "var(--text)";
+                        }
+                    }
+
+                    toggleBtn.addEventListener("click", function(e) {
+                        e.stopPropagation();
+                        container.classList.toggle("open");
+                    });
+
+                    menu.addEventListener("click", function(e) {
+                        e.stopPropagation();
+                    });
+
+                    document.addEventListener("click", function() {
+                        container.classList.remove("open");
+                    });
+
+                    sel._multiDropdownUpdate = renderOptions;
+                    renderOptions();
+                });
+            }
+            window.initMultiSelectDropdowns = initMultiSelectDropdowns;
+            initMultiSelectDropdowns(document);
+
+            // 4. Botón mostrar/ocultar contraseña en inputs type="password" con iconos SVG vectoriales
+            var svgEyeOpen = '<svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+            var svgEyeClosed = '<svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+
+            function initPasswordToggles(root) {
+                (root || document).querySelectorAll('input[type="password"]').forEach(function(inp) {
+                    if (inp.dataset.pwdToggleInit === "1") return;
+                    inp.dataset.pwdToggleInit = "1";
+
+                    var wrap = document.createElement("div");
+                    wrap.className = "pwd-input-wrap";
+                    inp.parentNode.insertBefore(wrap, inp);
+                    wrap.appendChild(inp);
+
+                    var btn = document.createElement("button");
+                    btn.type = "button";
+                    btn.className = "pwd-toggle-btn";
+                    btn.title = "Mostrar / ocultar contraseña";
+                    btn.setAttribute("aria-label", "Mostrar contraseña");
+                    btn.innerHTML = svgEyeOpen;
+
+                    btn.addEventListener("click", function() {
+                        var isPwd = inp.type === "password";
+                        inp.type = isPwd ? "text" : "password";
+                        btn.innerHTML = isPwd ? svgEyeClosed : svgEyeOpen;
+                    });
+
+                    wrap.appendChild(btn);
+                });
+            }
+            window.initPasswordToggles = initPasswordToggles;
+            initPasswordToggles(document);
+        });
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block page_title %}Mi Perfil{% endblock %}
+{% block title %}Mi Perfil — Inventario AudacIA{% endblock %}
+{% block sidebar_perfil %}active{% endblock %}
+
+{% block content %}
+<div style="max-width: 780px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px;">
+
+    <!-- 1. Ficha de Información de Perfil -->
+    <div class="card" style="margin-bottom: 0;">
+        <div class="card-header" style="border-bottom: 1px solid var(--border-soft); padding-bottom: 1.25rem;">
+            <div style="display: flex; align-items: center; gap: 18px;">
+                <div style="width: 64px; height: 64px; min-width: 64px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: 700; box-shadow: 0 6px 18px -4px rgba(59,111,240,0.45); border: 2px solid rgba(255,255,255,0.12);">
+                    {{ user.nombre_completo|default:user.username|slice:":1"|upper }}
+                </div>
+                <div>
+                    <h2 class="card-title" style="font-size: 1.35rem; margin-bottom: 4px; color: var(--text);">
+                        {{ user.nombre_completo|default:user.username }}
+                    </h2>
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <span style="font-size: 13px; color: var(--text-muted); font-family: var(--font-mono, monospace);">@{{ user.username }}</span>
+                        {% if user.rol == "SUPERUSUARIO" %}
+                            <span class="badge badge-warn" style="font-size: 11px; padding: 2px 8px;">Superusuario</span>
+                        {% elif user.rol == "ADMINISTRADOR" %}
+                            <span class="badge badge-purple" style="font-size: 11px; padding: 2px 8px;">Administrador</span>
+                        {% else %}
+                            <span class="badge badge-accent" style="font-size: 11px; padding: 2px 8px;">Usuario</span>
+                        {% endif %}
+                        {% if user.is_active %}
+                            <span class="badge badge-ok" style="font-size: 11px; padding: 2px 8px;">Activo</span>
+                        {% else %}
+                            <span class="badge badge-crit" style="font-size: 11px; padding: 2px 8px;">Inactivo</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 1.25rem;">
+            <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); padding: 14px 16px;">
+                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); margin-bottom: 6px;">Nombre Registrado</div>
+                <div style="font-size: 14px; font-weight: 600; color: var(--text);">
+                    {{ user.nombre_completo|default:"Sin nombre asignado" }}
+                </div>
+            </div>
+
+            <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); padding: 14px 16px;">
+                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); margin-bottom: 6px;">Usuario de Acceso</div>
+                <div style="font-size: 14px; font-weight: 600; color: var(--text); font-family: var(--font-mono, monospace);">
+                    {{ user.username }}
+                </div>
+            </div>
+
+            <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); padding: 14px 16px;">
+                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); margin-bottom: 6px;">Rol de Permisos</div>
+                <div style="font-size: 14px; font-weight: 600; color: var(--text);">
+                    {{ user.get_rol_display|default:user.rol }}
+                </div>
+            </div>
+
+            <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); padding: 14px 16px;">
+                <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); margin-bottom: 6px;">Almacén(es) Asignado(s)</div>
+                <div style="font-size: 14px; font-weight: 600; color: var(--text);">
+                    {% if user.es_administrador %}
+                        <span style="color: var(--text-muted); font-weight: 400; font-size: 13px;">Acceso global (todos los almacenes)</span>
+                    {% elif user.get_almacenes_asignados %}
+                        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                            {% for alm in user.get_almacenes_asignados %}
+                                <span class="badge badge-accent" style="font-size: 12px; padding: 4px 8px;">
+                                    {{ alm.nombre }}
+                                </span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <span style="color: var(--text-muted); font-weight: 400; font-size: 13px;">Sin almacén asignado</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. Botones de Acción al pie de la información -->
+        <div style="display: flex; gap: 12px; margin-top: 1.5rem; border-top: 1px solid var(--border-soft); padding-top: 1.25rem; flex-wrap: wrap;">
+            <button type="button" class="btn btn-secondary" onclick="openAppModal('modalCambiarNombre')" style="flex: 1; min-width: 200px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 11px 18px; font-weight: 500;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                {% if user.es_superusuario_inventario %}Cambiar Nombre y Usuario{% else %}Cambiar Nombre{% endif %}
+            </button>
+            <button type="button" class="btn btn-primary" onclick="openAppModal('modalCambiarPassword')" style="flex: 1; min-width: 200px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 11px 18px; font-weight: 500;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                Reestablecer Contraseña
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal 1: Cambiar Nombre (y Usuario para Superusuario) -->
+<dialog id="modalCambiarNombre" class="app-modal" style="width: min(480px, 94vw);">
+    <form method="post" action="{% url 'inventario:perfil-actualizar-nombre' %}" style="display: flex; flex-direction: column;">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{% url 'cuentas:perfil' %}">
+        <div class="app-modal-header">
+            <h2 class="app-modal-title" style="display: flex; align-items: center; gap: 8px;">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                Editar Datos de Perfil
+            </h2>
+            <button type="button" class="app-modal-close" onclick="closeAppModal('modalCambiarNombre')" aria-label="Cerrar">&times;</button>
+        </div>
+
+        <div class="app-modal-body">
+            {% if user.es_superusuario_inventario %}
+                <div class="form-group">
+                    <label for="id_username_perfil">Nombre de Usuario (Username) *</label>
+                    <input type="text" name="username" id="id_username_perfil" class="form-control"
+                           value="{{ user.username }}"
+                           placeholder="Nombre de usuario de acceso..." required>
+                    <div class="form-help" style="font-size: 11.5px; color: var(--accent-2); margin-top: 4px;">
+                        👑 Edición de username habilitada exclusivamente para el Superusuario.
+                    </div>
+                </div>
+            {% else %}
+                <div class="form-group">
+                    <label>Nombre de Usuario (Username)</label>
+                    <input type="text" class="form-control" value="{{ user.username }}" disabled style="opacity: 0.7; background: var(--bg-panel-2); cursor: not-allowed;">
+                    <div class="form-help" style="font-size: 11.5px; color: var(--text-muted); margin-top: 4px;">
+                        El nombre de usuario es inmutable. Solo puede ser modificado por el superusuario.
+                    </div>
+                </div>
+            {% endif %}
+
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="id_nombre_completo_perfil">Nombre Completo *</label>
+                <input type="text" name="nombre_completo" id="id_nombre_completo_perfil" class="form-control"
+                       value="{{ user.nombre_completo|default:user.username }}"
+                       placeholder="Escribe tu nombre completo..." required>
+                <div class="form-help" style="font-size: 11.5px; color: var(--text-muted); margin-top: 4px;">
+                    Este nombre identificará tus acciones en el historial de movimientos y reportes.
+                </div>
+            </div>
+        </div>
+
+        <div class="app-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalCambiarNombre')">
+                Cancelar
+            </button>
+            <button type="submit" class="btn btn-primary">
+                Guardar Cambios
+            </button>
+        </div>
+    </form>
+</dialog>
+
+<!-- Modal 2: Cambiar / Reestablecer Contraseña -->
+<dialog id="modalCambiarPassword" class="app-modal" style="width: min(520px, 94vw);">
+    <form method="post" action="{% url 'cuentas:cambiar_password' %}" style="display: flex; flex-direction: column;">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{% url 'cuentas:perfil' %}">
+        <div class="app-modal-header">
+            <h2 class="app-modal-title" style="display: flex; align-items: center; gap: 8px;">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                Reestablecer Contraseña
+            </h2>
+            <button type="button" class="app-modal-close" onclick="closeAppModal('modalCambiarPassword')" aria-label="Cerrar">&times;</button>
+        </div>
+
+        <div class="app-modal-body">
+            <!-- Contraseña Actual -->
+            <div class="form-group" style="margin-bottom: 1.25rem;">
+                <label for="{{ form.password_actual.id_for_label }}" style="display: block; margin-bottom: 6px;">Contraseña Actual *</label>
+                {{ form.password_actual }}
+                <div class="form-help" style="font-size: 11.5px; color: var(--text-muted); margin-top: 4px;">Ingresa tu clave actual para autorizar la actualización.</div>
+            </div>
+
+            <!-- Nueva Contraseña -->
+            <div class="form-group" style="margin-bottom: 1.25rem;">
+                <label for="{{ form.password_nueva.id_for_label }}" style="display: block; margin-bottom: 6px;">Nueva Contraseña *</label>
+                {{ form.password_nueva }}
+                <div class="form-help" style="font-size: 11.5px; color: var(--text-muted); margin-top: 4px;">Mínimo 7 caracteres con al menos una letra y un número.</div>
+            </div>
+
+            <!-- Confirmar Contraseña -->
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="{{ form.password_confirmacion.id_for_label }}" style="display: block; margin-bottom: 6px;">Confirmar Nueva Contraseña *</label>
+                {{ form.password_confirmacion }}
+            </div>
+        </div>
+
+        <div class="app-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalCambiarPassword')">
+                Cancelar
+            </button>
+            <button type="submit" class="btn btn-primary">
+                Actualizar Contraseña
+            </button>
+        </div>
+    </form>
+</dialog>
+{% endblock %}

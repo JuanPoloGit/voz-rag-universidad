@@ -1,0 +1,303 @@
+{% extends "base.html" %}
+{% block page_title %}Centro de Exportaciones (Excel / CSV){% endblock %}
+{% block sidebar_exportaciones %}active{% endblock %}
+
+{% block title %}Centro de Exportaciones{% endblock %}
+
+{% block extra_css %}
+<style>
+.card-dashboard-destacada {
+    margin-bottom: 1.5rem;
+    border: 1px solid var(--border);
+    background: var(--bg-panel);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-sm);
+}
+.export-dashboard-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+}
+.export-dashboard-form {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+.export-select-alm {
+    width: 220px;
+    font-size: 0.85rem;
+}
+.export-btn-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.export-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.65rem 1.15rem;
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+@media (max-width: 768px) {
+    .export-dashboard-container {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 1.25rem;
+    }
+    .export-dashboard-form {
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.75rem;
+    }
+    .export-select-alm {
+        width: 100%;
+    }
+    .export-btn-group {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.5rem;
+    }
+    .export-action-btn {
+        width: 100%;
+        padding: 0.65rem 0.5rem;
+        font-size: 0.82rem;
+        text-align: center;
+    }
+}
+@media (max-width: 480px) {
+    .export-btn-group {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card" style="margin-bottom: 1.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+        <div>
+            <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.35rem;">
+                <span class="badge" style="background: rgba(16, 185, 129, 0.15); color: var(--success); border: 1px solid rgba(16, 185, 129, 0.3); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700;">
+                    Administración
+                </span>
+                <span class="badge" style="background: rgba(99, 102, 241, 0.15); color: var(--accent-bright); border: 1px solid rgba(99, 102, 241, 0.3); font-size: 0.75rem; font-weight: 600;">
+                    Excel & CSV Soberano
+                </span>
+            </div>
+            <h2 style="margin: 0; font-size: 1.5rem; font-weight: 700; color: var(--text-bright);">Centro de Exportaciones y Analítica de Datos</h2>
+            <p style="color: var(--text-muted); font-size: 0.88rem; margin-top: 0.35rem; max-width: 780px;">
+                Generación bajo demanda de libros corporativos Microsoft Excel (.xlsx) con fórmulas dinámicas, formato visual profesional y archivos CSV estructurados con codificación UTF-8 BOM.
+            </p>
+        </div>
+    </div>
+</div>
+
+<!-- TARJETA DESTACADA: DASHBOARD COMPLETO (LIBRO PROFESIONAL MULTIDISCO) -->
+<div class="card card-dashboard-destacada">
+    <div class="export-dashboard-container">
+        <div style="flex: 1; min-width: 280px;">
+            <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
+                <div style="width: 40px; height: 40px; border-radius: 8px; background: rgba(16, 185, 129, 0.15); display: flex; align-items: center; justify-content: center; color: var(--success); flex-shrink: 0;">
+                    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                        <line x1="8" y1="13" x2="16" y2="13"/>
+                        <line x1="8" y1="17" x2="16" y2="17"/>
+                        <polyline points="10 9 9 9 8 9"/>
+                    </svg>
+                </div>
+                <div>
+                    <h3 style="margin: 0; font-size: 1.2rem; font-weight: 700; color: var(--text-bright);">Libro Completo del Dashboard</h3>
+                    <span style="font-size: 0.8rem; color: var(--text-muted);">Resumen Ejecutivo · Existencias y Stock · Últimos Movimientos · Préstamos Pendientes</span>
+                </div>
+            </div>
+            <p style="margin: 0; font-size: 0.85rem; color: var(--text-dim); line-height: 1.5;">
+                Genera un informe integral con tarjetas de KPIs, formato numérico profesional, totales calculados con fórmulas nativas de Excel y autoajuste de columnas para presentaciones ejecutivas y auditorías.
+            </p>
+        </div>
+
+        <form method="get" action="{% url 'web:exportar-dashboard-excel' %}" class="export-dashboard-form">
+            <select name="almacen_id" class="form-control export-select-alm">
+                <option value="">-- Todos los Almacenes --</option>
+                {% for a in almacenes %}
+                    <option value="{{ a.id }}">{{ a.nombre }}</option>
+                {% endfor %}
+            </select>
+
+            <div class="export-btn-group">
+                <button type="submit" class="btn btn-primary export-action-btn" style="font-weight: 600;">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    Descargar en Excel (.xlsx)
+                </button>
+
+                <a href="{% url 'web:exportar-datos-csv' 'dashboard' %}" class="btn btn-secondary export-action-btn" title="Descargar todos los datos detallados del inventario en CSV">
+                    CSV Completo
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- CUADRÍCULA DE EXPORTACIONES ESPECÍFICAS -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem;">
+
+    <!-- 1. CATÁLOGO Y EXISTENCIAS -->
+    <div class="card" style="display: flex; flex-direction: column;">
+        <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem;">
+            <div style="width: 32px; height: 32px; border-radius: 6px; background: rgba(99, 102, 241, 0.15); display: flex; align-items: center; justify-content: center; color: var(--accent-bright);">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                </svg>
+            </div>
+            <div>
+                <h3 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--text-bright);">Catálogo y Existencias</h3>
+                <span style="font-size: 0.75rem; color: var(--text-muted);">Stock disponible, en préstamo y alertas</span>
+            </div>
+        </div>
+
+        <form id="form-existencias" method="get" style="display: flex; flex-direction: column; flex: 1;">
+            <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1rem;">
+                <div>
+                    <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Almacén</label>
+                    <select name="almacen_id" class="form-control" style="width: 100%; font-size: 0.85rem;">
+                        <option value="">-- Todos los almacenes --</option>
+                        {% for a in almacenes %}
+                            <option value="{{ a.id }}">{{ a.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Categoría</label>
+                    <select name="categoria_id" class="form-control" style="width: 100%; font-size: 0.85rem;">
+                        <option value="">-- Todas las categorías --</option>
+                        {% for c in categorias %}
+                            <option value="{{ c.id }}">{{ c.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Estado de Stock</label>
+                    <select name="filtro_stock" class="form-control" style="width: 100%; font-size: 0.85rem;">
+                        <option value="">-- Todos los estados --</option>
+                        <option value="CRITICO">Agotado (Stock 0)</option>
+                        <option value="BAJO">Bajo Stock Mínimo</option>
+                        <option value="NORMAL">Stock Óptimo</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--border-soft); margin-top: auto;">
+                <button type="submit" formaction="{% url 'web:exportar-datos-excel' 'existencias' %}" class="btn btn-sm btn-primary" style="flex: 1; font-weight: 600;">
+                    Descargar Excel
+                </button>
+                <button type="submit" formaction="{% url 'web:exportar-datos-csv' 'existencias' %}" class="btn btn-sm btn-secondary" style="flex: 1;">
+                    Descargar CSV
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- 2. KARDEX Y MOVIMIENTOS -->
+    <div class="card" style="display: flex; flex-direction: column;">
+        <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem;">
+            <div style="width: 32px; height: 32px; border-radius: 6px; background: rgba(16, 185, 129, 0.15); display: flex; align-items: center; justify-content: center; color: var(--success);">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/>
+                </svg>
+            </div>
+            <div>
+                <h3 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--text-bright);">Movimientos y Kardex</h3>
+                <span style="font-size: 0.75rem; color: var(--text-muted);">Trazabilidad cronológica de operaciones</span>
+            </div>
+        </div>
+
+        <form id="form-movimientos" method="get" style="display: flex; flex-direction: column; flex: 1;">
+            <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1rem;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                    <div>
+                        <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Fecha Desde</label>
+                        <input type="date" name="fecha_desde" class="form-control" style="width: 100%; font-size: 0.85rem;">
+                    </div>
+                    <div>
+                        <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Fecha Hasta</label>
+                        <input type="date" name="fecha_hasta" class="form-control" style="width: 100%; font-size: 0.85rem;">
+                    </div>
+                </div>
+
+                <div>
+                    <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Tipo de Movimiento</label>
+                    <select name="tipo" class="form-control" style="width: 100%; font-size: 0.85rem;">
+                        <option value="">-- Todos los tipos --</option>
+                        {% for val, label in tipos_movimiento %}
+                            <option value="{{ val }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--border-soft); margin-top: auto;">
+                <button type="submit" formaction="{% url 'web:exportar-datos-excel' 'movimientos' %}" class="btn btn-sm btn-primary" style="flex: 1; font-weight: 600;">
+                    Descargar Excel
+                </button>
+                <button type="submit" formaction="{% url 'web:exportar-datos-csv' 'movimientos' %}" class="btn btn-sm btn-secondary" style="flex: 1;">
+                    Descargar CSV
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- 3. PRÉSTAMOS Y DEVOLUCIONES -->
+    <div class="card" style="display: flex; flex-direction: column;">
+        <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem;">
+            <div style="width: 32px; height: 32px; border-radius: 6px; background: rgba(245, 158, 11, 0.15); display: flex; align-items: center; justify-content: center; color: var(--warning);">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12 6 12 12 16 14"/>
+                </svg>
+            </div>
+            <div>
+                <h3 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--text-bright);">Préstamos y Devoluciones</h3>
+                <span style="font-size: 0.75rem; color: var(--text-muted);">Control de deudas y saldos pendientes</span>
+            </div>
+        </div>
+
+        <form id="form-prestamos" method="get" style="display: flex; flex-direction: column; flex: 1;">
+            <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1rem;">
+                <div>
+                    <label style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Estado del Préstamo</label>
+                    <select name="estado" class="form-control" style="width: 100%; font-size: 0.85rem;">
+                        <option value="TODOS">-- Todos los estados (Histórico Completo) --</option>
+                        {% for val, label in estados_prestamo %}
+                            <option value="{{ val }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--border-soft); margin-top: auto;">
+                <button type="submit" formaction="{% url 'web:exportar-datos-excel' 'prestamos' %}" class="btn btn-sm btn-primary" style="flex: 1; font-weight: 600;">
+                    Descargar Excel
+                </button>
+                <button type="submit" formaction="{% url 'web:exportar-datos-csv' 'prestamos' %}" class="btn btn-sm btn-secondary" style="flex: 1;">
+                    Descargar CSV
+                </button>
+            </div>
+        </form>
+    </div>
+
+</div>
+{% endblock %}

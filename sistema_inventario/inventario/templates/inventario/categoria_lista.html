@@ -1,0 +1,394 @@
+{% extends "base.html" %}
+{% block page_title %}Categorías y Almacenes{% endblock %}
+{% block sidebar_categorias %}active{% endblock %}
+
+{% block title %}Categorías y Tipos — Inventario AudacIA{% endblock %}
+
+{% block extra_css %}
+<style>
+    .type-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+    .type-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 3px 9px;
+        border-radius: 999px;
+        background: rgba(59, 111, 240, 0.14);
+        border: 1px solid rgba(92, 139, 255, 0.3);
+        color: var(--text);
+        font-size: 11.5px;
+        font-weight: 500;
+    }
+    .type-chip-btn {
+        background: none;
+        border: none;
+        color: var(--text-dim);
+        cursor: pointer;
+        padding: 0 2px;
+        font-size: 11px;
+        line-height: 1;
+    }
+    .type-chip-btn:hover { color: var(--accent-2); }
+    .type-chip-btn.danger:hover { color: var(--crit); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h1 class="card-title">Categorías y Tipos</h1>
+            <p style="font-size: 12.5px; color: var(--text-muted); margin-top: 2px;">
+                Clasificación de productos por almacén principal y sub-tipos ligados a cada categoría.
+            </p>
+        </div>
+        <div class="action-group">
+            {% if request.user.es_administrador or 'infraestructura.gestionar_categorias' in request.user.get_permisos_codigos %}
+            <button type="button" class="btn btn-primary" id="btnNuevaCategoriaModal">
+                + Nueva Categoría
+            </button>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if puede_ver_categorias %}
+    <!-- Barra de filtros automáticos -->
+    <form method="get" action="{% url 'inventario:categoria-lista' %}" data-auto-filter="true"
+          style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px;">
+        <div style="flex: 2; min-width: 220px;">
+            <input type="text" name="q" value="{{ q }}" class="form-control"
+                   placeholder="Buscar categoría, prefijo o tipo..." autocomplete="off">
+        </div>
+        {% if not user.es_usuario_normal and almacenes %}
+            <div style="flex: 1; min-width: 180px;">
+                <select name="almacen_id" class="form-control" aria-label="Filtrar por almacén">
+                    <option value="">Todos los almacenes</option>
+                    {% for alm in almacenes %}
+                        <option value="{{ alm.id }}" {% if almacen_seleccionado == alm.id|stringformat:'s' %}selected{% endif %}>
+                            {{ alm.nombre }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+        {% endif %}
+        <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-dim); cursor: pointer; margin: 0;">
+            <input type="checkbox" name="mostrar_inactivos" value="1" {% if mostrar_inactivos %}checked{% endif %}>
+            <span>Mostrar inhabilitadas</span>
+        </label>
+        {% if q or almacen_seleccionado or mostrar_inactivos %}
+            <a href="{% url 'inventario:categoria-lista' %}" class="btn btn-sm btn-secondary">Limpiar</a>
+        {% endif %}
+    </form>
+
+    <!-- Tabla de Categorías Plana -->
+    <div class="table-responsive">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Categoría</th>
+                        <th>Prefijo</th>
+                        <th>Tipos Asociados</th>
+                        <th>Almacén Principal</th>
+                        <th>Estado</th>
+                        <th style="text-align: right;">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for cat in categorias %}
+                        <tr {% if not cat.activo %}style="opacity: 0.62;"{% endif %}>
+                            <td>
+                                <a href="{% url 'inventario:producto-lista' %}?almacen_id={{ cat.almacen_principal_id }}&categoria_id={{ cat.id }}"
+                                   class="table-item-link"
+                                   title="Ver productos de esta categoría">
+                                    <strong>{{ cat.nombre }}</strong>
+                                </a>
+                                <div style="font-size: 11px; color: var(--text-faint);">
+                                    {{ cat.total_articulos }} artículo(s)
+                                </div>
+                            </td>
+                            <td><code>{{ cat.prefijo_codigo }}-XXXX</code></td>
+                            <td>
+                                {% with tipos_activos=cat.tipos.all %}
+                                    {% if tipos_activos %}
+                                        <div class="type-list">
+                                            {% for t in tipos_activos %}
+                                                <span class="type-chip">
+                                                    <a href="{% url 'inventario:producto-lista' %}?almacen_id={{ cat.almacen_principal_id }}&categoria_id={{ cat.id }}&tipo_id={{ t.id }}" style="color: inherit; text-decoration: none;" title="Ver productos de tipo {{ t.nombre }}">{{ t.nombre }}</a>
+                                                    <button type="button"
+                                                            class="type-chip-btn btn-editar-tipo-chip"
+                                                            data-id="{{ t.id }}"
+                                                            data-nombre="{{ t.nombre }}"
+                                                            data-cat-id="{{ cat.id }}"
+                                                            data-action-url="{% url 'inventario:tipo-categoria-editar' t.id %}"
+                                                            title="Renombrar tipo"
+                                                            aria-label="Renombrar tipo">
+                                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                                    </button>
+                                                    <form method="post" action="{% url 'inventario:tipo-categoria-eliminar' t.id %}" style="display: inline; margin: 0;">
+                                                        {% csrf_token %}
+                                                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                                        <button type="submit" class="type-chip-btn danger"
+                                                                title="Eliminar tipo"
+                                                                data-confirm="¿Eliminar el tipo «{{ t.nombre }}»?"
+                                                                data-confirm-title="Eliminar Tipo"
+                                                                data-confirm-btn="Eliminar"
+                                                                data-confirm-danger="true">&times;</button>
+                                                    </form>
+                                                </span>
+                                            {% endfor %}
+                                        </div>
+                                    {% else %}
+                                        <span style="color: var(--text-faint); font-size: 12px; font-style: italic;">Sin tipos</span>
+                                    {% endif %}
+                                {% endwith %}
+                            </td>
+                            <td><a href="{% url 'inventario:producto-lista' %}?almacen_id={{ cat.almacen_principal_id }}" style="text-decoration: none;" title="Ver productos de este almacén"><span class="badge badge-accent">{{ cat.almacen_principal.nombre }}</span></a></td>
+                            <td>
+                                {% if cat.activo %}
+                                    <span class="badge badge-ok">Activa</span>
+                                {% else %}
+                                    <span class="badge badge-warn">Inhabilitada</span>
+                                {% endif %}
+                            </td>
+                            <td style="text-align: right; white-space: nowrap;">
+                                <div class="action-group">
+                                    {% if request.user.es_administrador or 'infraestructura.gestionar_categorias' in request.user.get_permisos_codigos %}
+                                    <button type="button"
+                                            class="btn btn-sm btn-secondary btn-preseleccionar-cat"
+                                            data-cat-id="{{ cat.id }}"
+                                            data-cat-nombre="{{ cat.nombre }}">
+                                        + Tipo
+                                    </button>
+                                    <button type="button"
+                                            class="btn btn-sm btn-secondary btn-editar-cat-modal"
+                                            data-url="{% url 'inventario:categoria-editar' cat.id %}"
+                                            data-nombre="{{ cat.nombre }}"
+                                            data-almacen="{{ cat.almacen_principal_id }}"
+                                            data-tipos="{% for t in cat.tipos.all %}{{ t.nombre }}{% if not forloop.last %}, {% endif %}{% endfor %}">
+                                        Editar
+                                    </button>
+
+                                    {% if cat.activo %}
+                                        <form method="post" action="{% url 'inventario:categoria-desactivar' cat.id %}" style="display: inline; margin: 0;">
+                                            {% csrf_token %}
+                                            <button type="submit" class="btn btn-sm btn-secondary" style="color: var(--warn);">
+                                                Inhabilitar
+                                            </button>
+                                        </form>
+                                    {% else %}
+                                        <form method="post" action="{% url 'inventario:categoria-reactivar' cat.id %}" style="display: inline; margin: 0;">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                            <button type="submit" class="btn btn-sm btn-secondary" style="color: var(--ok);">
+                                                Habilitar
+                                            </button>
+                                        </form>
+                                    {% endif %}
+
+                                    <form method="post" action="{% url 'inventario:categoria-eliminar' cat.id %}" style="display: inline; margin: 0;"
+                                          data-confirm="¿Eliminar la categoría «{{ cat.nombre }}»?"
+                                          data-confirm-title="Eliminar Categoría"
+                                          data-confirm-btn="Eliminar Categoría"
+                                          data-confirm-danger="true">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                        <button type="submit" class="btn btn-sm btn-danger">
+                                            Eliminar
+                                        </button>
+                                    </form>
+                                    {% else %}
+                                    <span style="font-size: 11.5px; color: var(--text-faint);">Solo lectura</span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="6" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                                No se encontraron categorías con los criterios actuales.
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div style="background: rgba(59, 111, 240, 0.08); border: 1px solid rgba(59, 111, 240, 0.22); border-radius: var(--radius); padding: 3rem 1.5rem; text-align: center; margin-top: 1rem;">
+            <div style="width: 52px; height: 52px; border-radius: 50%; background: rgba(59, 111, 240, 0.14); display: inline-grid; place-items: center; margin-bottom: 1rem;">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent-bright);"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z"/><circle cx="17" cy="17" r="3"/></svg>
+            </div>
+            <h2 style="font-family: var(--font-heading); font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 8px;">
+                Listado de Categorías Restringido
+            </h2>
+            <p style="color: var(--text-dim); font-size: 13px; max-width: 500px; margin: 0 auto 1.5rem; line-height: 1.55;">
+                Tu cuenta no cuenta con el permiso para consultar el listado de categorías (<code>infraestructura.ver</code>).
+                {% if request.user.es_administrador or 'infraestructura.gestionar_categorias' in request.user.get_permisos_codigos %}
+                Puedes registrar nuevas categorías utilizando el botón superior <strong>"+ Nueva Categoría"</strong>.
+                {% endif %}
+            </p>
+            {% if request.user.es_administrador or 'infraestructura.gestionar_categorias' in request.user.get_permisos_codigos %}
+            <div>
+                <button type="button" class="btn btn-primary" onclick="document.getElementById('btnNuevaCategoriaModal').click();">
+                    + Registrar Nueva Categoría
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    {% endif %}
+</div>
+
+<!-- ═══ MODAL NUEVA / EDITAR CATEGORÍA ═══ -->
+<dialog id="modalCategoria" class="app-modal">
+    <form method="post" action="{% url 'inventario:categoria-crear' %}" id="formModalCategoria" style="display: flex; flex-direction: column;">
+        {% csrf_token %}
+        <div class="app-modal-header">
+            <h2 class="app-modal-title" id="tituloModalCategoria">Nueva Categoría</h2>
+            <button type="button" class="app-modal-close" onclick="closeAppModal('modalCategoria')">&times;</button>
+        </div>
+        <div class="app-modal-body">
+            <div class="form-group">
+                <label>Nombre de la Categoría *</label>
+                {{ categoria_form.nombre }}
+            </div>
+            {% if not user.es_usuario_normal %}
+            <div class="form-group">
+                <label>Almacén Principal *</label>
+                {{ categoria_form.almacen_principal }}
+            </div>
+            {% else %}
+                {{ categoria_form.almacen_principal }}
+            {% endif %}
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Tipos asociados (opcional, separados por coma)</label>
+                {{ categoria_form.tipos_opcionales }}
+                <div class="form-help">Ej: Destornillador, Alicate, Martillo</div>
+            </div>
+        </div>
+        <div class="app-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalCategoria')">Cancelar</button>
+            <button type="submit" class="btn btn-primary" id="btnSubmitModalCategoria">Guardar Categoría</button>
+        </div>
+    </form>
+</dialog>
+
+<!-- ═══ MODAL AGREGAR / EDITAR TIPO OPCIONAL ═══ -->
+<dialog id="modalTipoCategoria" class="app-modal">
+    <form method="post" action="{% url 'inventario:tipo-categoria-crear' %}" id="formModalTipo" style="display: flex; flex-direction: column;">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <input type="hidden" name="categoria" id="modalTipoCategoriaId" value="">
+        <div class="app-modal-header">
+            <h2 class="app-modal-title" id="tituloModalTipo">Agregar Tipo Opcional</h2>
+            <button type="button" class="app-modal-close" onclick="closeAppModal('modalTipoCategoria')" aria-label="Cerrar">&times;</button>
+        </div>
+        <div class="app-modal-body">
+            <div class="form-group">
+                <label>Categoría</label>
+                <div id="modalTipoCategoriaNombreDisplay" class="form-control" style="background: rgba(255,255,255,0.03); opacity: 0.95; font-weight: 600; color: var(--accent-2); min-height: 38px; display: flex; align-items: center;">
+                </div>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="modalTipoNombre">Nombre del Tipo *</label>
+                <input type="text" name="nombre" id="modalTipoNombre" class="form-control" maxlength="100" required placeholder="Ej. Cable UTP, Alicate, Destornillador...">
+                <div class="form-help">Sub-clasificación opcional específica para esta categoría.</div>
+            </div>
+        </div>
+        <div class="app-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalTipoCategoria')">Cancelar</button>
+            <button type="submit" class="btn btn-primary" id="btnSubmitModalTipo">Guardar Tipo</button>
+        </div>
+    </form>
+</dialog>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    var formModalTipo = document.getElementById("formModalTipo");
+    var inputCatId = document.getElementById("modalTipoCategoriaId");
+    var displayCatNom = document.getElementById("modalTipoCategoriaNombreDisplay");
+    var inputTipoNom = document.getElementById("modalTipoNombre");
+    var tituloModalTipo = document.getElementById("tituloModalTipo");
+    var btnSubmitTipo = document.getElementById("btnSubmitModalTipo");
+    var urlCrearTipoDefault = "{% url 'inventario:tipo-categoria-crear' %}";
+
+    // Abrir modal al presionar "+ Tipo" en la tabla de categorías
+    document.querySelectorAll(".btn-preseleccionar-cat").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            var catId = btn.getAttribute("data-cat-id");
+            var catNom = btn.getAttribute("data-cat-nombre");
+            formModalTipo.action = urlCrearTipoDefault;
+            inputCatId.value = catId;
+            displayCatNom.textContent = catNom;
+            inputTipoNom.value = "";
+            tituloModalTipo.textContent = "Nuevo Tipo para: " + catNom;
+            btnSubmitTipo.textContent = "Guardar Tipo";
+            openAppModal("modalTipoCategoria");
+            setTimeout(function() { inputTipoNom.focus(); }, 100);
+        });
+    });
+
+    // Abrir modal al presionar para renombrar un chip de tipo
+    document.querySelectorAll(".btn-editar-tipo-chip").forEach(function(btn) {
+        btn.addEventListener("click", function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var nombreActual = btn.getAttribute("data-nombre");
+            var catId = btn.getAttribute("data-cat-id");
+            var actionUrl = btn.getAttribute("data-action-url");
+            var row = btn.closest("tr");
+            var catNom = row ? row.querySelector("td strong").textContent.trim() : "Categoría";
+
+            formModalTipo.action = actionUrl;
+            inputCatId.value = catId;
+            displayCatNom.textContent = catNom;
+            inputTipoNom.value = nombreActual;
+            tituloModalTipo.textContent = "Renombrar Tipo: «" + nombreActual + "»";
+            btnSubmitTipo.textContent = "Actualizar Tipo";
+            openAppModal("modalTipoCategoria");
+            setTimeout(function() {
+                inputTipoNom.focus();
+                inputTipoNom.select();
+            }, 100);
+        });
+    });
+
+    // Modal Crear / Editar Categoría
+    var formCat = document.getElementById("formModalCategoria");
+    var tituloCat = document.getElementById("tituloModalCategoria");
+    var btnSubCat = document.getElementById("btnSubmitModalCategoria");
+    var urlCatCrear = "{% url 'inventario:categoria-crear' %}";
+
+    document.getElementById("btnNuevaCategoriaModal").addEventListener("click", function() {
+        formCat.reset();
+        formCat.action = urlCatCrear;
+        tituloCat.textContent = "Nueva Categoría";
+        btnSubCat.textContent = "Crear Categoría";
+        openAppModal("modalCategoria");
+    });
+
+    document.querySelectorAll(".btn-editar-cat-modal").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            formCat.reset();
+            formCat.action = btn.getAttribute("data-url");
+            tituloCat.textContent = "Editar Categoría";
+            btnSubCat.textContent = "Guardar Cambios";
+            var inpNom = formCat.querySelector('[name="nombre"]');
+            var selAlm = formCat.querySelector('[name="almacen_principal"]');
+            var inpTipos = formCat.querySelector('[name="tipos_opcionales"]');
+            if (inpNom) inpNom.value = btn.getAttribute("data-nombre") || "";
+            if (selAlm) selAlm.value = btn.getAttribute("data-almacen") || "";
+            if (inpTipos) inpTipos.value = btn.getAttribute("data-tipos") || "";
+            openAppModal("modalCategoria");
+        });
+    });
+});
+</script>
+{% endblock %}

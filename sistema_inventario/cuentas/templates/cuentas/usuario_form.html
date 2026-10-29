@@ -1,166 +1,1036 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ accion }} Usuario — Inventario AudacIA</title>
-    <style>
-        body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 2rem 0; }
-        .card { background: #1e293b; padding: 2rem; border-radius: 12px; width: 100%; max-width: 500px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5); }
-        h1 { margin-top: 0; font-size: 1.5rem; color: #38bdf8; }
-        .form-group { margin-bottom: 1.25rem; }
-        label { display: block; margin-bottom: 0.5rem; font-size: 0.875rem; color: #cbd5e1; }
-        input[type="text"], input[type="password"], select { width: 100%; padding: 0.75rem; border: 1px solid #334155; border-radius: 6px; background: #0f172a; color: #fff; box-sizing: border-box; }
-        .checkbox-group { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.25rem; }
-        .help-text { font-size: 0.75rem; color: #94a3b8; margin-top: 0.25rem; }
-        .actions { display: flex; justify-content: flex-end; gap: 1rem; margin-top: 2rem; }
-        .btn { padding: 0.75rem 1.25rem; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 0.875rem; border: none; cursor: pointer; }
-        .btn-primary { background: #0284c7; color: #fff; }
-        .btn-primary:hover { background: #0369a1; }
-        .btn-secondary { background: #475569; color: #fff; }
-        .btn-secondary:hover { background: #334155; }
-        .error-box { background: #7f1d1d; border: 1px solid #b91c1c; color: #fecaca; padding: 0.75rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.875rem; }
-        .error-field { color: #f87171; font-size: 0.8rem; margin-top: 0.25rem; }
-    </style>
-</head>
-<body>
-    <div class="card">
-        <h1>{{ accion }} Usuario</h1>
+{% extends "base.html" %}                                                                                     
 
-        {% if form.non_field_errors %}
-            <div class="error-box">
-                {% for err in form.non_field_errors %}
-                    <div>{{ err }}</div>
-                {% endfor %}
-            </div>
-        {% endif %}
+{% block title %}{{ accion }} Usuario{% endblock %}                                                           
+{% block page_title %}{{ accion }} Usuario{% endblock %}                                                      
+{% block sidebar_usuarios %}active{% endblock %}                                                              
 
-        <form method="post">
-            {% csrf_token %}
-            <div class="form-group">
-                <label for="{{ form.username.id_for_label }}">{{ form.username.label }}</label>
-                {{ form.username }}
-                {% if form.username.errors %}
-                    <div class="error-field">{{ form.username.errors.0 }}</div>
-                {% endif %}
-            </div>
+{% block extra_css %}                                                                                         
+<style>                                                                                                       
+    /* ═══ Estilos para Formulario de Usuario y Permisos Granulares ═══ */                                    
+    .almacen-option-row {                                                                                     
+        display: flex;                                                                                        
+        align-items: center;                                                                                  
+        gap: 9px;                                                                                             
+        padding: 8px 11px;                                                                                    
+        background: var(--bg-panel-2);                                                                        
+        border: 1px solid var(--border-soft);                                                                 
+        border-radius: 6px;                                                                                   
+        cursor: pointer;                                                                                      
+        font-size: 12.8px;                                                                                    
+        font-weight: 500;                                                                                     
+        margin: 0;                                                                                            
+        user-select: none;                                                                                    
+        transition: all 0.15s ease;                                                                           
+    }                                                                                                         
+    .almacen-option-row:hover {                                                                               
+        border-color: var(--accent-bright);                                                                   
+        background: rgba(59, 111, 240, 0.08);                                                                 
+    }                                                                                                         
+    .almacen-option-row.is-checked {                                                                          
+        border-color: var(--accent-bright);                                                                   
+        background: rgba(59, 111, 240, 0.12);                                                                 
+        box-shadow: 0 0 0 1px rgba(92, 139, 255, 0.35);                                                       
+    }                                                                                                         
+    .almacen-option-row input[type="checkbox"] {                                                              
+        accent-color: var(--accent-bright);                                                                   
+        cursor: pointer;                                                                                      
+    }                                                                                                         
+    .almacen-option-row.is-checked .almacen-option-name {                                                     
+        color: var(--accent-bright);                                                                          
+        font-weight: 600;                                                                                     
+    }                                                                                                         
 
-            <div class="form-group">
-                <label for="{{ form.nombre_completo.id_for_label }}">{{ form.nombre_completo.label }}</label>
-                {{ form.nombre_completo }}
-                {% if form.nombre_completo.errors %}
-                    <div class="error-field">{{ form.nombre_completo.errors.0 }}</div>
-                {% endif %}
-            </div>
+    /* Contenedor e Iconos de Encabezado */                                                                   
+    .permiso-header-shield-icon {                                                                             
+        width: 30px;                                                                                          
+        height: 30px;                                                                                         
+        border-radius: 7px;                                                                                   
+        background: rgba(92, 139, 255, 0.12);                                                                 
+        color: var(--accent-bright);                                                                          
+        display: inline-grid;                                                                                 
+        place-items: center;                                                                                  
+        flex-shrink: 0;                                                                                       
+        border: 1px solid rgba(92, 139, 255, 0.25);                                                           
+    }                                                                                                         
+    .permiso-header-shield-icon svg {                                                                         
+        width: 16px;                                                                                          
+        height: 16px;                                                                                         
+        stroke: currentColor;                                                                                 
+        stroke-width: 2;                                                                                      
+        fill: none;                                                                                           
+        stroke-linecap: round;                                                                                
+        stroke-linejoin: round;                                                                               
+    }                                                                                                         
 
-            <div class="form-group">
-                <label for="{{ form.password.id_for_label }}">{{ form.password.label }}</label>
-                {{ form.password }}
-                <div class="help-text">{{ form.password.help_text }}</div>
-                {% if form.password.errors %}
-                    <div class="error-field">{{ form.password.errors.0 }}</div>
-                {% endif %}
-            </div>
+    /* Buscador Integrado */                                                                                  
+    .permiso-search-wrap {                                                                                    
+        position: relative;                                                                                   
+        width: 100%;                                                                                          
+    }                                                                                                         
+    .permiso-search-wrap svg {                                                                                
+        position: absolute;                                                                                   
+        left: 11px;                                                                                           
+        top: 50%;                                                                                             
+        transform: translateY(-50%);                                                                          
+        width: 14px;                                                                                          
+        height: 14px;                                                                                         
+        stroke: var(--text-faint);                                                                            
+        stroke-width: 2;                                                                                      
+        fill: none;                                                                                           
+        pointer-events: none;                                                                                 
+    }                                                                                                         
+    .permiso-search-input {                                                                                   
+        width: 100%;                                                                                          
+        height: 35px;                                                                                         
+        font-size: 12.5px;                                                                                    
+        padding: 6px 12px 6px 34px !important;                                                                
+        background: var(--bg-panel-2) !important;                                                             
+        border: 1px solid var(--border) !important;                                                           
+        border-radius: var(--radius-sm);                                                                      
+        color: var(--text) !important;                                                                        
+        transition: all 0.15s ease;                                                                           
+    }                                                                                                         
+    .permiso-search-input:focus {                                                                             
+        border-color: var(--accent-bright) !important;                                                        
+        box-shadow: 0 0 0 2px rgba(59, 111, 240, 0.25);                                                       
+        outline: none;                                                                                        
+    }                                                                                                         
 
-            <div class="form-group">
-                <label for="{{ form.rol.id_for_label }}">{{ form.rol.label }}</label>
-                {{ form.rol }}
-                {% if form.rol.errors %}
-                    <div class="error-field">{{ form.rol.errors.0 }}</div>
-                {% endif %}
-            </div>
+    /* Grid de Presets / Plantillas */                                                                        
+    .presets-grid {                                                                                           
+        display: grid;                                                                                        
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));                                         
+        gap: 8px;                                                                                             
+        margin-top: 6px;                                                                                      
+        margin-bottom: 12px;                                                                                  
+    }                                                                                                         
+    .btn-preset-card {                                                                                        
+        display: flex;                                                                                        
+        flex-direction: column;                                                                               
+        align-items: flex-start;                                                                              
+        padding: 9px 12px;                                                                                    
+        background: var(--bg-panel-2);                                                                        
+        border: 1px solid var(--border);                                                                      
+        border-radius: var(--radius-sm);                                                                      
+        cursor: pointer;                                                                                      
+        text-align: left;                                                                                     
+        transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);                                                   
+        position: relative;                                                                                   
+        user-select: none;                                                                                    
+        width: 100%;                                                                                          
+    }                                                                                                         
+    .btn-preset-card:hover {                                                                                  
+        border-color: var(--accent-bright);                                                                   
+        background: var(--bg-elevated);                                                                       
+        transform: translateY(-1px);                                                                          
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);                                                           
+    }                                                                                                         
+    .btn-preset-card.active {                                                                                 
+        border-color: var(--accent-bright);                                                                   
+        background: linear-gradient(135deg, rgba(59, 111, 240, 0.20) 0%, rgba(17, 31, 77, 0.85) 100%);        
+        box-shadow: 0 0 0 1px var(--accent-bright), 0 4px 14px rgba(59, 111, 240, 0.28);                      
+    }                                                                                                         
+    .preset-card-head {                                                                                       
+        display: flex;                                                                                        
+        align-items: center;                                                                                  
+        gap: 8px;                                                                                             
+        width: 100%;                                                                                          
+        margin-bottom: 3px;                                                                                   
+    }                                                                                                         
+    .preset-card-icon {                                                                                       
+        width: 24px;                                                                                          
+        height: 24px;                                                                                         
+        border-radius: 6px;                                                                                   
+        background: rgba(92, 139, 255, 0.12);                                                                 
+        color: var(--accent-bright);                                                                          
+        display: inline-grid;                                                                                 
+        place-items: center;                                                                                  
+        flex-shrink: 0;                                                                                       
+        transition: all 0.18s ease;                                                                           
+    }                                                                                                         
+    .preset-card-icon svg {                                                                                   
+        width: 13px;                                                                                          
+        height: 13px;                                                                                         
+        stroke: currentColor;                                                                                 
+        stroke-width: 2;                                                                                      
+        fill: none;                                                                                           
+        stroke-linecap: round;                                                                                
+        stroke-linejoin: round;                                                                               
+    }                                                                                                         
+    .btn-preset-card.active .preset-card-icon {                                                               
+        background: var(--accent);                                                                            
+        color: #ffffff;                                                                                       
+        box-shadow: 0 2px 6px rgba(59, 111, 240, 0.45);                                                       
+    }                                                                                                         
+    .preset-card-title {                                                                                      
+        font-size: 12px;                                                                                      
+        font-weight: 600;                                                                                     
+        color: var(--text);                                                                                   
+        line-height: 1.25;                                                                                    
+        flex: 1;                                                                                              
+    }                                                                                                         
+    .btn-preset-card.active .preset-card-title {                                                              
+        color: #ffffff;                                                                                       
+        font-weight: 700;                                                                                     
+    }                                                                                                         
+    .preset-card-desc {                                                                                       
+        font-size: 10.5px;                                                                                    
+        color: var(--text-dim);                                                                               
+        line-height: 1.3;                                                                                     
+        display: -webkit-box;                                                                                 
+        -webkit-line-clamp: 2;                                                                                
+        -webkit-box-orient: vertical;                                                                         
+        overflow: hidden;                                                                                     
+    }                                                                                                         
 
-            <div id="bloque-almacenes-usuario" style="background: rgba(255,255,255,0.03); border: 1px solid #334155; border-radius: 8px; padding: 1rem; margin-bottom: 1.25rem;">
-                <label style="font-weight: 600; color: #38bdf8; margin-bottom: 0.5rem; display: block;">
-                    Alcance de Inventario (Almacenes)
-                </label>
+    /* Módulos y Listado de Permisos */                                                                       
+    .permiso-module-card {                                                                                    
+        background: var(--bg-panel-2);                                                                        
+        border: 1px solid var(--border);                                                                      
+        border-radius: var(--radius-sm);                                                                      
+        margin-bottom: 10px;                                                                                  
+        overflow: hidden;                                                                                     
+        transition: border-color 0.15s ease;                                                                  
+    }                                                                                                         
+    .permiso-module-card:hover {                                                                              
+        border-color: rgba(92, 139, 255, 0.4);                                                                
+    }                                                                                                         
+    .permiso-module-header {                                                                                  
+        display: flex;                                                                                        
+        justify-content: space-between;                                                                       
+        align-items: center;                                                                                  
+        padding: 8px 12px;                                                                                    
+        background: rgba(255, 255, 255, 0.025);                                                               
+        border-bottom: 1px solid var(--border-soft);                                                          
+        gap: 8px;                                                                                             
+        flex-wrap: wrap;                                                                                      
+    }                                                                                                         
+    .permiso-module-title-wrap {                                                                              
+        display: flex;                                                                                        
+        align-items: center;                                                                                  
+        gap: 8px;                                                                                             
+    }                                                                                                         
+    .permiso-module-icon {                                                                                    
+        width: 22px;                                                                                          
+        height: 22px;                                                                                         
+        border-radius: 5px;                                                                                   
+        background: rgba(92, 139, 255, 0.1);                                                                  
+        color: var(--accent-bright);                                                                          
+        display: inline-grid;                                                                                 
+        place-items: center;                                                                                  
+        flex-shrink: 0;                                                                                       
+    }                                                                                                         
+    .permiso-module-icon svg {                                                                                
+        width: 13px;                                                                                          
+        height: 13px;                                                                                         
+        stroke: currentColor;                                                                                 
+        stroke-width: 2;                                                                                      
+        fill: none;                                                                                           
+        stroke-linecap: round;                                                                                
+        stroke-linejoin: round;                                                                               
+    }                                                                                                         
+    .permiso-module-name {                                                                                    
+        font-family: var(--font-heading);                                                                     
+        font-size: 12.8px;                                                                                    
+        font-weight: 600;                                                                                     
+        color: var(--text);                                                                                   
+        letter-spacing: -0.01em;                                                                              
+    }                                                                                                         
+    .permiso-module-actions {                                                                                 
+        display: flex;                                                                                        
+        align-items: center;                                                                                  
+        gap: 8px;                                                                                             
+    }                                                                                                         
+    .permiso-btn-module-toggle {                                                                              
+        background: transparent;                                                                              
+        border: 1px solid var(--border-soft);                                                                 
+        color: var(--text-dim);                                                                               
+        border-radius: 4px;                                                                                   
+        padding: 2px 8px;                                                                                     
+        font-size: 10.5px;                                                                                    
+        font-weight: 500;                                                                                     
+        cursor: pointer;                                                                                      
+        transition: all 0.15s ease;                                                                           
+    }                                                                                                         
+    .permiso-btn-module-toggle:hover {                                                                        
+        background: var(--bg-elevated);                                                                       
+        color: var(--accent-bright);                                                                          
+        border-color: var(--accent);                                                                          
+    }                                                                                                         
+    .permiso-module-badge {                                                                                   
+        font-size: 10.5px;                                                                                    
+        font-weight: 600;                                                                                     
+        padding: 2px 7px;                                                                                     
+        border-radius: 10px;                                                                                  
+    }                                                                                                         
+    .permiso-items-grid {                                                                                     
+        display: grid;                                                                                        
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));                                         
+        gap: 7px;                                                                                             
+        padding: 9px;                                                                                         
+    }                                                                                                         
+    .permiso-option-row {                                                                                     
+        display: flex;                                                                                        
+        align-items: flex-start;                                                                              
+        gap: 9px;                                                                                             
+        padding: 8px 10px;                                                                                    
+        background: var(--bg-panel);                                                                          
+        border: 1px solid var(--border-soft);                                                                 
+        border-radius: 7px;                                                                                   
+        cursor: pointer;                                                                                      
+        margin: 0;                                                                                            
+        user-select: none;                                                                                    
+        transition: all 0.15s ease;                                                                           
+        position: relative;                                                                                   
+    }                                                                                                         
+    .permiso-option-row:hover {                                                                               
+        border-color: var(--accent);                                                                          
+        background: rgba(59, 111, 240, 0.05);                                                                 
+    }                                                                                                         
+    .permiso-option-row.is-checked {                                                                          
+        border-color: var(--accent-bright);                                                                   
+        background: rgba(59, 111, 240, 0.09);                                                                 
+        box-shadow: 0 0 0 1px rgba(92, 139, 255, 0.32);                                                       
+    }                                                                                                         
+    .permiso-option-row input[type="checkbox"] {                                                              
+        margin-top: 2px;                                                                                      
+        width: 15px;                                                                                          
+        height: 15px;                                                                                         
+        accent-color: var(--accent-bright);                                                                   
+        cursor: pointer;                                                                                      
+        flex-shrink: 0;                                                                                       
+    }                                                                                                         
+    .permiso-option-info {                                                                                    
+        flex: 1;                                                                                              
+        min-width: 0;                                                                                         
+    }                                                                                                         
+    .permiso-option-top {                                                                                     
+        display: flex;                                                                                        
+        align-items: baseline;                                                                                
+        justify-content: space-between;                                                                       
+        gap: 6px;                                                                                             
+        flex-wrap: wrap;                                                                                      
+        margin-bottom: 2px;                                                                                   
+    }                                                                                                         
+    .permiso-option-name {                                                                                    
+        font-size: 12.3px;                                                                                    
+        font-weight: 600;                                                                                     
+        color: var(--text);                                                                                   
+        line-height: 1.3;                                                                                     
+    }                                                                                                         
+    .permiso-option-row.is-checked .permiso-option-name {                                                     
+        color: var(--accent-bright);                                                                          
+    }                                                                                                         
+    .permiso-code-badge {                                                                                     
+        font-size: 9.8px;                                                                                     
+        font-family: var(--font-mono);                                                                        
+        color: var(--text-faint);                                                                             
+        background: rgba(255, 255, 255, 0.04);                                                                
+        padding: 1px 5px;                                                                                     
+        border-radius: 4px;                                                                                   
+        border: 1px solid var(--border-soft);                                                                 
+        white-space: nowrap;                                                                                  
+    }                                                                                                         
+    .permiso-option-row.is-checked .permiso-code-badge {                                                      
+        border-color: rgba(92, 139, 255, 0.3);                                                                
+        color: var(--text-dim);                                                                               
+    }                                                                                                         
+    .permiso-option-desc {                                                                                    
+        font-size: 11px;                                                                                      
+        color: var(--text-dim);                                                                               
+        line-height: 1.35;                                                                                    
+        margin-top: 2px;                                                                                      
+    }                                                                                                         
+</style>                                                                                                      
+{% endblock %}                                                                                                
 
-                <!-- Opción B: Todos los almacenes -->
-                <div class="checkbox-group" style="margin-bottom: 0.75rem;">
-                    {{ form.acceso_todos_almacenes }}
-                    <label for="{{ form.acceso_todos_almacenes.id_for_label }}" style="margin: 0; font-weight: 600;">
-                        {{ form.acceso_todos_almacenes.label }}
-                    </label>
-                </div>
-                {% if form.acceso_todos_almacenes.errors %}
-                    <div class="error-field">{{ form.acceso_todos_almacenes.errors.0 }}</div>
-                {% endif %}
+{% block content %}                                                                                           
+<div class="card" style="max-width: 880px;">                                                                  
+    <div class="card-header">                                                                                 
+        <h2 class="card-title">{{ accion }} Usuario</h2>                                                      
+    </div>                                                                                                    
 
-                <!-- Opción A: Almacenes específicos -->
-                <div id="bloque-almacenes-especificos">
-                    <div class="form-group" style="margin-bottom: 0.75rem;">
-                        <label for="{{ form.almacenes_asignados.id_for_label }}">{{ form.almacenes_asignados.label }}</label>
-                        {{ form.almacenes_asignados }}
-                        <div class="help-text">Mantén presionada la tecla Ctrl para seleccionar uno o varios almacenes.</div>
-                        {% if form.almacenes_asignados.errors %}
-                            <div class="error-field">{{ form.almacenes_asignados.errors.0 }}</div>
-                        {% endif %}
-                    </div>
+    {% if form.non_field_errors %}                                                                            
+        <div class="alert alert-error" style="margin-bottom: 1rem;">                                          
+            <div>                                                                                             
+                {% for err in form.non_field_errors %}                                                        
+                    <div>{{ err }}</div>                                                                      
+                {% endfor %}                                                                                  
+            </div>                                                                                            
+        </div>                                                                                                
+    {% endif %}                                                                                               
 
-                    <div class="form-group" style="margin-bottom: 0;">
-                        <label for="{{ form.almacen_asignado.id_for_label }}">{{ form.almacen_asignado.label }}</label>
-                        {{ form.almacen_asignado }}
-                        <div class="help-text">{{ form.almacen_asignado.help_text }}</div>
-                        {% if form.almacen_asignado.errors %}
-                            <div class="error-field">{{ form.almacen_asignado.errors.0 }}</div>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
+    <form method="post" id="formUsuario">                                                                     
+        {% csrf_token %}                                                                                      
+        <div class="form-group">                                                                              
+            <label for="{{ form.username.id_for_label }}">{{ form.username.label }}</label>                   
+            {{ form.username }}                                                                               
+            {% if form.username.errors %}                                                                     
+                <div class="form-error">{{ form.username.errors.0 }}</div>                                    
+            {% endif %}                                                                                       
+        </div>                                                                                                
 
-            <div class="checkbox-group">
-                {{ form.is_active }}
-                <label for="{{ form.is_active.id_for_label }}" style="margin: 0;">{{ form.is_active.label }}</label>
-            </div>
+        <div class="form-group">                                                                              
+            <label for="{{ form.nombre_completo.id_for_label }}">{{ form.nombre_completo.label }}</label>     
+            {{ form.nombre_completo }}                                                                        
+            {% if form.nombre_completo.errors %}                                                              
+                <div class="form-error">{{ form.nombre_completo.errors.0 }}</div>                             
+            {% endif %}                                                                                       
+        </div>                                                                                                
 
-            <div class="actions">
-                <a href="{% url 'cuentas:usuario_lista' %}" class="btn btn-secondary">Cancelar</a>
-                <button type="submit" class="btn btn-primary">Guardar</button>
-            </div>
-        </form>
-    </div>
+        <div class="form-group">                                                                              
+            <label for="{{ form.password.id_for_label }}">{{ form.password.label }}</label>                   
+            {{ form.password }}                                                                               
+            <div class="form-help">{{ form.password.help_text }}</div>                                        
+            {% if form.password.errors %}                                                                     
+                <div class="form-error">{{ form.password.errors.0 }}</div>                                    
+            {% endif %}                                                                                       
+        </div>                                                                                                
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const selRol = document.getElementById('{{ form.rol.id_for_label }}');
-            const bloqueAlm = document.getElementById('bloque-almacenes-usuario');
-            const chkTodos = document.getElementById('{{ form.acceso_todos_almacenes.id_for_label }}');
-            const bloqueEspecificos = document.getElementById('bloque-almacenes-especificos');
-            const selMulti = document.getElementById('{{ form.almacenes_asignados.id_for_label }}');
-            const selPrin = document.getElementById('{{ form.almacen_asignado.id_for_label }}');
+        <div class="form-group">                                                                              
+            <label for="{{ form.rol.id_for_label }}">{{ form.rol.label }}</label>                             
+            {{ form.rol }}                                                                                    
+            {% if form.rol.errors %}                                                                          
+                <div class="form-error">{{ form.rol.errors.0 }}</div>                                         
+            {% endif %}                                                                                       
+        </div>                                                                                                
 
-            function actualizarVisibilidadRol() {
-                if (!selRol || !bloqueAlm) return;
-                if (selRol.value === 'USUARIO') {
-                    bloqueAlm.style.display = 'block';
-                } else {
-                    bloqueAlm.style.display = 'none';
-                }
-            }
+        <!-- Grupo Almacenes Asignados (Rol Usuario) -->                                                      
+        <div class="form-group" id="grupoAlmacenesAsignados">                                                 
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom:    
+            6px; flex-wrap: wrap; gap: 8px;">                                                                 
+                <div style="display: flex; align-items: center; gap: 8px;">                                   
+                    <div class="permiso-header-shield-icon">                                                  
+                        <svg viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z"/><circle      
+                        cx="17" cy="17" r="3"/></svg>                                                         
+                    </div>                                                                                    
+                    <div>                                                                                     
+                        <label style="margin: 0; font-weight: 700; font-size: 13.5px; color:                  
+                        var(--text);">Alcance de Inventario (Almacenes)</label>                               
+                        <div style="font-size: 11.5px; color: var(--text-dim); margin-top: 1px;">Define las   
+                        bodegas autorizadas para la operación y consulta de este usuario.</div>               
+                    </div>                                                                                    
+                </div>                                                                                        
+            </div>                                                                                            
 
-            function alternarTodosAlmacenes() {
-                if (!chkTodos || !bloqueEspecificos) return;
-                if (chkTodos.checked) {
-                    bloqueEspecificos.style.opacity = '0.4';
-                    bloqueEspecificos.style.pointerEvents = 'none';
-                    if (selMulti) Array.from(selMulti.options).forEach(opt => opt.selected = false);
-                    if (selPrin) selPrin.value = '';
-                } else {
-                    bloqueEspecificos.style.opacity = '1';
-                    bloqueEspecificos.style.pointerEvents = 'auto';
-                }
-            }
+            <!-- Opción B (Haku): Acceso a Todos los Almacenes -->                                            
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-soft);             
+            border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 12px; display: flex;          
+            align-items: center; justify-content: space-between; gap: 12px;">                                 
+                <label for="{{ form.acceso_todos_almacenes.id_for_label }}" style="display: flex; align-items:
+                center; gap: 10px; cursor: pointer; margin: 0; user-select: none;">                           
+                    {{ form.acceso_todos_almacenes }}                                                         
+                    <div>                                                                                     
+                        <span style="font-weight: 600; color: var(--text); font-size: 13px;">Acceso a todos   
+                        los almacenes</span>                                                                  
+                        <div style="font-size: 11.5px; color: var(--text-dim); margin-top: 1px;">Permite      
+                        operar y consultar en todas las bodegas activas sin conceder privilegios de           
+                        administrador.</div>                                                                  
+                    </div>                                                                                    
+                </label>                                                                                      
+                <span class="badge badge-neutral" style="font-size: 10.5px;">Acceso Global</span>             
+            </div>                                                                                            
+            {% if form.acceso_todos_almacenes.errors %}                                                       
+                <div class="form-error" style="color: var(--crit); margin-bottom: 8px; font-size: 12px;">{{   
+                form.acceso_todos_almacenes.errors.0 }}</div>                                                 
+            {% endif %}                                                                                       
 
-            if (selRol) {
-                selRol.addEventListener('change', actualizarVisibilidadRol);
-                actualizarVisibilidadRol();
-            }
+            <!-- Opción A: Selección de Almacenes Específicos -->                                             
+            <div id="bloqueAlmacenesEspecificos">                                                             
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom:
+                8px; flex-wrap: wrap; gap: 8px;">                                                             
+                    <span style="font-size: 11.5px; font-weight: 600; color: var(--text-dim); text-transform: 
+                    uppercase; letter-spacing: 0.5px;">Almacenes Específicos:</span>                          
+                    <div style="display: flex; align-items: center; gap: 8px;">                               
+                        <span id="almacenesCounterBadge" class="badge badge-accent" style="font-size: 11px;   
+                        padding: 2px 8px;">0 seleccionados</span>                                             
+                        <button type="button" id="btnSelectAllAlmacenes" class="btn btn-secondary btn-sm"     
+                        style="padding: 4px 8px; font-size: 11.5px; height: 26px;">                           
+                            <svg viewBox="0 0 24 24" style="width: 12px; height: 12px; stroke: currentColor;  
+                            fill: none; stroke-width: 2;"><polyline points="20 6 9 17 4 12"/></svg>           
+                            Todos                                                                             
+                        </button>                                                                             
+                        <button type="button" id="btnClearAlmacenes" class="btn btn-secondary btn-sm"         
+                        style="padding: 4px 8px; font-size: 11.5px; height: 26px;">                           
+                            <svg viewBox="0 0 24 24" style="width: 12px; height: 12px; stroke: currentColor;  
+                            fill: none; stroke-width: 2;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6"   
+                            y1="6" x2="18" y2="18"/></svg>                                                    
+                            Ninguno                                                                           
+                        </button>                                                                             
+                    </div>                                                                                    
+                </div>                                                                                        
 
-            if (chkTodos) {
-                chkTodos.addEventListener('change', alternarTodosAlmacenes);
-                alternarTodosAlmacenes();
-            }
-        });
-    </script>
-</body>
-</html>
+                <div class="permiso-search-wrap" style="margin-bottom: 8px;">                                 
+                    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65"  
+                    y2="16.65"/></svg>                                                                        
+                    <input type="text" id="almacenSearchInput" placeholder="Filtrar almacenes por nombre..."  
+                    class="form-control permiso-search-input">                                                
+                </div>                                                                                        
+
+                <div id="almacenesScrollBox" style="max-height: 180px; overflow-y: auto; padding: 8px;        
+                background: var(--bg-panel-2); border: 1px solid var(--border); border-radius:                
+                var(--radius-sm);">                                                                           
+                    <div id="almacenesGrid" style="display: grid; grid-template-columns: repeat(auto-fill,    
+                    minmax(220px, 1fr)); gap: 8px;">                                                          
+                        {% for choice in form.almacenes_asignados %}                                          
+                            <label class="almacen-option-row" data-name="{{ choice.choice_label|lower }}">    
+                                {{ choice.tag }}                                                              
+                                <span class="almacen-option-name">{{ choice.choice_label }}</span>            
+                            </label>                                                                          
+                        {% empty %}                                                                           
+                            <div style="color: var(--text-muted); font-size: 12px; padding: 8px;">No hay      
+                            almacenes activos registrados.</div>                                              
+                        {% endfor %}                                                                          
+                    </div>                                                                                    
+                    <div id="almacenSearchEmpty" style="display: none; padding: 12px; color:                  
+                    var(--text-faint); font-size: 12px; text-align: center;">                                 
+                        No se encontraron almacenes con ese nombre.                                           
+                    </div>                                                                                    
+                </div>                                                                                        
+
+                <div class="form-help" style="margin-top: 6px;">Selecciona al menos un almacén si no marcas   
+                'Acceso a todos los almacenes'.</div>                                                         
+                {% if form.almacenes_asignados.errors %}                                                      
+                    <div class="form-error" style="color: var(--crit); margin-top: 4px; font-size: 12px;">{{  
+                    form.almacenes_asignados.errors.0 }}</div>                                                
+                {% endif %}                                                                                   
+            </div>                                                                                            
+        </div>                                                                                                
+
+        <!-- Grupo Permisos Granulares (Rol Usuario) -->                                                      
+        <div class="form-group" id="grupoPermisosGranulares" data-presets='{{ presets_json|escape }}'         
+        style="margin-top: 1.25rem;">                                                                         
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom:    
+            6px; flex-wrap: wrap; gap: 8px;">                                                                 
+                <div style="display: flex; align-items: center; gap: 8px;">                                   
+                    <div class="permiso-header-shield-icon">                                                  
+                        <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    </div>                                                                                    
+                    <div>                                                                                     
+                        <label style="margin: 0; font-weight: 700; font-size: 13.5px; color: var(--text);">   
+                            Permisos Granulares de Operación                                                  
+                        </label>                                                                              
+                        <div style="font-size: 11.5px; color: var(--text-dim); margin-top: 1px;">             
+                            Define las facultades autorizadas para este usuario en sus almacenes autorizados. 
+                        </div>                                                                                
+                    </div>                                                                                    
+                </div>                                                                                        
+                <div style="display: flex; align-items: center; gap: 8px;">                                   
+                    <span id="permisosCounterBadge" class="badge badge-accent" style="font-size: 11px;        
+                    padding: 2px 8px;">0 seleccionados</span>                                                 
+                    <button type="button" id="btnSelectAllPermisos" class="btn btn-secondary btn-sm"          
+                    style="padding: 4px 8px; font-size: 11.5px; height: 26px;">                               
+                        <svg viewBox="0 0 24 24" style="width: 12px; height: 12px; stroke: currentColor; fill:
+                        none; stroke-width: 2;"><polyline points="20 6 9 17 4 12"/></svg>                     
+                        Todos                                                                                 
+                    </button>                                                                                 
+                    <button type="button" id="btnClearPermisos" class="btn btn-secondary btn-sm"              
+                    style="padding: 4px 8px; font-size: 11.5px; height: 26px;">                               
+                        <svg viewBox="0 0 24 24" style="width: 12px; height: 12px; stroke: currentColor; fill:
+                        none; stroke-width: 2;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6"      
+                        x2="18" y2="18"/></svg>                                                               
+                        Ninguno                                                                               
+                    </button>                                                                                 
+                </div>                                                                                        
+            </div>                                                                                            
+
+            <!-- Plantillas Rápidas (1-Clic) -->                                                              
+            <div style="margin-top: 8px; margin-bottom: 6px;">                                                
+                <span style="font-size: 11px; font-weight: 600; color: var(--text-faint); text-transform:     
+                uppercase; letter-spacing: 0.6px;">Plantillas de Rol Operativo (1-Clic):</span>               
+                <div class="presets-grid" id="presetsBar">                                                    
+                    {% for key, preset in presets_permisos.items %}                                           
+                        <button type="button" class="btn-preset-card" data-preset="{{ key }}" title="{{       
+                        preset.descripcion }}">                                                               
+                            <div class="preset-card-head">                                                    
+                                <span class="preset-card-icon">                                               
+                                    {% if key == "OPERADOR_INTEGRAL" %}                                       
+                                        <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 
+                                        12 10 13 2"/></svg>                                                   
+                                    {% elif key == "ABASTECIMIENTO" %}                                        
+                                        <svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 
+                                        00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0    
+                                        0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
+                                    {% elif key == "PANOLERO" %}                                              
+                                        <svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 
+                                        1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0  
+                                        1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>              
+                                    {% elif key == "GESTOR_CATALOGO" %}                                       
+                                        <svg viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0     
+                                        1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7"  
+                                        x2="7.01" y2="7"/></svg>                                              
+                                    {% elif key == "AUDITOR" %}                                               
+                                        <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11     
+                                        8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>                  
+                                    {% else %}                                                                
+                                        <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 
+                                        12 10 13 2"/></svg>                                                   
+                                    {% endif %}                                                               
+                                </span>                                                                       
+                                <div class="preset-card-title">{{ preset.nombre }}</div>                      
+                            </div>                                                                            
+                            <div class="preset-card-desc">{{ preset.descripcion }}</div>                      
+                        </button>                                                                             
+                    {% endfor %}                                                                              
+                    <button type="button" class="btn-preset-card" data-preset="CUSTOM" title="Selección       
+                    personalizada manual de permisos">                                                        
+                        <div class="preset-card-head">                                                        
+                            <span class="preset-card-icon">                                                   
+                                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65
+                                1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65    
+                                1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0           
+                                1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0     
+                                1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0      
+                                0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0
+                                0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0  
+                                1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0
+                                0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0      
+                                2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 
+                                2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>                         
+                            </span>                                                                           
+                            <div class="preset-card-title">Personalizado</div>                                
+                        </div>                                                                                
+                        <div class="preset-card-desc">Combinación manual a la medida de tus necesidades</div> 
+                    </button>                                                                                 
+                </div>                                                                                        
+            </div>                                                                                            
+
+            <!-- Buscador Integrado -->                                                                       
+            <div class="permiso-search-wrap" style="margin-bottom: 8px;">                                     
+                <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65"      
+                y2="16.65"/></svg>                                                                            
+                <input type="text" id="permisoSearchInput" placeholder="Buscar permiso por nombre, código o   
+                palabra clave..." class="form-control permiso-search-input">                                  
+            </div>                                                                                            
+
+            <!-- Listado Agrupado por Módulo -->                                                              
+            <div id="permisosScrollBox" style="max-height: 380px; overflow-y: auto; padding: 6px; background: 
+            var(--bg-panel-2); border: 1px solid var(--border); border-radius: var(--radius-sm);">            
+                {% for mod_cod, mod_label, perms in permisos_modulos %}                                       
+                    <div class="permiso-module-card" data-module-card="{{ mod_cod }}">                        
+                        <div class="permiso-module-header">                                                   
+                            <div class="permiso-module-title-wrap">                                           
+                                <span class="permiso-module-icon">                                            
+                                    {% if mod_cod == "CATALOGO" %}                                            
+                                        <svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 
+                                        00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0    
+                                        0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>
+                                    {% elif mod_cod == "MOVIMIENTOS" %}                                       
+                                        <svg viewBox="0 0 24 24"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0   
+                                        0l4-4m-4 4l-4-4"/></svg>                                              
+                                    {% elif mod_cod == "INFRAESTRUCTURA" %}                                   
+                                        <svg viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4          
+                                        14h6v6H4z"/><circle cx="17" cy="17" r="3"/></svg>                     
+                                    {% elif mod_cod == "ANALITICA" %}                                         
+                                        <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line 
+                                        x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6"           
+                                        y2="14"/></svg>                                                       
+                                    {% elif mod_cod == "SEGURIDAD" %}                                         
+                                        <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8  
+                                        10 8 10z"/></svg>                                                     
+                                    {% else %}                                                                
+                                        <svg viewBox="0 0 24 24"><polyline points="22 12 16 12 14 15 10 15 8  
+                                        12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0       
+                                        2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+                                    {% endif %}                                                               
+                                </span>                                                                       
+                                <span class="permiso-module-name">{{ mod_label }}</span>                      
+                            </div>                                                                            
+                            <div class="permiso-module-actions">                                              
+                                <button type="button" class="permiso-btn-module-toggle" data-module-toggle="{{
+                                mod_cod }}">Marcar</button>                                                   
+                                <span class="badge badge-secondary permiso-module-badge" id="badge_mod_{{     
+                                mod_cod }}">0 / {{ perms|length }}</span>                                     
+                            </div>                                                                            
+                        </div>                                                                                
+                        <div class="permiso-items-grid">                                                      
+                            {% for perm in perms %}                                                           
+                                <label class="permiso-option-row {% if perm.pk in selected_perm_pks           
+                                %}is-checked{% endif %}" data-codigo="{{ perm.codigo }}" data-name="{{        
+                                perm.nombre|lower }}" data-desc="{{ perm.descripcion|lower }}">               
+                                    <input type="checkbox" name="permisos_personalizados" value="{{ perm.id   
+                                    }}" data-codigo="{{ perm.codigo }}" data-module="{{ mod_cod }}"           
+                                    class="form-check-input permiso-checkbox" {% if perm.pk in                
+                                    selected_perm_pks %}checked{% endif %}>                                   
+                                    <div class="permiso-option-info">                                         
+                                        <div class="permiso-option-top">                                      
+                                            <span class="permiso-option-name">{{ perm.nombre }}</span>        
+                                            <code class="permiso-code-badge">{{ perm.codigo }}</code>         
+                                        </div>                                                                
+                                        {% if perm.descripcion %}                                             
+                                            <div class="permiso-option-desc">{{ perm.descripcion }}</div>     
+                                        {% endif %}                                                           
+                                    </div>                                                                    
+                                </label>                                                                      
+                            {% endfor %}                                                                      
+                        </div>                                                                                
+                    </div>                                                                                    
+                {% empty %}                                                                                   
+                    <div style="color: var(--text-muted); font-size: 12px; padding: 14px; text-align:         
+                    center;">No hay permisos registrados en el catálogo.</div>                                
+                {% endfor %}                                                                                  
+
+                <div id="permisoSearchEmpty" style="display: none; padding: 18px; color: var(--text-faint);   
+                font-size: 12px; text-align: center;">                                                        
+                    No se encontraron permisos que coincidan con la búsqueda.                                 
+                </div>                                                                                        
+            </div>                                                                                            
+
+            {% if form.permisos_personalizados.errors %}                                                      
+                <div class="form-error" style="color: var(--crit); margin-top: 4px; font-size: 12px;">{{      
+                form.permisos_personalizados.errors.0 }}</div>                                                
+            {% endif %}                                                                                       
+        </div>                                                                                                
+
+        <div class="form-group" style="display: flex; align-items: center; gap: 8px; margin-top: 1.25rem;">   
+            {{ form.is_active }}                                                                              
+            <label for="{{ form.is_active.id_for_label }}" style="margin: 0; cursor: pointer;">{{             
+            form.is_active.label }}</label>                                                                   
+        </div>                                                                                                
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 1.5rem;">                
+            <a href="{% url 'cuentas:usuario_lista' %}" class="btn btn-secondary">Cancelar</a>                
+            <button type="submit" class="btn btn-primary">Guardar</button>                                    
+        </div>                                                                                                
+    </form>                                                                                                   
+</div>                                                                                                        
+
+<script>                                                                                                      
+window.initUsuarioForm = function(root) {                                                                     
+    root = root || document;                                                                                  
+    var rolSelect = root.querySelector('select[name="rol"]');                                                 
+    var grpAlmacenes = root.querySelector('#grupoAlmacenesAsignados');                                        
+    var grpPermisos = root.querySelector('#grupoPermisosGranulares');                                         
+
+    function actualizarVisibilidadRol() {                                                                     
+        if (!rolSelect) return;                                                                               
+        var esUsuarioNormal = (rolSelect.value === "USUARIO");                                                
+        if (grpAlmacenes) grpAlmacenes.style.display = esUsuarioNormal ? "block" : "none";                    
+        if (grpPermisos) grpPermisos.style.display = esUsuarioNormal ? "block" : "none";                      
+    }                                                                                                         
+
+    if (rolSelect && !rolSelect.dataset.listenerAttached) {                                                   
+        rolSelect.dataset.listenerAttached = "1";                                                             
+        rolSelect.addEventListener("change", actualizarVisibilidadRol);                                       
+    }                                                                                                         
+    actualizarVisibilidadRol();                                                                               
+
+    // ─── LÓGICA DE ALMACENES ASIGNADOS & ACCESO A TODOS ───                                                 
+    var chkTodosAlmacenes = root.querySelector('input[name="acceso_todos_almacenes"]');                       
+    var bloqueAlmacenesEspecificos = root.querySelector('#bloqueAlmacenesEspecificos');                       
+    var counterBadgeAlm = root.querySelector("#almacenesCounterBadge");                                       
+    var almCheckboxes = root.querySelectorAll('input[name="almacenes_asignados"]');                           
+    var btnSelectAllAlm = root.querySelector("#btnSelectAllAlmacenes");                                       
+    var btnClearAlm = root.querySelector("#btnClearAlmacenes");                                               
+    var almSearchInput = root.querySelector("#almacenSearchInput");                                           
+    var almSearchEmpty = root.querySelector("#almacenSearchEmpty");                                           
+    var almOptionRows = root.querySelectorAll(".almacen-option-row");                                         
+
+    function alternarTodosAlmacenes() {                                                                       
+        if (!chkTodosAlmacenes || !bloqueAlmacenesEspecificos) return;                                        
+        if (chkTodosAlmacenes.checked) {                                                                      
+            bloqueAlmacenesEspecificos.style.opacity = "0.35";                                                
+            bloqueAlmacenesEspecificos.style.pointerEvents = "none";                                          
+            almCheckboxes.forEach(function(box) {                                                             
+                box.checked = false;                                                                          
+                var row = box.closest(".almacen-option-row");                                                 
+                if (row) row.classList.remove("is-checked");                                                  
+            });                                                                                               
+            updateAlmacenesCounter();                                                                         
+        } else {                                                                                              
+            bloqueAlmacenesEspecificos.style.opacity = "1";                                                   
+            bloqueAlmacenesEspecificos.style.pointerEvents = "auto";                                          
+        }                                                                                                     
+    }                                                                                                         
+
+    if (chkTodosAlmacenes && !chkTodosAlmacenes.dataset.listenerAttached) {                                   
+        chkTodosAlmacenes.dataset.listenerAttached = "1";                                                     
+        chkTodosAlmacenes.addEventListener("change", alternarTodosAlmacenes);                                 
+    }                                                                                                         
+
+    function updateAlmacenesCounter() {                                                                       
+        var checked = 0;                                                                                      
+        almCheckboxes.forEach(function(box) {                                                                 
+            var row = box.closest(".almacen-option-row");                                                     
+            if (box.checked) {                                                                                
+                checked++;                                                                                    
+                if (row) row.classList.add("is-checked");                                                     
+            } else {                                                                                          
+                if (row) row.classList.remove("is-checked");                                                  
+            }                                                                                                 
+        });                                                                                                   
+        if (counterBadgeAlm) {                                                                                
+            if (chkTodosAlmacenes && chkTodosAlmacenes.checked) {                                             
+                counterBadgeAlm.textContent = "Todos los almacenes";                                          
+                counterBadgeAlm.className = "badge badge-accent";                                             
+            } else {                                                                                          
+                counterBadgeAlm.textContent = checked === 1 ? "1 seleccionado" : checked + " seleccionados";  
+                counterBadgeAlm.className = checked > 0 ? "badge badge-accent" : "badge badge-secondary";     
+            }                                                                                                 
+        }                                                                                                     
+    }                                                                                                         
+
+    almCheckboxes.forEach(function(box) {                                                                     
+        if (!box.dataset.listenerAttached) {                                                                  
+            box.dataset.listenerAttached = "1";                                                               
+            box.addEventListener("change", updateAlmacenesCounter);                                           
+        }                                                                                                     
+    });                                                                                                       
+
+    if (btnSelectAllAlm && !btnSelectAllAlm.dataset.listenerAttached) {                                       
+        btnSelectAllAlm.dataset.listenerAttached = "1";                                                       
+        btnSelectAllAlm.addEventListener("click", function(e) {                                               
+            e.preventDefault();                                                                               
+            if (chkTodosAlmacenes && chkTodosAlmacenes.checked) return;                                       
+            almOptionRows.forEach(function(row) {                                                             
+                if (row.style.display !== "none") {                                                           
+                    var box = row.querySelector('input[type="checkbox"]');                                    
+                    if (box) box.checked = true;                                                              
+                }                                                                                             
+            });                                                                                               
+            updateAlmacenesCounter();                                                                         
+        });                                                                                                   
+    }                                                                                                         
+
+    if (btnClearAlm && !btnClearAlm.dataset.listenerAttached) {                                               
+        btnClearAlm.dataset.listenerAttached = "1";                                                           
+        btnClearAlm.addEventListener("click", function(e) {                                                   
+            e.preventDefault();                                                                               
+            almCheckboxes.forEach(function(box) {                                                             
+                box.checked = false;                                                                          
+            });                                                                                               
+            updateAlmacenesCounter();                                                                         
+        });                                                                                                   
+    }                                                                                                         
+
+    if (almSearchInput && !almSearchInput.dataset.listenerAttached) {                                         
+        almSearchInput.dataset.listenerAttached = "1";                                                        
+        almSearchInput.addEventListener("input", function() {                                                 
+            var q = this.value.toLowerCase().trim();                                                          
+            var visible = 0;                                                                                  
+            almOptionRows.forEach(function(row) {                                                             
+                var name = row.getAttribute("data-name") || "";                                               
+                if (!q || name.indexOf(q) !== -1) {                                                           
+                    row.style.display = "flex";                                                               
+                    visible++;                                                                                
+                } else {                                                                                      
+                    row.style.display = "none";                                                               
+                }                                                                                             
+            });                                                                                               
+            if (almSearchEmpty) {                                                                             
+                almSearchEmpty.style.display = visible === 0 ? "block" : "none";                              
+            }                                                                                                 
+        });                                                                                                   
+    }                                                                                                         
+    alternarTodosAlmacenes();                                                                                 
+    updateAlmacenesCounter();                                                                                 
+
+    // ─── LÓGICA DE PERMISOS GRANULARES & PRESETS ───                                                        
+    var presetsData = {};                                                                                     
+    if (grpPermisos && grpPermisos.getAttribute("data-presets")) {                                            
+        try {                                                                                                 
+            presetsData = JSON.parse(grpPermisos.getAttribute("data-presets"));                               
+        } catch(e) {                                                                                          
+            console.error("Error parseando data-presets:", e);                                                
+        }                                                                                                     
+    }                                                                                                         
+
+    var permCheckboxes = root.querySelectorAll('input[name="permisos_personalizados"]');                      
+    var permCounterBadge = root.querySelector("#permisosCounterBadge");                                       
+    var btnSelectAllPerms = root.querySelector("#btnSelectAllPermisos");                                      
+    var btnClearPerms = root.querySelector("#btnClearPermisos");                                              
+    var permSearchInput = root.querySelector("#permisoSearchInput");                                          
+    var permSearchEmpty = root.querySelector("#permisoSearchEmpty");                                          
+    var permOptionRows = root.querySelectorAll(".permiso-option-row");                                        
+    var presetCards = root.querySelectorAll(".btn-preset-card");                                              
+    var moduleCards = root.querySelectorAll(".permiso-module-card");                                          
+
+    function updatePermisosCounters() {                                                                       
+        var checkedBoxes = root.querySelectorAll('input[name="permisos_personalizados"]:checked');            
+        var totalBoxes = permCheckboxes.length;                                                               
+        var checkedCount = checkedBoxes.length;                                                               
+
+        // Actualizar clase is-checked en cada fila de permiso                                                
+        permCheckboxes.forEach(function(box) {                                                                
+            var row = box.closest(".permiso-option-row");                                                     
+            if (row) {                                                                                        
+                if (box.checked) row.classList.add("is-checked");                                             
+                else row.classList.remove("is-checked");                                                      
+            }                                                                                                 
+        });                                                                                                   
+
+        if (permCounterBadge) {                                                                               
+            permCounterBadge.textContent = checkedCount + " de " + totalBoxes + " seleccionados";             
+            permCounterBadge.className = checkedCount > 0 ? "badge badge-accent" : "badge badge-secondary";   
+        }                                                                                                     
+
+        // Badges y botones toggle por módulo                                                                 
+        moduleCards.forEach(function(card) {                                                                  
+            var modCod = card.getAttribute("data-module-card");                                               
+            var modBadge = card.querySelector("#badge_mod_" + modCod);                                        
+            var modToggleBtn = card.querySelector('.permiso-btn-module-toggle[data-module-toggle="' + modCod +
+            '"]');                                                                                            
+            var modBoxes = card.querySelectorAll('.permiso-checkbox');                                        
+            var modTotal = modBoxes.length;                                                                   
+            var modChecked = card.querySelectorAll('.permiso-checkbox:checked').length;                       
+
+            if (modBadge) {                                                                                   
+                modBadge.textContent = modChecked + " / " + modTotal;                                         
+                modBadge.className = modChecked > 0 ? "badge badge-accent permiso-module-badge" : "badge      
+                badge-secondary permiso-module-badge";                                                        
+            }                                                                                                 
+            if (modToggleBtn) {                                                                               
+                modToggleBtn.textContent = (modChecked === modTotal && modTotal > 0) ? "Desmarcar" : "Marcar";
+            }                                                                                                 
+        });                                                                                                   
+
+        // Detección de coincidencia exacta con plantillas (Presets)                                          
+        var checkedCodes = new Set();                                                                         
+        checkedBoxes.forEach(function(b) {                                                                    
+            var c = b.getAttribute("data-codigo");                                                            
+            if (c) checkedCodes.add(c);                                                                       
+        });                                                                                                   
+
+        var matchedPreset = null;                                                                             
+        for (var pKey in presetsData) {                                                                       
+            var pCodes = presetsData[pKey].codigos || [];                                                     
+            if (pCodes.length === checkedCodes.size) {                                                        
+                var allMatch = pCodes.every(function(code) { return checkedCodes.has(code); });               
+                if (allMatch) {                                                                               
+                    matchedPreset = pKey;                                                                     
+                    break;                                                                                    
+                }                                                                                             
+            }                                                                                                 
+        }                                                                                                     
+
+        presetCards.forEach(function(card) {                                                                  
+            var key = card.getAttribute("data-preset");                                                       
+            if (matchedPreset) {                                                                              
+                if (key === matchedPreset) card.classList.add("active");                                      
+                else card.classList.remove("active");                                                         
+            } else {                                                                                          
+                if (key === "CUSTOM") card.classList.add("active");                                           
+                else card.classList.remove("active");                                                         
+            }                                                                                                 
+        });                                                                                                   
+    }                                                                                                         
+
+    permCheckboxes.forEach(function(box) {                                                                    
+        if (!box.dataset.listenerAttached) {                                                                  
+            box.dataset.listenerAttached = "1";                                                               
+            box.addEventListener("change", updatePermisosCounters);                                           
+        }                                                                                                     
+    });                                                                                                       
+
+    presetCards.forEach(function(card) {                                                                      
+        if (!card.dataset.listenerAttached) {                                                                 
+            card.dataset.listenerAttached = "1";                                                              
+            card.addEventListener("click", function(e) {                                                      
+                e.preventDefault();                                                                           
+                var presetKey = this.getAttribute("data-preset");                                             
+                if (presetKey === "CUSTOM") {                                                                 
+                    presetCards.forEach(function(c) { c.classList.remove("active"); });                       
+                    card.classList.add("active");                                                             
+                    return;                                                                                   
+                }                                                                                             
+
+                var targetCodes = (presetsData[presetKey] && presetsData[presetKey].codigos) ?                
+                presetsData[presetKey].codigos : [];                                                          
+                var targetSet = new Set(targetCodes);                                                         
+
+                permCheckboxes.forEach(function(box) {                                                        
+                    var code = box.getAttribute("data-codigo");                                               
+                    box.checked = targetSet.has(code);                                                        
+                });                                                                                           
+
+                updatePermisosCounters();                                                                     
+            });                                                                                               
+        }                                                                                                     
+    });                                                                                                       
+
+    // Toggle por módulo (Marcar / Desmarcar)                                                                 
+    root.querySelectorAll(".permiso-btn-module-toggle").forEach(function(btn) {                               
+        if (!btn.dataset.listenerAttached) {                                                                  
+            btn.dataset.listenerAttached = "1";                                                               
+            btn.addEventListener("click", function(e) {                                                       
+                e.preventDefault();                                                                           
+                var modCod = this.getAttribute("data-module-toggle");                                         
+                var modCard = root.querySelector('.permiso-module-card[data-module-card="' + modCod + '"]');  
+                if (!modCard) return;                                                                         
+                var boxes = modCard.querySelectorAll('.permiso-checkbox');                                    
+                var allChecked = Array.from(boxes).every(function(b) { return b.checked; });                  
+                var targetState = !allChecked;                                                                
+                boxes.forEach(function(b) {                                                                   
+                    b.checked = targetState;                                                                  
+                });                                                                                           
+                updatePermisosCounters();                                                                     
+            });                                                                                               
+        }                                                                                                     
+    });                                                                                                       
+
+    if (btnSelectAllPerms && !btnSelectAllPerms.dataset.listenerAttached) {                                   
+        btnSelectAllPerms.dataset.listenerAttached = "1";                                                     
+        btnSelectAllPerms.addEventListener("click", function(e) {                                             
+            e.preventDefault();                                                                               
+            permOptionRows.forEach(function(row) {                                                            
+                if (row.style.display !== "none") {                                                           
+                    var box = row.querySelector('input[type="checkbox"]');                                    
+                    if (box) box.checked = true;                                                              
+                }                                                                                             
+            });                                                                                               
+            updatePermisosCounters();                                                                         
+        });                                                                                                   
+    }                                                                                                         
+
+    if (btnClearPerms && !btnClearPerms.dataset.listenerAttached) {                                           
+        btnClearPerms.dataset.listenerAttached = "1";                                                         
+        btnClearPerms.addEventListener("click", function(e) {                                                 
+            e.preventDefault();                                                                               
+            permCheckboxes.forEach(function(box) {                                                            
+                box.checked = false;                                                                          
+            });                                                                                               
+            updatePermisosCounters();                                                                         
+        });                                                                                                   
+    }                                                                                                         
+
+    if (permSearchInput && !permSearchInput.dataset.listenerAttached) {                                       
+        permSearchInput.dataset.listenerAttached = "1";                                                       
+        permSearchInput.addEventListener("input", function() {                                                
+            var q = this.value.toLowerCase().trim();                                                          
+            var totalVisible = 0;                                                                             
+
+            moduleCards.forEach(function(card) {                                                              
+                var rows = card.querySelectorAll(".permiso-option-row");                                      
+                var cardVisible = 0;                                                                          
+                rows.forEach(function(row) {                                                                  
+                    var name = row.getAttribute("data-name") || "";                                           
+                    var desc = row.getAttribute("data-desc") || "";                                           
+                    var cod = (row.getAttribute("data-codigo") || "").toLowerCase();                          
+                    if (!q || name.indexOf(q) !== -1 || desc.indexOf(q) !== -1 || cod.indexOf(q) !== -1) {    
+                        row.style.display = "flex";                                                           
+                        cardVisible++;                                                                        
+                    } else {                                                                                  
+                        row.style.display = "none";                                                           
+                    }                                                                                         
+                });                                                                                           
+                card.style.display = cardVisible > 0 ? "block" : "none";                                      
+                totalVisible += cardVisible;                                                                  
+            });                                                                                               
+
+            if (permSearchEmpty) {                                                                            
+                permSearchEmpty.style.display = totalVisible === 0 ? "block" : "none";                        
+            }                                                                                                 
+        });                                                                                                   
+    }                                                                                                         
+
+    updatePermisosCounters();                                                                                 
+    if (typeof window.initPasswordToggles === "function") {                                                   
+        window.initPasswordToggles(root);                                                                     
+    }                                                                                                         
+};                                                                                                            
+
+document.addEventListener("DOMContentLoaded", function() {                                                    
+    window.initUsuarioForm(document);                                                                         
+});                                                                                                           
+</script>                                                                                                     
+{% endblock %}
