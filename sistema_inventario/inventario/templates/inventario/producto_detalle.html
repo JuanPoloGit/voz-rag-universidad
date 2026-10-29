@@ -77,8 +77,13 @@
                 <a href="{% url 'inventario:producto-lista' %}" class="btn btn-sm btn-secondary">
                     ← Catálogo
                 </a>
+                {% if request.user.es_administrador or 'movimientos.entrada' in request.user.get_permisos_codigos %}
+                <button type="button" class="btn btn-sm btn-primary" onclick="abrirModalEntradaProducto()" style="display: inline-flex; align-items: center; gap: 5px; font-weight: 600;">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Registrar Entrada
+                </button>
+                {% endif %}
                 {% if request.user.es_administrador or 'catalogo.editar' in request.user.get_permisos_codigos %}
-                <button type="button" class="btn btn-sm btn-primary" onclick="openAppModal('modalEditarProductoDetalle')">
+                <button type="button" class="btn btn-sm btn-secondary" onclick="openAppModal('modalEditarProductoDetalle')">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -1px; margin-right: 4px;"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Editar
                 </button>
                 <form method="post" action="{% url 'inventario:producto-toggle-activo' producto.id %}" style="display: inline; margin: 0;">
@@ -98,6 +103,23 @@
             </div>
         {% endif %}
     </div>
+
+    <!-- Banner Contextual Informativo de Stock Bajo / Agotado -->
+    {% with disp=existencias.0.stock_disponible|default:0 %}
+    {% if disp <= producto.stock_minimo %}
+    <div style="background: {% if disp == 0 %}rgba(239, 68, 68, 0.12){% else %}rgba(245, 158, 11, 0.12){% endif %}; border: 1px solid {% if disp == 0 %}rgba(239, 68, 68, 0.35){% else %}rgba(245, 158, 11, 0.35){% endif %}; border-radius: var(--radius-sm); padding: 12px 16px; display: flex; align-items: center; gap: 12px;">
+        <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: {% if disp == 0 %}var(--crit){% else %}var(--warn){% endif %}; box-shadow: 0 0 8px {% if disp == 0 %}var(--crit){% else %}var(--warn){% endif %}; flex-shrink: 0;"></span>
+        <div>
+            <strong style="color: var(--text); font-size: 13.5px;">
+                {% if disp == 0 %}¡Atención! Este producto se encuentra sin stock disponible (Stock 0).{% else %}¡Atención! Stock bajo: {{ disp }} unidades disponibles (umbral mínimo: {{ producto.stock_minimo }}).{% endif %}
+            </strong>
+            <div style="font-size: 12px; color: var(--text-dim); margin-top: 2px;">
+                Utiliza el botón <strong>Registrar Entrada</strong> de la cabecera superior para reabastecer las existencias de este artículo.
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    {% endwith %}
 
     <!-- Indicadores de Stock compactos -->
     <div class="detail-metrics-grid">
@@ -319,7 +341,160 @@
         </div>
     </form>
 </dialog>
+
+<!-- ═══ MODAL REGISTRAR ENTRADA RÁPIDA DE STOCK (ACCIÓN DIRECTA CONTEXTUAL) ═══ -->
+<dialog id="modalEntradaRapidaProducto" class="app-modal">
+    <form method="post" action="{% url 'inventario:movimiento-entrada' %}" id="formModalEntradaRapidaProducto" style="display: flex; flex-direction: column; max-height: 90dvh; overflow: hidden;">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <input type="hidden" name="clave_idempotencia" id="idemEntradaProducto">
+        <input type="hidden" name="producto" value="{{ producto.id }}">
+
+        <div class="app-modal-header">
+            <h2 class="app-modal-title">Registrar Entrada de Stock</h2>
+            <button type="button" class="app-modal-close" onclick="closeAppModal('modalEntradaRapidaProducto')">&times;</button>
+        </div>
+
+        <div class="app-modal-body">
+            <!-- Resumen fijo del producto seleccionado -->
+            <div style="background: var(--bg-deep-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 16px;">
+                <div style="font-size: 11px; text-transform: uppercase; color: var(--text-faint); font-weight: 600;">Artículo a abastecer</div>
+                <div style="font-weight: 700; font-size: 14.5px; color: var(--text); margin-top: 3px;">
+                    <code>{{ producto.codigo_interno }}</code> — {{ producto.nombre }}
+                </div>
+                <div style="font-size: 12px; color: var(--text-dim); margin-top: 4px; display: flex; gap: 12px; flex-wrap: wrap;">
+                    <span>Categoría: <strong style="color: var(--text);">{{ producto.categoria.nombre }}</strong></span>
+                    <span>Stock Mínimo: <strong style="color: var(--warn);">{{ producto.stock_minimo }}</strong></span>
+                    <span>Stock Actual: <strong style="color: var(--accent-bright);">{{ existencias.0.stock_disponible|default:0 }} unid.</strong></span>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label style="font-weight: 600;">Almacén / Bodega de Destino (Asignado)</label>
+                <div class="form-control" style="background: rgba(255,255,255,0.03); display: flex; align-items: center; justify-content: space-between; min-height: 40px; border: 1px solid var(--border);">
+                    <span style="font-weight: 600; color: var(--text); display: inline-flex; align-items: center; gap: 8px;">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent-2);"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                        {{ producto.categoria.almacen_principal.nombre }}
+                    </span>
+                    <span class="badge badge-neutral" style="font-size: 11px;">Almacén Fijo por Categoría</span>
+                </div>
+                <input type="hidden" name="almacen" value="{{ producto.categoria.almacen_principal_id }}">
+            </div>
+
+            <div class="form-grid-2">
+                <div class="form-group" id="grupoCantidadEntradaRapida">
+                    <label id="lblCantidadEntradaRapida" style="font-weight: 600;">Cantidad (Unidades Base) *</label>
+                    <input type="number" name="cantidad" id="inputCantidadEntradaRapida" class="form-control" min="1" required placeholder="Ej. 10">
+                </div>
+                <div class="form-group">
+                    <label style="font-weight: 600;">Ubicación Física Asignada</label>
+                    <div class="form-control" style="background: rgba(255,255,255,0.03); opacity: 0.95; display: flex; align-items: center; gap: 7px; min-height: 40px;">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent-2);"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                        <span style="color: var(--text-muted); font-size: 13px;">{{ producto.ubicacion.nombre|default:"Sin ubicación física asignada" }}</span>
+                    </div>
+                    {% if producto.ubicacion %}
+                    <input type="hidden" name="ubicacion" value="{{ producto.ubicacion.id }}">
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if producto.nombre_empaque and producto.unidades_por_empaque > 1 %}
+            <div class="form-group" style="margin-bottom: 10px;">
+                <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" name="es_empaque" id="chkEsEmpaqueRapido">
+                    <span style="font-size: 13px;">Ingresar por {{ producto.nombre_empaque }}s (1 {{ producto.nombre_empaque }} = {{ producto.unidades_por_empaque }} unidades)</span>
+                </label>
+            </div>
+
+            <div class="form-group" id="grupoEmpaquesRapido" style="display: none; background: rgba(59, 111, 240, 0.08); border: 1px solid rgba(59, 111, 240, 0.25); border-radius: 8px; padding: 12px 14px; margin-bottom: 1rem;">
+                <label style="font-weight: 700; color: var(--text); display: block; margin-bottom: 4px;">Cantidad de {{ producto.nombre_empaque }}s *</label>
+                <input type="number" name="cantidad_empaques" id="inputCantEmpaquesRapido" class="form-control" min="1" placeholder="Ej. 5">
+                <div id="dispTotalCalculadoRapido" style="margin-top: 6px; font-weight: 600; color: var(--ok); font-size: 12.5px;"></div>
+            </div>
+            {% endif %}
+
+            <div class="form-group" style="margin-bottom: 0;">
+                <label style="font-weight: 600;">Motivo / Observación de la Entrada</label>
+                <input type="text" name="motivo" class="form-control" value="Abastecimiento por alerta de stock" placeholder="Ej. Compra directa, reposición, dotación inicial...">
+            </div>
+        </div>
+
+        <div class="app-modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeAppModal('modalEntradaRapidaProducto')">Cancelar</button>
+            <button type="submit" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 6px;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                Confirmar Entrada
+            </button>
+        </div>
+    </form>
+</dialog>
 {% endblock %}
 
 {% block extra_js %}
+<script>
+function abrirModalEntradaProducto() {
+    var modal = document.getElementById('modalEntradaRapidaProducto');
+    if (!modal) return;
+    var idemInput = document.getElementById('idemEntradaProducto');
+    if (idemInput) {
+        idemInput.value = 'det-ent-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9);
+    }
+    openAppModal('modalEntradaRapidaProducto');
+    setTimeout(function() {
+        var chkEmpaque = document.getElementById('chkEsEmpaqueRapido');
+        if (chkEmpaque && chkEmpaque.checked) {
+            var empInput = document.getElementById('inputCantEmpaquesRapido');
+            if (empInput) empInput.focus();
+        } else {
+            var cantInput = document.getElementById('inputCantidadEntradaRapida');
+            if (cantInput) cantInput.focus();
+        }
+    }, 150);
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Cálculo dinámico de empaques si aplica
+    var chkEmpaque = document.getElementById('chkEsEmpaqueRapido');
+    var grupoEmp = document.getElementById('grupoEmpaquesRapido');
+    var inputEmp = document.getElementById('inputCantEmpaquesRapido');
+    var inputCant = document.getElementById('inputCantidadEntradaRapida');
+    var dispCalc = document.getElementById('dispTotalCalculadoRapido');
+    var unidadesPorEmpaque = parseInt("{{ producto.unidades_por_empaque|default:1 }}", 10) || 1;
+    var nombreEmpaque = "{{ producto.nombre_empaque|default:''|escapejs }}";
+
+    if (chkEmpaque && grupoEmp && inputEmp && inputCant) {
+        chkEmpaque.addEventListener('change', function() {
+            if (chkEmpaque.checked) {
+                grupoEmp.style.display = 'block';
+                inputCant.readOnly = true;
+                inputCant.style.opacity = '0.7';
+                inputEmp.focus();
+                actualizarCalculoEmpaque();
+            } else {
+                grupoEmp.style.display = 'none';
+                inputCant.readOnly = false;
+                inputCant.style.opacity = '1';
+                if (dispCalc) dispCalc.textContent = '';
+                inputCant.focus();
+            }
+        });
+
+        function actualizarCalculoEmpaque() {
+            var emps = parseInt(inputEmp.value, 10);
+            if (!isNaN(emps) && emps > 0) {
+                var total = emps * unidadesPorEmpaque;
+                inputCant.value = total;
+                if (dispCalc) {
+                    dispCalc.textContent = '= ' + total + ' unidades base a ingresar (' + emps + ' ' + (nombreEmpaque || 'empaques') + ' × ' + unidadesPorEmpaque + ' unid.)';
+                }
+            } else {
+                inputCant.value = '';
+                if (dispCalc) dispCalc.textContent = '';
+            }
+        }
+
+        inputEmp.addEventListener('input', actualizarCalculoEmpaque);
+    }
+});
+</script>
 {% endblock %}

@@ -64,13 +64,21 @@ class LoginView(View):
                 next_url = request.GET.get("next") or settings.LOGIN_REDIRECT_URL
                 return redirect(next_url)
             else:
-                # Fallo: registrar intento y comprobar si se disparó el bloqueo
-                registrar_intento_fallido(username, ip)
-                bloqueado, mensaje_bloqueo = verificar_bloqueo(username, ip)
-                if bloqueado:
-                    form.add_error(None, mensaje_bloqueo)
+                # 3. Comprobar si la cuenta existe y está inactiva o eliminada lógicamente
+                usuario_db = UsuarioAudacIA.objects.filter(username__iexact=username).first()
+                if usuario_db and (not usuario_db.is_active or usuario_db.eliminado_logicamente):
+                    form.add_error(
+                        None,
+                        "Tu cuenta ha sido desactivada. Por favor, contacta con tu administrador para reactivar el acceso.",
+                    )
                 else:
-                    form.add_error(None, "Nombre de usuario o contraseña incorrectos.")
+                    # Fallo: registrar intento y comprobar si se disparó el bloqueo
+                    registrar_intento_fallido(username, ip)
+                    bloqueado, mensaje_bloqueo = verificar_bloqueo(username, ip)
+                    if bloqueado:
+                        form.add_error(None, mensaje_bloqueo)
+                    else:
+                        form.add_error(None, "Nombre de usuario o contraseña incorrectos.")
 
         return render(request, self.template_name, {"form": form})
 

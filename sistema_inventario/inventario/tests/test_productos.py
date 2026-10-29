@@ -276,6 +276,18 @@ class TestProductoVistas(ProductoBaseTestCase):
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, self.prod.codigo_interno)
         self.assertContains(r, "10")  # stock disponible
+        self.assertContains(r, "modalEntradaRapidaProducto")
+        self.assertContains(r, "Registrar Entrada")
+        self.assertContains(r, self.prod.categoria.almacen_principal.nombre)
+
+    def test_detalle_renderiza_modal_entrada_manual(self):
+        self.client.force_login(self.admin)
+        url = reverse("inventario:producto-detalle", args=[self.prod.pk])
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "modalEntradaRapidaProducto")
+        self.assertContains(r, "abrirModalEntradaProducto")
+        self.assertNotContains(r, "urlParams.get('accion')")
 
     def test_endpoint_verificar_nombre_similar(self):
         self.client.force_login(self.admin)

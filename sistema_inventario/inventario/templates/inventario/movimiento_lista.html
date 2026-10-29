@@ -224,6 +224,7 @@
             </div>
             {% endif %}
 
+            {% if vista_actual != 'SIN_ROTACION' %}
             <div class="filter-dates-group">
                 <div class="filter-date-item">
                     <span style="font-size: 11.5px; color: var(--text-faint); white-space: nowrap; font-weight: 500;">Desde:</span>
@@ -234,6 +235,7 @@
                     <input type="date" name="fecha_hasta" value="{{ fecha_hasta }}" class="form-control" style="font-size: 12px; padding: 4px 8px; width: 100%; min-width: 0; box-sizing: border-box;">
                 </div>
             </div>
+            {% endif %}
 
             {% if vista_actual == 'PRESTAMOS' %}
             <div style="flex: 1; min-width: 140px;">
@@ -241,6 +243,15 @@
                     <option value="">Todos los estados</option>
                     {% for val, etiq in estados_prestamo %}
                         <option value="{{ val }}" {% if estado_prestamo == val %}selected{% endif %}>{{ etiq }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% elif vista_actual == 'CONTEOS' %}
+            <div style="flex: 1; min-width: 140px;">
+                <select name="estado_conteo" class="form-control">
+                    <option value="">Todos los estados</option>
+                    {% for val, etiq in estados_conteo %}
+                        <option value="{{ val }}" {% if estado_conteo == val %}selected{% endif %}>{{ etiq }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -255,11 +266,15 @@
             </div>
             {% endif %}
 
-            {% if q or fecha_desde or fecha_hasta or almacen_id or estado_prestamo or tipo_seleccionado %}
-            <div>
-                <a href="{% url 'inventario:movimiento-lista' %}?vista={{ vista_actual }}" class="btn btn-sm btn-secondary" style="white-space: nowrap;">Limpiar</a>
+            <div style="display: flex; gap: 6px; align-items: center;">
+                <button type="submit" class="btn btn-sm btn-primary" style="white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; font-weight: 600;">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                    Filtrar
+                </button>
+                {% if q or fecha_desde or fecha_hasta or almacen_id or estado_prestamo or estado_conteo or tipo_seleccionado or dias_estancados != 30 %}
+                <a href="{% url 'inventario:movimiento-lista' %}?vista={{ vista_actual }}" class="btn btn-sm btn-secondary" style="white-space: nowrap; padding: 6px 10px;">Limpiar</a>
+                {% endif %}
             </div>
-            {% endif %}
         </form>
     </div>
 

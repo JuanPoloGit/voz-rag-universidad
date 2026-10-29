@@ -18,6 +18,7 @@
         @font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 700; font-display: swap; src: url("{% static 'fonts/space-grotesk-700.woff2' %}") format('woff2'); }
 
         :root {
+            color-scheme: dark;
             --bg-deep: #050b24;
             --bg-deep-2: #081234;
             --bg-panel: #0d1940;
@@ -786,6 +787,28 @@
             background: var(--bg-panel-2);
             color: var(--text);
             transition: border-color 0.15s ease;
+        }
+
+        input[type="date"], input[type="datetime-local"] {
+            color-scheme: dark !important;
+        }
+
+        input[type="date"]::-webkit-calendar-picker-indicator,
+        input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+            filter: brightness(0) invert(1) drop-shadow(0 0 2px rgba(92, 139, 255, 0.7)) !important;
+            cursor: pointer;
+            opacity: 0.95 !important;
+            padding: 3px;
+            border-radius: 4px;
+            transition: opacity 0.15s ease, filter 0.15s ease, background 0.15s ease, transform 0.15s ease;
+        }
+
+        input[type="date"]::-webkit-calendar-picker-indicator:hover,
+        input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
+            opacity: 1 !important;
+            filter: brightness(0) invert(1) drop-shadow(0 0 6px #5c8bff) !important;
+            background: rgba(92, 139, 255, 0.25);
+            transform: scale(1.15);
         }
 
         .form-control:focus,
@@ -1798,7 +1821,7 @@
                                                 <input type="hidden" name="key" value="{{ ex.notificacion_key }}">
                                                 <input type="hidden" name="accion" value="una" class="js-notif-accion-input">
                                                 <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                                                <button type="submit" class="btn btn-sm btn-secondary js-notif-btn-label" style="padding: 5px 9px; font-size: 11px;">
+                                                <button type="submit" class="btn btn-sm btn-secondary js-notif-btn-label" style="padding: 3px 8px; font-size: 10.5px; opacity: 0.85;">
                                                     Marcar leída
                                                 </button>
                                             </form>
@@ -1824,7 +1847,7 @@
                                                 <input type="hidden" name="key" value="{{ ex.notificacion_key }}">
                                                 <input type="hidden" name="accion" value="una" class="js-notif-accion-input">
                                                 <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                                                <button type="submit" class="btn btn-sm btn-secondary js-notif-btn-label" style="padding: 5px 9px; font-size: 11px;">
+                                                <button type="submit" class="btn btn-sm btn-secondary js-notif-btn-label" style="padding: 3px 8px; font-size: 10.5px; opacity: 0.85;">
                                                     Marcar leída
                                                 </button>
                                             </form>
@@ -2573,18 +2596,22 @@
                     form.submit();
                 }
 
-                form.querySelectorAll("select, input[type='checkbox'], input[type='radio']").forEach(function(el) {
+                form.querySelectorAll("select, input[type='checkbox'], input[type='radio'], input[type='date'], input[type='datetime-local']").forEach(function(el) {
                     el.addEventListener("change", function() {
-                        submitCleanForm();
+                        submitCleanForm(el);
                     });
                 });
                 var timer = null;
-                form.querySelectorAll("input[type='text'], input[type='search']").forEach(function(input) {
+                form.querySelectorAll("input[type='text'], input[type='search'], input[type='number']").forEach(function(input) {
                     input.addEventListener("input", function() {
                         clearTimeout(timer);
                         timer = setTimeout(function() {
                             submitCleanForm(input);
                         }, 550);
+                    });
+                    input.addEventListener("change", function() {
+                        clearTimeout(timer);
+                        submitCleanForm(input);
                     });
                 });
             });

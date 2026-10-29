@@ -49,3 +49,42 @@ class UsuarioAudacIABackendTest(TestCase):
         self.assertFalse(self.backend.user_can_authenticate(self.usuario))
         user_auth = authenticate(username="operador_test", password=self.password)
         self.assertIsNone(user_auth)
+
+    def test_login_usuario_inactivo_muestra_mensaje_cuenta_desactivada(self):
+        """Verifica que el formulario de login informe con precisión si la cuenta está desactivada."""
+        self.usuario.is_active = False
+        self.usuario.save()
+
+        response = self.client.post(
+            "/cuentas/login/",
+            {"username": "operador_test", "password": self.password},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            "Tu cuenta ha sido desactivada. Por favor, contacta con tu administrador para reactivar el acceso.",
+        )
+
+    def test_login_usuario_eliminado_logicamente_muestra_mensaje_cuenta_desactivada(self):
+        """Verifica que un usuario eliminado lógicamente reciba el mensaje de cuenta desactivada."""
+        self.usuario.eliminado_logicamente = True
+        self.usuario.save()
+
+        response = self.client.post(
+            "/cuentas/login/",
+            {"username": "operador_test", "password": self.password},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            "Tu cuenta ha sido desactivada. Por favor, contacta con tu administrador para reactivar el acceso.",
+        )
+
+    def test_login_credenciales_incorrectas_muestra_mensaje_generico(self):
+        """Verifica que contraseñas erróneas o usuarios inexistentes muestren el mensaje genérico."""
+        response = self.client.post(
+            "/cuentas/login/",
+            {"username": "operador_test", "password": "PasswordIncorrecto999!"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Nombre de usuario o contraseña incorrectos.")
