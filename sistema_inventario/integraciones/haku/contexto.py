@@ -26,7 +26,7 @@ CACHE_ALIAS = "haku_contexto"
 VERSION_CONTEXTO_ACTUAL = 2
 MAX_CANDIDATOS = 3
 MAX_ULTIMAS_ACCIONES = 5
-TIMEOUT_INACTIVIDAD_SEGUNDOS = 7200  # 2 horas (7200 segundos)
+TIMEOUT_INACTIVIDAD_SEGUNDOS = 1800  # 30 minutos de inactividad conversacional
 
 
 @dataclass
@@ -71,7 +71,7 @@ class EstadoOperativoHaku:
     version_contexto: int = VERSION_CONTEXTO_ACTUAL
 
     def esta_expirado(self, timeout_segundos: int = TIMEOUT_INACTIVIDAD_SEGUNDOS) -> bool:
-        """Determina si han transcurrido más de 2 horas sin actividad."""
+        """Determina si han transcurrido más de 30 minutos sin actividad."""
         return (time.time() - self.ultimo_acceso) > timeout_segundos
 
     def actualizar_actividad(self) -> None:
@@ -277,9 +277,9 @@ class HakuOperationalContext:
                 cls._context_misses += 1
             return None
 
-        # Control de expiración por inactividad (2 horas = 7200 segundos)
+        # Control de expiración por inactividad (30 minutos = 1800 segundos)
         if estado.esta_expirado(TIMEOUT_INACTIVIDAD_SEGUNDOS):
-            logger.info("Contexto conversacional expirado (> 2 horas) para usuario %s", usuario_id)
+            logger.info("Contexto conversacional expirado (> 30 min) para usuario %s", usuario_id)
             estado.limpiar_foco_conversacional()
             cls.limpiar(usuario_id, session_key)
             with cls._lock:

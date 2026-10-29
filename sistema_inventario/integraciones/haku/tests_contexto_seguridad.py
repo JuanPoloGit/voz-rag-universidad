@@ -143,7 +143,7 @@ class HakuAuditoriaContextoSeguridadTestCase(TestCase):
     # ═════════════════════════════════════════════════════════════════════════
 
     def test_tarea1_separacion_ttls_conversacion_vs_propuesta(self):
-        """Conversación dura 7200s (2h); propuestas transaccionales caducan a los 1800s (30m)."""
+        """Conversación dura 1800s (30m); propuestas transaccionales caducan a los 1800s (30m)."""
         session_key = "sess_tarea1"
         contexto = HakuOperationalContext.obtener_o_crear(
             usuario_id=self.usuario_operador.id,
@@ -186,8 +186,8 @@ class HakuAuditoriaContextoSeguridadTestCase(TestCase):
             )
         self.assertIn("límite de 30 minutos", str(ctx_err.exception))
 
-        # Pero la memoria conversacional sigue recordando el producto tras 1 hora (3600s < 7200s)
-        contexto.ultimo_acceso = time.time() - 3600
+        # La memoria conversacional sigue recordando el producto tras 15 min (900s < 1800s)
+        contexto.ultimo_acceso = time.time() - 900
         HakuOperationalContext.guardar(contexto)
         ctx_recuperado = HakuOperationalContext.obtener(self.usuario_operador.id, session_key)
         self.assertIsNotNone(ctx_recuperado)
@@ -451,34 +451,34 @@ class HakuAuditoriaContextoSeguridadTestCase(TestCase):
     # TAREA 5: PRUEBAS DE MEMORIA EXTENDIDA (CASOS 1 A 5)
     # ═════════════════════════════════════════════════════════════════════════
 
-    def test_caso1_contexto_valido_1_hora_despues(self):
-        """Caso 1: 1 hora después (3600s < 7200s) el contexto debe recordar."""
+    def test_caso1_contexto_valido_15_min_despues(self):
+        """Caso 1: 15 min después (900s < 1800s) el contexto debe recordar."""
         session_key = "sess_caso_1"
         ctx = HakuOperationalContext.obtener_o_crear(self.usuario_operador.id, session_key)
         ctx.asignar_producto(self.prod_hdmi.id, self.prod_hdmi.codigo_interno, self.prod_hdmi.nombre)
         HakuOperationalContext.guardar(ctx)
 
-        # Simular 1 hora de inactividad
-        ctx.ultimo_acceso = time.time() - 3600
+        # Simular 15 min de inactividad
+        ctx.ultimo_acceso = time.time() - 900
         HakuOperationalContext.guardar(ctx)
 
         recuperado = HakuOperationalContext.obtener(self.usuario_operador.id, session_key)
         self.assertIsNotNone(recuperado)
         self.assertEqual(recuperado.producto_id, self.prod_hdmi.id)
 
-    def test_caso2_contexto_expirado_2_horas_mas_1_minuto(self):
-        """Caso 2: 2 horas + 1 minuto (7260s > 7200s) el contexto debe olvidar."""
+    def test_caso2_contexto_expirado_31_minutos(self):
+        """Caso 2: 31 minutos (1860s > 1800s) el contexto debe olvidar."""
         session_key = "sess_caso_2"
         ctx = HakuOperationalContext.obtener_o_crear(self.usuario_operador.id, session_key)
         ctx.asignar_producto(self.prod_hdmi.id, self.prod_hdmi.codigo_interno, self.prod_hdmi.nombre)
         HakuOperationalContext.guardar(ctx)
 
-        # Simular 2 horas y 1 minuto (7260 segundos)
-        ctx.ultimo_acceso = time.time() - 7260
+        # Simular 31 minutos (1860 segundos)
+        ctx.ultimo_acceso = time.time() - 1860
         HakuOperationalContext.guardar(ctx)
 
         recuperado = HakuOperationalContext.obtener(self.usuario_operador.id, session_key)
-        self.assertIsNone(recuperado, "El contexto debe haber sido purgado por expirar las 2 horas")
+        self.assertIsNone(recuperado, "El contexto debe haber sido purgado por expirar los 30 minutos")
 
     def test_caso3_propuesta_expirada_31_minutos(self):
         """Caso 3: Propuesta a los 31 minutos (1860s > 1800s) debe solicitar nueva operación."""

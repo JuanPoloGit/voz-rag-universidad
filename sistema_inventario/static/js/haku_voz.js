@@ -31,6 +31,7 @@
             ALERTAS: "/api/haku/alertas/",
             PRODUCTO_CREAR: "/api/haku/producto/crear/",
             PRODUCTO_EDITAR: "/api/haku/producto/editar/",
+            PRODUCTO_CONSULTAR_CODIGO_BARRAS: "/api/haku/producto/consultar-codigo-barras/",
             USUARIO_CREAR: "/api/haku/usuario/crear/",
             USUARIO_EDITAR: "/api/haku/usuario/editar/",
         },
@@ -562,6 +563,9 @@
             if (data.tipo === "propuesta" && data.propuesta) {
                 state.propuestaActiva = data.propuesta;
                 mostrarTarjetaPropuesta(data.propuesta);
+            } else if (data.tipo === "aclaracion" && data.requiere_escritura && data.esperando === "destinatario") {
+                state.propuestaActiva = null;
+                mostrarFormularioDestinatario(data);
             } else if (data.tipo === "formulario_crear_producto" && data.datos) {
                 state.propuestaActiva = null;
                 mostrarFormularioCrearProducto(data.datos);
@@ -973,7 +977,17 @@
                     <p><strong>Producto:</strong> ${escapeHtml(propuesta.producto_nombre)} (<code>${escapeHtml(propuesta.producto_codigo)}</code>)</p>
                     <p><strong>Cantidad:</strong> <span class="cantidad-destacada">${propuesta.cantidad}</span> unidades</p>
                     <p><strong>Almacén:</strong> ${escapeHtml(propuesta.almacen_origen_nombre)}</p>
-                    ${propuesta.destinatario ? `<p><strong>Destinatario:</strong> ${escapeHtml(propuesta.destinatario)}</p>` : ""}
+                    ${propuesta.destinatario ? `
+                        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:0.5rem 0.75rem; margin:0.5rem 0;">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span style="font-size:0.8rem; color:var(--text-muted);">Persona / Destinatario:</span>
+                                <button type="button" id="haku-btn-corregir-dest" style="background:transparent; border:none; color:var(--primary); font-size:0.75rem; cursor:pointer; text-decoration:underline;">✏️ Corregir nombre</button>
+                            </div>
+                            <div style="font-size:1.05rem; font-weight:700; color:var(--accent); margin-top:0.2rem;">
+                                👤 ${escapeHtml(propuesta.destinatario)}
+                            </div>
+                        </div>
+                    ` : ""}
                     ${propuesta.motivo ? `<p><strong>Motivo:</strong> ${escapeHtml(propuesta.motivo)}</p>` : ""}
                 </div>
                 <div class="propuesta-acciones">
@@ -999,6 +1013,73 @@
         document.getElementById("haku-btn-cancelar")?.addEventListener("click", () => {
             cancelarPropuestaManual(propuesta.id);
         });
+
+        document.getElementById("haku-btn-corregir-dest")?.addEventListener("click", () => {
+            mostrarFormularioDestinatario({
+                mensaje_pantalla: `Corrige el nombre de la persona para el préstamo de ${propuesta.producto_nombre}:`,
+            });
+        });
+    }
+
+    function mostrarFormularioDestinatario(dataAclaracion) {
+        const contenedor = document.getElementById("haku-propuesta-card");
+        if (!contenedor) return;
+
+        const candidatos = dataAclaracion.candidatos || [];
+        const botonesCandidatos = candidatos.length > 0
+            ? `<div style="margin-top:0.5rem; display:flex; flex-wrap:wrap; gap:0.4rem;">
+                <span style="font-size:0.75rem; color:var(--text-muted); width:100%;">Candidatos sugeridos:</span>
+                ${candidatos.map(c => `<button type="button" class="btn btn-candidato-nom" style="font-size:0.8rem; padding:0.25rem 0.6rem; border:1px solid var(--accent); background:rgba(129,140,248,0.1); border-radius:4px;">👤 ${escapeHtml(c)}</button>`).join("")}
+               </div>`
+            : "";
+
+        contenedor.innerHTML = `
+            <div class="propuesta-inner" style="border-color: var(--warning);">
+                <div class="propuesta-header">
+                    <h4>Identificación del Destinatario</h4>
+                    <span class="badge badge-warning">Entrada Escrita Obligatoria</span>
+                </div>
+                <div class="propuesta-detalles" style="margin-top:0.5rem;">
+                    <p style="color:var(--text-main); font-size:0.9rem;">
+                        ${escapeHtml(dataAclaracion.mensaje_pantalla || "Por favor escribe el nombre de la persona para registrar el préstamo:")}
+                    </p>
+                    ${botonesCandidatos}
+                </div>
+                <form id="haku-form-destinatario-escrito" style="margin-top:0.75rem; display:flex; gap:0.5rem;">
+                    <input type="text" id="haku-input-destinatario-manual" class="input-text" placeholder="Escribe el nombre completo..." required style="flex:1; padding:0.5rem 0.75rem; font-size:0.9rem;" autofocus />
+                    <button type="submit" class="btn btn-confirmar" style="padding:0.5rem 1rem;">Guardar</button>
+                    <button type="button" id="haku-btn-cancelar-dest" class="btn btn-cancelar" style="padding:0.5rem 0.75rem;">✕</button>
+                </form>
+            </div>
+        `;
+
+        contenedor.style.display = "block";
+
+        const inputNom = document.getElementById("haku-input-destinatario-manual");
+        inputNom?.focus();
+
+        // Clic en sugerencias
+        contenedor.querySelectorAll(".btn-candidato-nom").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const nom = btn.textContent.replace("👤", "").trim();
+                if (inputNom) inputNom.value = nom;
+            });
+        });
+
+        // Enviar formulario
+        document.getElementById("haku-form-destinatario-escrito")?.addEventListener("submit", (ev) => {
+            ev.preventDefault();
+            const val = inputNom ? inputNom.value.trim() : "";
+            if (!val) return;
+            contenedor.style.display = "none";
+            agregarMensajeChat("usuario", val);
+            enviarComandoHaku(val);
+        });
+
+        document.getElementById("haku-btn-cancelar-dest")?.addEventListener("click", () => {
+            contenedor.style.display = "none";
+            enviarComandoHaku("cancelar");
+        });
     }
 
     function mostrarFormularioCrearProducto(datos) {
@@ -1016,7 +1097,39 @@
                     <h4>Registro de Nuevo Producto</h4>
                     <span class="badge badge-info">Formulario</span>
                 </div>
+
+                <!-- Visor integrado del escáner de código de barras con cámara -->
+                <div id="haku-scanner-container" style="display:none; background:rgba(0,0,0,0.85); border:1px solid var(--accent); border-radius:8px; padding:0.75rem; margin-top:0.75rem; text-align:center;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                        <span style="font-size:0.85rem; font-weight:600; color:var(--text-main);">📸 Escáner de Códigos de Barras</span>
+                        <button type="button" id="haku-scanner-btn-cerrar" class="btn" style="padding:0.2rem 0.5rem; font-size:0.75rem;">✕ Cerrar visor</button>
+                    </div>
+                    <video id="haku-scanner-video" style="width:100%; max-height:220px; border-radius:4px; object-fit:cover; background:#000;" playsinline autoplay muted></video>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.5rem; gap:0.5rem;">
+                        <select id="haku-scanner-select-cam" class="input-text" style="font-size:0.75rem; flex:1;">
+                            <option value="">Cámara trasera / por defecto</option>
+                        </select>
+                        <button type="button" id="haku-scanner-btn-cambiar-cam" class="btn" style="font-size:0.75rem;">🔄 Cambiar</button>
+                    </div>
+                    <div id="haku-scanner-status" style="font-size:0.8rem; color:var(--text-muted); margin-top:0.4rem;">Iniciando...</div>
+                </div>
+
                 <form id="haku-form-crear-producto" class="haku-form-interactivo" style="margin-top: 1rem; display: flex; flex-direction: column; gap: 0.75rem;">
+                    <!-- Código de barras y botones de escaneo -->
+                    <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:0.6rem;">
+                        <label style="display:block; font-size:0.8rem; font-weight:600; color:var(--text-main); margin-bottom:0.25rem;">Código de barras (EAN-13, EAN-8, UPC, Code 128)</label>
+                        <div style="display:flex; gap:0.5rem;">
+                            <input type="text" id="haku-crear-codigo-barras" class="input-text" style="flex:1;" placeholder="Escribe o escanea el código">
+                            <button type="button" id="haku-btn-escanear-camara" class="btn btn-primary" style="white-space:nowrap; font-size:0.8rem;">
+                                📷 Escanear con cámara
+                            </button>
+                            <button type="button" id="haku-btn-verificar-codigo" class="btn" style="white-space:nowrap; font-size:0.8rem;">
+                                🔍 Buscar
+                            </button>
+                        </div>
+                        <div id="haku-crear-barcode-msg" style="display:none; font-size:0.8rem; margin-top:0.4rem;"></div>
+                    </div>
+
                     <div>
                         <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Nombre del producto *</label>
                         <input type="text" id="haku-crear-nombre" required class="input-text" style="width:100%;" placeholder="Ej. Cable HDMI 2.0 5m">
@@ -1047,17 +1160,13 @@
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
                         <div>
-                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Código de barras (opcional)</label>
-                            <input type="text" id="haku-crear-codigo-barras" class="input-text" style="width:100%;" placeholder="EAN / UPC">
-                        </div>
-                        <div>
                             <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Empaque (ej. Caja, Paquete)</label>
                             <input type="text" id="haku-crear-nombre-empaque" class="input-text" style="width:100%;" placeholder="Unidad / Paquete">
                         </div>
-                    </div>
-                    <div>
-                        <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Uds por empaque</label>
-                        <input type="number" id="haku-crear-uds-empaque" min="1" class="input-text" style="width:100%;" placeholder="Ej. 12">
+                        <div>
+                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Uds por empaque</label>
+                            <input type="number" id="haku-crear-uds-empaque" min="1" class="input-text" style="width:100%;" placeholder="Ej. 12">
+                        </div>
                     </div>
                     <div>
                         <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Descripción</label>
@@ -1072,7 +1181,34 @@
         `;
         contenedor.style.display = "block";
 
+        document.getElementById("haku-btn-escanear-camara")?.addEventListener("click", () => {
+            iniciarEscanerCamara("haku-crear-codigo-barras", (cod) => {
+                procesarCodigoBarrasDetectado(cod, "haku-crear");
+            });
+        });
+
+        document.getElementById("haku-scanner-btn-cerrar")?.addEventListener("click", () => {
+            detenerEscanerCamara();
+        });
+
+        document.getElementById("haku-scanner-btn-cambiar-cam")?.addEventListener("click", () => {
+            iniciarEscanerCamara("haku-crear-codigo-barras", (cod) => {
+                procesarCodigoBarrasDetectado(cod, "haku-crear");
+            });
+        });
+
+        document.getElementById("haku-btn-verificar-codigo")?.addEventListener("click", () => {
+            const val = document.getElementById("haku-crear-codigo-barras").value.trim();
+            if (val) procesarCodigoBarrasDetectado(val, "haku-crear");
+        });
+
+        document.getElementById("haku-crear-codigo-barras")?.addEventListener("change", (e) => {
+            const val = e.target.value.trim();
+            if (val) procesarCodigoBarrasDetectado(val, "haku-crear");
+        });
+
         document.getElementById("haku-btn-cancelar-crear")?.addEventListener("click", () => {
+            detenerEscanerCamara();
             ocultarTarjetaPropuesta();
             agregarMensajeChat("haku", "Operación de registro cancelada por el usuario.");
         });
@@ -1118,6 +1254,7 @@
     }
 
     function mostrarFormularioEditarProducto(datos) {
+        detenerEscanerCamara();
         const contenedor = document.getElementById("haku-propuesta-card");
         if (!contenedor) return;
 
@@ -1135,6 +1272,23 @@
                     <h4>Edición de Producto: ${escapeHtml(prod.nombre)}</h4>
                     <span class="badge badge-warning"><code>${escapeHtml(prod.codigo_interno)}</code></span>
                 </div>
+
+                <!-- Visor integrado del escáner de cámara para edición -->
+                <div id="haku-scanner-container" style="display:none; background:rgba(0,0,0,0.85); border:1px solid var(--accent); border-radius:8px; padding:0.75rem; margin-top:0.75rem; text-align:center;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                        <span style="font-size:0.85rem; font-weight:600; color:var(--text-main);">📸 Escáner de Códigos de Barras</span>
+                        <button type="button" id="haku-scanner-btn-cerrar" class="btn" style="padding:0.2rem 0.5rem; font-size:0.75rem;">✕ Cerrar visor</button>
+                    </div>
+                    <video id="haku-scanner-video" style="width:100%; max-height:220px; border-radius:4px; object-fit:cover; background:#000;" playsinline autoplay muted></video>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.5rem; gap:0.5rem;">
+                        <select id="haku-scanner-select-cam" class="input-text" style="font-size:0.75rem; flex:1;">
+                            <option value="">Cámara trasera / por defecto</option>
+                        </select>
+                        <button type="button" id="haku-scanner-btn-cambiar-cam" class="btn" style="font-size:0.75rem;">🔄 Cambiar</button>
+                    </div>
+                    <div id="haku-scanner-status" style="font-size:0.8rem; color:var(--text-muted); margin-top:0.4rem;">Iniciando...</div>
+                </div>
+
                 <form id="haku-form-editar-producto" class="haku-form-interactivo" style="margin-top: 1rem; display: flex; flex-direction: column; gap: 0.75rem;">
                     <input type="hidden" id="haku-editar-id" value="${prod.id}">
                     <div>
@@ -1147,25 +1301,35 @@
                             ${categoriasHtml}
                         </select>
                     </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
-                        <div>
-                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Código de barras (opcional)</label>
-                            <input type="text" id="haku-editar-codigo-barras" class="input-text" style="width:100%;" value="${escapeHtml(prod.codigo_barras || '')}">
+
+                    <!-- Código de barras con botón de escaneo con cámara -->
+                    <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:0.6rem;">
+                        <label style="display:block; font-size:0.8rem; font-weight:600; color:var(--text-main); margin-bottom:0.25rem;">Código de barras (opcional)</label>
+                        <div style="display:flex; gap:0.5rem;">
+                            <input type="text" id="haku-editar-codigo-barras" class="input-text" style="flex:1;" value="${escapeHtml(prod.codigo_barras || '')}" placeholder="EAN / UPC">
+                            <button type="button" id="haku-btn-escanear-camara-edit" class="btn btn-primary" style="white-space:nowrap; font-size:0.8rem;">
+                                📷 Escanear
+                            </button>
+                            <button type="button" id="haku-btn-verificar-codigo-edit" class="btn" style="white-space:nowrap; font-size:0.8rem;">
+                                🔍 Verificar
+                            </button>
                         </div>
+                        <div id="haku-editar-barcode-msg" style="display:none; font-size:0.8rem; margin-top:0.4rem;"></div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
                         <div>
                             <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Stock mínimo</label>
                             <input type="number" id="haku-editar-stock-minimo" min="0" class="input-text" style="width:100%;" value="${prod.stock_minimo !== undefined ? prod.stock_minimo : 0}">
                         </div>
-                    </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
                         <div>
                             <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Empaque (ej. Caja, Paquete)</label>
                             <input type="text" id="haku-editar-nombre-empaque" class="input-text" style="width:100%;" value="${escapeHtml(prod.nombre_empaque || '')}">
                         </div>
-                        <div>
-                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Uds por empaque</label>
-                            <input type="number" id="haku-editar-uds-empaque" min="1" class="input-text" style="width:100%;" value="${prod.unidades_por_empaque || ''}">
-                        </div>
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Uds por empaque</label>
+                        <input type="number" id="haku-editar-uds-empaque" min="1" class="input-text" style="width:100%;" value="${prod.unidades_por_empaque || ''}">
                     </div>
                     <div>
                         <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Descripción</label>
@@ -1180,13 +1344,26 @@
         `;
         contenedor.style.display = "block";
 
+        document.getElementById("haku-btn-escanear-camara-edit")?.addEventListener("click", () => {
+            iniciarEscanerCamara("haku-editar-codigo-barras", (cod) => {
+                procesarCodigoBarrasDetectado(cod, "haku-editar");
+            });
+        });
+
+        document.getElementById("haku-btn-verificar-codigo-edit")?.addEventListener("click", () => {
+            const val = document.getElementById("haku-editar-codigo-barras").value.trim();
+            if (val) procesarCodigoBarrasDetectado(val, "haku-editar");
+        });
+
         document.getElementById("haku-btn-cancelar-editar")?.addEventListener("click", () => {
+            detenerEscanerCamara();
             ocultarTarjetaPropuesta();
             agregarMensajeChat("haku", "Edición cancelada por el usuario.");
         });
 
         document.getElementById("haku-form-editar-producto")?.addEventListener("submit", async (e) => {
             e.preventDefault();
+            detenerEscanerCamara();
             const payload = {
                 producto_id: parseInt(document.getElementById("haku-editar-id").value, 10),
                 nombre: document.getElementById("haku-editar-nombre").value.trim(),
@@ -1230,7 +1407,12 @@
         const roles = datos.roles || [];
         const rolesHtml = roles.map(r => `<option value="${escapeHtml(r.valor)}">${escapeHtml(r.nombre)}</option>`).join("");
         const almacenes = datos.almacenes || [];
-        const almacenesHtml = `<option value="">-- Seleccionar almacén --</option>` + almacenes.map(a => `<option value="${a.id}">${escapeHtml(a.nombre)}</option>`).join("");
+        const almacenesCheckboxes = almacenes.map(a => `
+            <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.85rem; cursor:pointer;">
+                <input type="checkbox" name="haku-crear-almacenes-multi" value="${a.id}" class="haku-chk-alm">
+                ${escapeHtml(a.nombre)}
+            </label>
+        `).join("");
 
         contenedor.innerHTML = `
             <div class="propuesta-inner" style="border-color: var(--primary);">
@@ -1252,18 +1434,24 @@
                             <input type="text" id="haku-user-crear-nombre" required class="input-text" style="width:100%;" placeholder="ej. Juan Polo">
                         </div>
                     </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
-                        <div>
-                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Rol asignado *</label>
-                            <select id="haku-user-crear-rol" required class="input-text" style="width:100%; background:var(--bg-main); color:var(--text-main);">
-                                ${rolesHtml}
-                            </select>
+                    <div>
+                        <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Rol asignado *</label>
+                        <select id="haku-user-crear-rol" required class="input-text" style="width:100%; background:var(--bg-main); color:var(--text-main);">
+                            ${rolesHtml}
+                        </select>
+                    </div>
+                    <div id="haku-user-crear-almacenes-bloque" style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:0.75rem;">
+                        <label style="display:block; font-size:0.8rem; font-weight:600; color:var(--text-main); margin-bottom:0.4rem;">
+                            Asignación de Almacenes <span id="haku-user-almacen-req" style="color:var(--danger, #ff4444);">*</span>
+                        </label>
+                        <div style="margin-bottom:0.5rem;">
+                            <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.85rem; font-weight:500; cursor:pointer;">
+                                <input type="checkbox" id="haku-user-crear-todos-almacenes">
+                                <strong>Acceso a todos los almacenes</strong>
+                            </label>
                         </div>
-                        <div id="haku-user-crear-almacen-wrap">
-                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Almacén asignado <span id="haku-user-almacen-req">*</span></label>
-                            <select id="haku-user-crear-almacen" class="input-text" style="width:100%; background:var(--bg-main); color:var(--text-main);">
-                                ${almacenesHtml}
-                            </select>
+                        <div id="haku-user-crear-lista-almacenes" style="display:flex; flex-direction:column; gap:0.35rem; max-height:140px; overflow-y:auto; padding-left:0.25rem;">
+                            ${almacenesCheckboxes}
                         </div>
                     </div>
                     <div>
@@ -1280,16 +1468,33 @@
         contenedor.style.display = "block";
 
         const selRol = document.getElementById("haku-user-crear-rol");
-        const selAlmReq = document.getElementById("haku-user-almacen-req");
-        const selAlm = document.getElementById("haku-user-crear-almacen");
-        if (selRol && selAlmReq && selAlm) {
+        const bloqueAlm = document.getElementById("haku-user-crear-almacenes-bloque");
+        const chkTodos = document.getElementById("haku-user-crear-todos-almacenes");
+        const listaAlm = document.getElementById("haku-user-crear-lista-almacenes");
+
+        if (chkTodos && listaAlm) {
+            chkTodos.addEventListener("change", () => {
+                const checkboxes = listaAlm.querySelectorAll(".haku-chk-alm");
+                checkboxes.forEach(cb => {
+                    cb.disabled = chkTodos.checked;
+                    if (chkTodos.checked) cb.checked = false;
+                });
+            });
+            listaAlm.querySelectorAll(".haku-chk-alm").forEach(cb => {
+                cb.addEventListener("change", () => {
+                    if (cb.checked && chkTodos.checked) {
+                        chkTodos.checked = false;
+                    }
+                });
+            });
+        }
+
+        if (selRol && bloqueAlm) {
             selRol.addEventListener("change", () => {
                 if (selRol.value === "USUARIO") {
-                    selAlmReq.style.display = "inline";
-                    selAlm.required = true;
+                    bloqueAlm.style.display = "block";
                 } else {
-                    selAlmReq.style.display = "none";
-                    selAlm.required = false;
+                    bloqueAlm.style.display = "none";
                 }
             });
             selRol.dispatchEvent(new Event("change"));
@@ -1302,11 +1507,25 @@
 
         document.getElementById("haku-form-crear-usuario")?.addEventListener("submit", async (e) => {
             e.preventDefault();
+            const rolVal = document.getElementById("haku-user-crear-rol").value.trim();
+            const accesoTodos = rolVal === "USUARIO" && document.getElementById("haku-user-crear-todos-almacenes").checked;
+            const almsSeleccionados = [];
+            document.querySelectorAll("#haku-user-crear-lista-almacenes .haku-chk-alm:checked").forEach(cb => {
+                almsSeleccionados.push(parseInt(cb.value, 10));
+            });
+
+            if (rolVal === "USUARIO" && !accesoTodos && almsSeleccionados.length === 0) {
+                mostrarToast("Debes seleccionar al menos un almacén o marcar acceso a todos.", "error");
+                return;
+            }
+
             const payload = {
                 username: document.getElementById("haku-user-crear-username").value.trim(),
                 nombre_completo: document.getElementById("haku-user-crear-nombre").value.trim(),
-                rol: document.getElementById("haku-user-crear-rol").value.trim(),
-                almacen_asignado_id: document.getElementById("haku-user-crear-almacen").value ? parseInt(document.getElementById("haku-user-crear-almacen").value, 10) : null,
+                rol: rolVal,
+                almacen_asignado_id: almsSeleccionados.length > 0 ? almsSeleccionados[0] : null,
+                almacenes_asignados_ids: almsSeleccionados,
+                acceso_todos_almacenes: accesoTodos,
                 password: document.getElementById("haku-user-crear-password").value,
             };
 
@@ -1348,7 +1567,13 @@
         const roles = datos.roles || [];
         const rolesHtml = roles.map(r => `<option value="${escapeHtml(r.valor)}" ${u.rol === r.valor ? "selected" : ""}>${escapeHtml(r.nombre)}</option>`).join("");
         const almacenes = datos.almacenes || [];
-        const almacenesHtml = `<option value="">-- Sin almacén específico --</option>` + almacenes.map(a => `<option value="${a.id}" ${u.almacen_id === a.id ? "selected" : ""}>${escapeHtml(a.nombre)}</option>`).join("");
+        const assignedIds = new Set(u.almacenes_asignados_ids || (u.almacen_asignado_id ? [u.almacen_asignado_id] : []));
+        const almacenesCheckboxes = almacenes.map(a => `
+            <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.85rem; cursor:pointer;">
+                <input type="checkbox" name="haku-editar-almacenes-multi" value="${a.id}" class="haku-chk-alm-edit" ${assignedIds.has(a.id) ? "checked" : ""}>
+                ${escapeHtml(a.nombre)}
+            </label>
+        `).join("");
 
         contenedor.innerHTML = `
             <div class="propuesta-inner" style="border-color: var(--primary);">
@@ -1368,18 +1593,24 @@
                             <input type="text" id="haku-user-editar-nombre" required class="input-text" style="width:100%;" value="${escapeHtml(u.nombre_completo || '')}">
                         </div>
                     </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
-                        <div>
-                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Rol asignado *</label>
-                            <select id="haku-user-editar-rol" required class="input-text" style="width:100%; background:var(--bg-main); color:var(--text-main);">
-                                ${rolesHtml}
-                            </select>
+                    <div>
+                        <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Rol asignado *</label>
+                        <select id="haku-user-editar-rol" required class="input-text" style="width:100%; background:var(--bg-main); color:var(--text-main);">
+                            ${rolesHtml}
+                        </select>
+                    </div>
+                    <div id="haku-user-editar-almacenes-bloque" style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:0.75rem;">
+                        <label style="display:block; font-size:0.8rem; font-weight:600; color:var(--text-main); margin-bottom:0.4rem;">
+                            Asignación de Almacenes
+                        </label>
+                        <div style="margin-bottom:0.5rem;">
+                            <label style="display:flex; align-items:center; gap:0.4rem; font-size:0.85rem; font-weight:500; cursor:pointer;">
+                                <input type="checkbox" id="haku-user-editar-todos-almacenes" ${u.acceso_todos_almacenes ? "checked" : ""}>
+                                <strong>Acceso a todos los almacenes</strong>
+                            </label>
                         </div>
-                        <div>
-                            <label style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">Almacén asignado</label>
-                            <select id="haku-user-editar-almacen" class="input-text" style="width:100%; background:var(--bg-main); color:var(--text-main);">
-                                ${almacenesHtml}
-                            </select>
+                        <div id="haku-user-editar-lista-almacenes" style="display:flex; flex-direction:column; gap:0.35rem; max-height:140px; overflow-y:auto; padding-left:0.25rem;">
+                            ${almacenesCheckboxes}
                         </div>
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
@@ -1404,6 +1635,42 @@
         `;
         contenedor.style.display = "block";
 
+        const selRolEdit = document.getElementById("haku-user-editar-rol");
+        const bloqueAlmEdit = document.getElementById("haku-user-editar-almacenes-bloque");
+        const chkTodosEdit = document.getElementById("haku-user-editar-todos-almacenes");
+        const listaAlmEdit = document.getElementById("haku-user-editar-lista-almacenes");
+
+        if (chkTodosEdit && listaAlmEdit) {
+            const toggleLista = () => {
+                const checkboxes = listaAlmEdit.querySelectorAll(".haku-chk-alm-edit");
+                checkboxes.forEach(cb => {
+                    cb.disabled = chkTodosEdit.checked;
+                    if (chkTodosEdit.checked) cb.checked = false;
+                });
+            };
+            chkTodosEdit.addEventListener("change", toggleLista);
+            listaAlmEdit.querySelectorAll(".haku-chk-alm-edit").forEach(cb => {
+                cb.addEventListener("change", () => {
+                    if (cb.checked && chkTodosEdit.checked) {
+                        chkTodosEdit.checked = false;
+                        toggleLista();
+                    }
+                });
+            });
+            toggleLista();
+        }
+
+        if (selRolEdit && bloqueAlmEdit) {
+            selRolEdit.addEventListener("change", () => {
+                if (selRolEdit.value === "USUARIO") {
+                    bloqueAlmEdit.style.display = "block";
+                } else {
+                    bloqueAlmEdit.style.display = "none";
+                }
+            });
+            selRolEdit.dispatchEvent(new Event("change"));
+        }
+
         document.getElementById("haku-btn-cancelar-editar-usuario")?.addEventListener("click", () => {
             ocultarTarjetaPropuesta();
             agregarMensajeChat("haku", "Modificación cancelada por el usuario.");
@@ -1411,11 +1678,25 @@
 
         document.getElementById("haku-form-editar-usuario")?.addEventListener("submit", async (e) => {
             e.preventDefault();
+            const rolVal = document.getElementById("haku-user-editar-rol").value.trim();
+            const accesoTodos = rolVal === "USUARIO" && document.getElementById("haku-user-editar-todos-almacenes").checked;
+            const almsSeleccionados = [];
+            document.querySelectorAll("#haku-user-editar-lista-almacenes .haku-chk-alm-edit:checked").forEach(cb => {
+                almsSeleccionados.push(parseInt(cb.value, 10));
+            });
+
+            if (rolVal === "USUARIO" && !accesoTodos && almsSeleccionados.length === 0) {
+                mostrarToast("Debes seleccionar al menos un almacén o marcar acceso a todos.", "error");
+                return;
+            }
+
             const payload = {
                 id: parseInt(document.getElementById("haku-user-editar-id").value, 10),
                 nombre_completo: document.getElementById("haku-user-editar-nombre").value.trim(),
-                rol: document.getElementById("haku-user-editar-rol").value.trim(),
-                almacen_asignado_id: document.getElementById("haku-user-editar-almacen").value ? parseInt(document.getElementById("haku-user-editar-almacen").value, 10) : null,
+                rol: rolVal,
+                almacen_asignado_id: almsSeleccionados.length > 0 ? almsSeleccionados[0] : null,
+                almacenes_asignados_ids: almsSeleccionados,
+                acceso_todos_almacenes: accesoTodos,
                 is_active: document.getElementById("haku-user-editar-activo").value === "true",
             };
 

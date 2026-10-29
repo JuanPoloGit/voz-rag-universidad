@@ -236,14 +236,14 @@ class ReglaNoMutacionTestCase(BaseLenguajeTestCase):
         self.assertEqual(Auditoria.objects.count(), auditorias_iniciales)
 
 
-class ContextoConversacional2HorasTestCase(BaseLenguajeTestCase):
-    """Regla 4: Contexto temporal efímero limitado estrictamente a 2 horas (7200 segundos)."""
+class ContextoConversacional30MinTestCase(BaseLenguajeTestCase):
+    """Regla 4: Contexto temporal efímero limitado estrictamente a 30 minutos (1800 segundos)."""
 
-    def test_contexto_valido_dentro_de_2_horas(self):
-        """Contexto con 40 minutos sigue recordando el producto previo."""
+    def test_contexto_valido_dentro_de_30_min(self):
+        """Contexto con 20 minutos sigue recordando el producto previo."""
         sesion = {
             "haku_ultimo_producto_id": self.prod_utp.id,
-            "haku_ultimo_acceso": time.time() - (40 * 60),  # 40 min (< 2 horas)
+            "haku_ultimo_acceso": time.time() - (20 * 60),  # 20 min (< 30 min)
         }
         intencion = NormalizadorLenguajeHaku.interpretar(
             mensaje="Haku sácame 2 de esos para María",
@@ -253,11 +253,11 @@ class ContextoConversacional2HorasTestCase(BaseLenguajeTestCase):
         self.assertEqual(intencion.tipo, IntencionTipo.REGISTRAR_SALIDA)
         self.assertEqual(intencion.producto, self.prod_utp)
 
-    def test_contexto_caducado_tras_2_horas(self):
-        """Contexto con 125 minutos (> 120 min) está expirado y solicita aclaración."""
+    def test_contexto_caducado_tras_30_min(self):
+        """Contexto con 35 minutos (> 30 min) está expirado y solicita aclaración."""
         sesion = {
             "haku_ultimo_producto_id": self.prod_utp.id,
-            "haku_ultimo_acceso": time.time() - (125 * 60),  # 125 min (> 120 min)
+            "haku_ultimo_acceso": time.time() - (35 * 60),  # 35 min (> 30 min)
         }
         intencion = NormalizadorLenguajeHaku.interpretar(
             mensaje="Haku sácame 2 de esos para María",
